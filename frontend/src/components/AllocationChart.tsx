@@ -8,11 +8,13 @@ import {
   Cell,
   Tooltip,
 } from "recharts";
+import { formatMoney, getCurrencySymbol } from "@/lib/format";
 
 interface AllocationChartProps {
   allocation: Record<string, number>;
   centerLabel?: string;
   centerValue?: string;
+  currency?: string;
 }
 
 const GETQUIN_SPECTRUM_COLORS = [
@@ -28,7 +30,12 @@ const GETQUIN_SPECTRUM_COLORS = [
   "#64748B", // Slate
 ];
 
-export function AllocationChart({ allocation, centerLabel = "Total Net Worth", centerValue }: AllocationChartProps) {
+export function AllocationChart({ 
+  allocation, 
+  centerLabel = "Total Net Worth", 
+  centerValue,
+  currency = "USD"
+}: AllocationChartProps) {
   if (!allocation || Object.keys(allocation).length === 0) {
     return (
       <div className="h-56 flex items-center justify-center text-slate-400 font-medium text-xs">
@@ -57,6 +64,8 @@ export function AllocationChart({ allocation, centerLabel = "Total Net Worth", c
               data={chartData}
               cx="50%"
               cy="50%"
+              startAngle={90}
+              endAngle={-270}
               innerRadius={70}
               outerRadius={95}
               paddingAngle={2}
@@ -78,7 +87,7 @@ export function AllocationChart({ allocation, centerLabel = "Total Net Worth", c
                 fontWeight: "600",
                 padding: "8px 12px",
               }}
-              formatter={(value: any, name: any) => [`$${Number(value).toLocaleString()}`, name]}
+              formatter={(value: any, name: any) => [formatMoney(Number(value), currency), name]}
             />
           </PieChart>
         </ResponsiveContainer>
@@ -86,7 +95,9 @@ export function AllocationChart({ allocation, centerLabel = "Total Net Worth", c
         {/* Center Donut Text */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-4">
           <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{centerLabel}</span>
-          <span className="text-sm font-extrabold text-[#0F172A] tabular-nums mt-0.5">{centerValue || `$${total.toLocaleString()}`}</span>
+          <span className="text-sm font-extrabold text-[#0F172A] tabular-nums mt-0.5">
+            {centerValue || formatMoney(total, currency, 0)}
+          </span>
         </div>
       </div>
 

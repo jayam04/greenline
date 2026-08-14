@@ -2,13 +2,14 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatQty, formatNum, formatMoney } from "@/lib/format";
-import { NetWorthChart } from "@/components/NetWorthChart";
+import { formatQty, formatNum, formatMoney, getCurrencySymbol } from "@/lib/format";
+import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
 import { AllocationChart } from "@/components/AllocationChart";
 import { TransactionModal } from "@/components/TransactionModal";
 import { 
   Plus, Eye, EyeOff, ArrowUpDown, Info, MoreVertical, 
-  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Settings, Share2, RefreshCw
+  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, 
+  Settings, Share2, RefreshCw, X, Check, BarChart2, AlertCircle
 } from "lucide-react";
 import Link from "next/link";
 
@@ -37,6 +38,8 @@ interface PortfolioSummary {
   cash_balance: number;
   total_realized_pnl: number;
   total_unrealized_pnl: number;
+  total_fees?: number;
+  total_taxes?: number;
   portfolio_xirr: number | null;
   asset_allocation: Record<string, number>;
   sector_allocation: Record<string, number>;
@@ -55,6 +58,17 @@ interface Account {
   currency: string;
 }
 
+interface BenchmarkRawData {
+  benchmark_name: string;
+  data: { price_date: string; close_value: number }[];
+}
+
+const AVAILABLE_BENCHMARKS = [
+  { id: "^GSPC", name: "S&P 500", color: "#64748B" },
+  { id: "BTC-USD", name: "Bitcoin", color: "#F59E0B" },
+  { id: "^NSEI", name: "Nifty 50", color: "#10B981" },
+];
+
 export default function DashboardPage() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
@@ -62,9 +76,13 @@ export default function DashboardPage() {
   const [selectedAccount, setSelectedAccount] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("YTD");
   const [positionsTimeRange, setPositionsTimeRange] = useState<string>("Max");
+  const [chartMode, setChartMode] = useState<"value" | "performance">("value");
   const [allocationTab, setAllocationTab] = useState<"positions" | "sectors" | "type">("positions");
   const [hideBalances, setHideBalances] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBenchmarkModalOpen, setIsBenchmarkModalOpen] = useState(false);
+  const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>([]);
+  const [benchmarksDataMap, setBenchmarksDataMap] = useState<Record<string, BenchmarkRawData>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -81,8 +99,8 @@ export default function DashboardPage() {
         apiFetch<Account[]>("/accounts"),
       ]);
       setSummary(sumData);
-      setSnapshots(snapData);
-      setAccounts(accData);
+      setSnapshots(snapData || []);
+      setAccounts(accData || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -102,20 +120,132 @@ export default function DashboardPage() {
     }
   };
 
-  // Helper to format currency values cleanly with split decimals
-  const renderFormattedAmount = (amount: number, prefix: string = "$") => {
+  // Determine active master currency
+  const activeCurrency = React.useMemo(() => {
+    if (selectedAccount !== "all") {
+      const acc = accounts.find((a) => a.account_id.toString() === selectedAccount);
+      if (acc?.currency) return acc.currency;
+    }
+    if (accounts.length > 0 && accounts[0].currency) {
+      return accounts[0].currency;
+    }
+    if (summary?.top_holdings && summary.top_holdings.length > 0) {
+      return summary.top_holdings[0].currency;
+    }
+    return "USD";
+  }, [selectedAccount, accounts, summary]);
+
+  // Toggle benchmark selection & fetch series
+  const toggleBenchmark = async (bmId: string) => {
+    if (selectedBenchmarks.includes(bmId)) {
+      setSelectedBenchmarks(selectedBenchmarks.filter((id) => id !== bmId));
+    } else {
+      setSelectedBenchmarks([...selectedBenchmarks, bmId]);
+      if (!benchmarksDataMap[bmId]) {
+        try {
+          const res = await apiFetch<BenchmarkRawData>(`/benchmarks?symbol=${encodeURIComponent(bmId)}`);
+          if (res) {
+            setBenchmarksDataMap((prev) => ({ ...prev, [bmId]: res }));
+          }
+        } catch (err) {
+          console.error(`Failed to fetch benchmark ${bmId}:`, err);
+        }
+      }
+    }
+  };
+
+  // Filter snapshots based on selected timeframe
+  const filteredSnapshots = React.useMemo(() => {
+    if (!snapshots || snapshots.length === 0) return [];
+    const sorted = [...snapshots].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    
+    const now = new Date();
+    let cutoffStr = "";
+
+    if (timeRange === "1D") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 1);
+      cutoffStr = d.toISOString().split("T")[0];
+    } else if (timeRange === "1W") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      cutoffStr = d.toISOString().split("T")[0];
+    } else if (timeRange === "1M") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      cutoffStr = d.toISOString().split("T")[0];
+    } else if (timeRange === "YTD") {
+      cutoffStr = `${now.getFullYear()}-01-01`;
+    } else if (timeRange === "1Y") {
+      const d = new Date(now);
+      d.setFullYear(d.getFullYear() - 1);
+      cutoffStr = d.toISOString().split("T")[0];
+    } else {
+      return sorted; // Max
+    }
+
+    const filtered = sorted.filter((s) => s.snapshot_date >= cutoffStr);
+    return filtered.length > 0 ? filtered : sorted.slice(-5);
+  }, [snapshots, timeRange]);
+
+  // Compute timeframe return metrics
+  const timeframeReturn = React.useMemo(() => {
+    if (!filteredSnapshots || filteredSnapshots.length === 0) {
+      return { gain: 0, gainPct: 0 };
+    }
+    const start = filteredSnapshots[0];
+    const end = filteredSnapshots[filteredSnapshots.length - 1];
+    const gain = end.net_worth - start.net_worth;
+    const gainPct = start.net_worth > 0 ? (gain / start.net_worth) * 100 : 0;
+    return { gain, gainPct };
+  }, [filteredSnapshots]);
+
+  // Compute normalized benchmark series for performance mode
+  const normalizedBenchmarks: BenchmarkSeries[] = React.useMemo(() => {
+    if (selectedBenchmarks.length === 0 || filteredSnapshots.length === 0) return [];
+    const startDate = filteredSnapshots[0].snapshot_date;
+
+    return selectedBenchmarks.map((bmId) => {
+      const meta = AVAILABLE_BENCHMARKS.find((b) => b.id === bmId) || { name: bmId, color: "#64748B" };
+      const raw = benchmarksDataMap[bmId];
+      if (!raw || !raw.data || raw.data.length === 0) {
+        return { id: bmId, name: meta.name, color: meta.color, data: [] };
+      }
+
+      // Filter to date range
+      const inRange = raw.data.filter((p) => p.price_date >= startDate);
+      const basePoints = inRange.length > 0 ? inRange : raw.data.slice(-30);
+      const baseVal = basePoints[0]?.close_value || 1;
+
+      const normData = basePoints.map((p) => ({
+        date: p.price_date,
+        value: Number((((p.close_value - baseVal) / baseVal) * 100).toFixed(2)),
+      }));
+
+      return {
+        id: bmId,
+        name: meta.name,
+        color: meta.color,
+        data: normData,
+      };
+    });
+  }, [selectedBenchmarks, benchmarksDataMap, filteredSnapshots]);
+
+  // Helper to render formatted currency amounts
+  const renderFormattedAmount = (amount: number, currency: string) => {
     if (hideBalances) return "••••••";
+    const sym = getCurrencySymbol(currency);
     const formatted = formatNum(Math.abs(amount), 2);
     const [whole, decimal] = formatted.split(".");
     return (
       <span className="tabular-nums font-extrabold text-[#0F172A]">
-        {prefix}{whole}
+        {sym}{whole}
         <span className="text-slate-400 text-lg font-bold">.{decimal || "00"}</span>
       </span>
     );
   };
 
-  // Compute position allocation dictionary
+  // Position allocation map
   const getPositionAllocation = () => {
     const alloc: Record<string, number> = {};
     if (summary?.top_holdings) {
@@ -136,7 +266,6 @@ export default function DashboardPage() {
   };
 
   const totalPnL = (summary?.total_unrealized_pnl || 0) + (summary?.total_realized_pnl || 0);
-  const totalReturnPct = summary && summary.total_invested > 0 ? (totalPnL / summary.total_invested) * 100 : 0;
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
@@ -173,7 +302,7 @@ export default function DashboardPage() {
                           : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
-                      {acc.account_name}
+                      {acc.account_name} ({acc.currency || "INR"})
                     </button>
                   ))}
                 </div>
@@ -203,9 +332,9 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Sub-Header Toolbar: Hide, Performance, Add Benchmark */}
-            <div className="flex items-center justify-between py-3 text-xs font-semibold text-slate-500 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-4">
+            {/* Sub-Header Toolbar: Hide, Performance / Value Mode Switch, Add Benchmark */}
+            <div className="flex items-center justify-between py-3 text-xs font-semibold text-slate-500 border-b border-[#F1F5F9] flex-wrap gap-2">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => setHideBalances(!hideBalances)}
                   className="flex items-center gap-1.5 hover:text-slate-900 transition-colors"
@@ -213,50 +342,133 @@ export default function DashboardPage() {
                   {hideBalances ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   <span>{hideBalances ? "Show" : "Hide"}</span>
                 </button>
-                <div className="flex items-center gap-1 text-slate-700 font-bold">
-                  <ArrowUpDown className="w-3.5 h-3.5" />
-                  <span>Performance</span>
-                  <Info className="w-3 h-3 text-slate-400" />
+
+                {/* Mode Switcher: Value vs Performance */}
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/70">
+                  <button
+                    onClick={() => setChartMode("value")}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                      chartMode === "value"
+                        ? "bg-white text-[#0F172A] shadow-xs"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    Value ({activeCurrency})
+                  </button>
+                  <button
+                    onClick={() => setChartMode("performance")}
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                      chartMode === "performance"
+                        ? "bg-[#0F172A] text-white shadow-xs"
+                        : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    Performance (%)
+                  </button>
                 </div>
               </div>
 
-              <Link
-                href="/analytics"
-                className="flex items-center gap-1 hover:text-slate-900 font-semibold"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add benchmark</span>
-              </Link>
+              {/* Benchmark Trigger Button */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsBenchmarkModalOpen(true)}
+                  className="flex items-center gap-1 text-slate-700 hover:text-[#0F172A] font-bold bg-slate-100/80 hover:bg-slate-200/70 px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>
+                    {selectedBenchmarks.length > 0 
+                      ? `Benchmarks (${selectedBenchmarks.length})` 
+                      : "Add benchmark"}
+                  </span>
+                </button>
+              </div>
             </div>
+
+            {/* Benchmark Notification in Value Mode */}
+            {selectedBenchmarks.length > 0 && chartMode === "value" && (
+              <div className="mt-3 py-1.5 px-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-800">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>Benchmark comparison (% return) is active in Performance mode.</span>
+                </div>
+                <button
+                  onClick={() => setChartMode("performance")}
+                  className="font-bold underline text-amber-900 hover:text-amber-950 ml-2 shrink-0 cursor-pointer"
+                >
+                  Switch to Performance
+                </button>
+              </div>
+            )}
+
+            {/* Active Benchmarks Legend Strip in Performance Mode */}
+            {selectedBenchmarks.length > 0 && chartMode === "performance" && (
+              <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-[11px] font-bold text-slate-400">Comparing:</span>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[11px]">
+                  <span className="w-2 h-2 rounded-full bg-[#2563EB]"></span>
+                  <span>Portfolio ({timeframeReturn.gainPct >= 0 ? "+" : ""}{timeframeReturn.gainPct.toFixed(1)}%)</span>
+                </div>
+                {normalizedBenchmarks.map((bm) => {
+                  const latestVal = bm.data[bm.data.length - 1]?.value || 0;
+                  return (
+                    <div key={bm.id} className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: bm.color }}></span>
+                      <span>{bm.name} ({latestVal >= 0 ? "+" : ""}{latestVal.toFixed(1)}%)</span>
+                      <button 
+                        onClick={() => toggleBenchmark(bm.id)}
+                        className="hover:text-rose-600 ml-0.5 text-slate-400"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Net Worth Headline & Timeframe Selector */}
             <div className="pt-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-3">
               <div>
-                <div className="text-3xl font-extrabold tracking-tight">
-                  {renderFormattedAmount(summary?.total_net_worth || 0)}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
-                  {totalPnL >= 0 ? (
-                    <span className="text-[#16A34A] flex items-center gap-0.5">
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                      +{totalReturnPct.toFixed(2)}% ({formatMoney(totalPnL, "USD", 2, true)})
-                    </span>
-                  ) : (
-                    <span className="text-[#DC2626] flex items-center gap-0.5">
-                      <ArrowDownRight className="w-3.5 h-3.5" />
-                      {totalReturnPct.toFixed(2)}% ({formatMoney(totalPnL, "USD", 2, false)})
-                    </span>
-                  )}
-                </div>
+                {chartMode === "performance" ? (
+                  <div>
+                    <div className="text-3xl font-extrabold tracking-tight text-[#0F172A] tabular-nums">
+                      {timeframeReturn.gainPct >= 0 ? "+" : ""}{timeframeReturn.gainPct.toFixed(2)}%
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
+                      <span className={timeframeReturn.gain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}>
+                        {formatMoney(timeframeReturn.gain, activeCurrency, 2, true)} in {timeRange}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="text-3xl font-extrabold tracking-tight">
+                      {renderFormattedAmount(summary?.total_net_worth || 0, activeCurrency)}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
+                      {timeframeReturn.gain >= 0 ? (
+                        <span className="text-[#16A34A] flex items-center gap-0.5">
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                          +{timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, activeCurrency, 2, true)})
+                        </span>
+                      ) : (
+                        <span className="text-[#DC2626] flex items-center gap-0.5">
+                          <ArrowDownRight className="w-3.5 h-3.5" />
+                          {timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, activeCurrency, 2, false)})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Timeframe Filters */}
+              {/* Interactive Timeframe Filters */}
               <div className="flex items-center gap-1 text-xs font-bold self-start sm:self-auto bg-slate-50 p-1 rounded-lg border border-slate-100">
                 {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
                   <button
                     key={tf}
                     onClick={() => setTimeRange(tf)}
-                    className={`px-2.5 py-1 rounded-md transition-all ${
+                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                       timeRange === tf
                         ? "bg-white text-[#0F172A] shadow-xs font-extrabold"
                         : "text-slate-400 hover:text-slate-700"
@@ -270,7 +482,12 @@ export default function DashboardPage() {
 
             {/* Net Worth Timeline Chart */}
             <div className="mt-4">
-              <NetWorthChart data={snapshots} />
+              <NetWorthChart 
+                data={filteredSnapshots} 
+                mode={chartMode}
+                currency={activeCurrency}
+                benchmarks={chartMode === "performance" ? normalizedBenchmarks : []}
+              />
             </div>
 
             <div className="pt-2 text-[10px] font-bold tracking-wider uppercase text-slate-300">
@@ -329,6 +546,8 @@ export default function DashboardPage() {
                     summary.top_holdings.map((h) => {
                       const initials = h.symbol.replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase();
                       const isPositive = h.unrealized_pnl >= 0;
+                      const curr = h.currency || activeCurrency;
+
                       return (
                         <tr key={h.asset_id} className="hover:bg-slate-50/80 transition-colors group">
                           {/* Title Column */}
@@ -355,27 +574,27 @@ export default function DashboardPage() {
                           {/* Buy in Column */}
                           <td className="py-3 px-3 text-right">
                             <div className="font-bold text-slate-800 text-xs">
-                              {hideBalances ? "••••" : formatMoney(h.total_cost, h.currency)}
+                              {hideBalances ? "••••" : formatMoney(h.total_cost, curr)}
                             </div>
                             <div className="text-[11px] font-medium text-slate-400 mt-0.5">
-                              {formatMoney(h.avg_cost_price, h.currency)}
+                              {formatMoney(h.avg_cost_price, curr)}
                             </div>
                           </td>
 
                           {/* Position Column */}
                           <td className="py-3 px-3 text-right">
                             <div className="font-extrabold text-[#0F172A] text-xs">
-                              {hideBalances ? "••••" : formatMoney(h.current_value, h.currency)}
+                              {hideBalances ? "••••" : formatMoney(h.current_value, curr)}
                             </div>
                             <div className="text-[11px] font-medium text-slate-400 mt-0.5">
-                              {formatMoney(h.latest_price, h.currency)}
+                              {formatMoney(h.latest_price, curr)}
                             </div>
                           </td>
 
                           {/* P/L Column */}
                           <td className="py-3 px-3 text-right">
                             <div className={`font-bold text-xs ${isPositive ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                              {hideBalances ? "••••" : formatMoney(h.unrealized_pnl, h.currency, 2, true)}
+                              {hideBalances ? "••••" : formatMoney(h.unrealized_pnl, curr, 2, true)}
                             </div>
                             <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositive ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
                               {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
@@ -413,7 +632,7 @@ export default function DashboardPage() {
 
         {/* RIGHT COLUMN: Allocation Donut & Performance Breakdown (~32% width) */}
         <div className="lg:col-span-4 space-y-5">
-          {/* Card 1: Allocation Widget */}
+          {/* Card 1: Allocation Widget (Clockwise Donut starting at 90°) */}
           <div className="getquin-card p-5">
             {/* Header: Title & Show More */}
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
@@ -462,12 +681,13 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* Donut Chart */}
+            {/* Donut Chart (Starts at top 90° and sweeps clockwise) */}
             <div className="pt-2">
               <AllocationChart
                 allocation={activeAllocationMap()}
                 centerLabel="Total Net Worth"
-                centerValue={hideBalances ? "••••••" : `$${formatNum(summary?.total_net_worth || 0, 0)}`}
+                centerValue={hideBalances ? "••••••" : formatMoney(summary?.total_net_worth || 0, activeCurrency, 0)}
+                currency={activeCurrency}
               />
             </div>
           </div>
@@ -497,7 +717,7 @@ export default function DashboardPage() {
                     Invested capital <Info className="w-3 h-3 text-slate-400" />
                   </span>
                   <span className="font-bold text-[#0F172A] tabular-nums">
-                    {hideBalances ? "••••" : `$${formatNum(summary?.total_invested || 0, 2)}`}
+                    {hideBalances ? "••••" : formatMoney(summary?.total_invested || 0, activeCurrency, 2)}
                   </span>
                 </div>
               </div>
@@ -515,7 +735,7 @@ export default function DashboardPage() {
                         {summary && summary.total_unrealized_pnl >= 0 ? "↗" : "↘"} {summary && summary.total_invested > 0 ? ((summary.total_unrealized_pnl / summary.total_invested) * 100).toFixed(2) : "0.00"}%
                       </span>
                       <span className="font-bold text-slate-800">
-                        {hideBalances ? "••" : formatMoney(summary?.total_unrealized_pnl || 0, "USD", 2, true)}
+                        {hideBalances ? "••" : formatMoney(summary?.total_unrealized_pnl || 0, activeCurrency, 2, true)}
                       </span>
                     </div>
                   </div>
@@ -529,7 +749,7 @@ export default function DashboardPage() {
                         {summary && summary.total_realized_pnl >= 0 ? "↗" : "↘"} {summary && summary.total_invested > 0 ? ((summary.total_realized_pnl / summary.total_invested) * 100).toFixed(2) : "0.00"}%
                       </span>
                       <span className="font-bold text-slate-800">
-                        {hideBalances ? "••" : formatMoney(summary?.total_realized_pnl || 0, "USD", 2, true)}
+                        {hideBalances ? "••" : formatMoney(summary?.total_realized_pnl || 0, activeCurrency, 2, true)}
                       </span>
                     </div>
                   </div>
@@ -541,7 +761,7 @@ export default function DashboardPage() {
                 <div className="flex items-center justify-between py-1 font-bold text-slate-800">
                   <span>Total return</span>
                   <span className={`font-extrabold tabular-nums ${totalPnL >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                    {totalPnL >= 0 ? "↗" : "↘"} {hideBalances ? "••••" : formatMoney(totalPnL, "USD", 2, true)}
+                    {totalPnL >= 0 ? "↗" : "↘"} {hideBalances ? "••••" : formatMoney(totalPnL, activeCurrency, 2, true)}
                   </span>
                 </div>
 
@@ -549,8 +769,8 @@ export default function DashboardPage() {
                   <span className="flex items-center gap-1">
                     Internal rate of return (XIRR) <Info className="w-3 h-3 text-slate-400" />
                   </span>
-                  <span className="font-extrabold text-[#16A34A] tabular-nums">
-                    {summary?.portfolio_xirr != null ? `↗ ${(summary.portfolio_xirr * 100).toFixed(2)}%` : "0.00%"}
+                  <span className={`font-extrabold tabular-nums ${summary?.portfolio_xirr && summary.portfolio_xirr >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                    {summary?.portfolio_xirr != null ? `${summary.portfolio_xirr >= 0 ? "↗" : "↘"} ${(summary.portfolio_xirr * 100).toFixed(2)}%` : "0.00%"}
                   </span>
                 </div>
 
@@ -558,8 +778,8 @@ export default function DashboardPage() {
                   <span className="flex items-center gap-1">
                     True time-weighted return (TWR) <Info className="w-3 h-3 text-slate-400" />
                   </span>
-                  <span className="font-extrabold text-[#16A34A] tabular-nums">
-                    {summary?.portfolio_xirr != null ? `↗ ${(summary.portfolio_xirr * 100 * 0.95).toFixed(2)}%` : "0.00%"}
+                  <span className={`font-extrabold tabular-nums ${summary?.portfolio_xirr && summary.portfolio_xirr >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                    {summary?.portfolio_xirr != null ? `${summary.portfolio_xirr >= 0 ? "↗" : "↘"} ${(summary.portfolio_xirr * 100 * 0.95).toFixed(2)}%` : "0.00%"}
                   </span>
                 </div>
               </div>
@@ -567,6 +787,79 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Benchmark Selector Modal */}
+      {isBenchmarkModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
+          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md shadow-xl p-5 relative">
+            <button
+              onClick={() => setIsBenchmarkModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="p-2 bg-[#0F172A] text-white rounded-xl">
+                <BarChart2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#0F172A]">Compare Market Benchmarks</h3>
+                <p className="text-[11px] font-medium text-slate-400">
+                  Overlay index % returns against your portfolio in Performance mode
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 py-2">
+              {AVAILABLE_BENCHMARKS.map((bm) => {
+                const isSelected = selectedBenchmarks.includes(bm.id);
+                return (
+                  <button
+                    key={bm.id}
+                    onClick={() => toggleBenchmark(bm.id)}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
+                      isSelected
+                        ? "bg-blue-50/70 border-blue-200"
+                        : "bg-white hover:bg-slate-50 border-slate-200"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: bm.color }} />
+                      <div>
+                        <div className="font-bold text-xs text-[#0F172A]">{bm.name}</div>
+                        <div className="text-[10px] font-semibold text-slate-400">{bm.id}</div>
+                      </div>
+                    </div>
+
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
+                      isSelected
+                        ? "bg-[#0F172A] border-[#0F172A] text-white"
+                        : "border-slate-300"
+                    }`}>
+                      {isSelected && <Check className="w-3.5 h-3.5" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                onClick={() => {
+                  if (chartMode !== "performance") {
+                    setChartMode("performance");
+                  }
+                  setIsBenchmarkModalOpen(false);
+                }}
+                className="btn-pill-black text-xs w-full justify-center py-2"
+              >
+                Apply Comparison ({selectedBenchmarks.length} Selected)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Transaction Modal */}
       <TransactionModal

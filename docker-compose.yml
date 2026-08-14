@@ -9,11 +9,14 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/data
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////data/investments.db
       - SECRET_KEY=super-secret-investment-tracker-key-change-in-prod-2026
       - DEFAULT_ADMIN_USER=admin
       - DEFAULT_ADMIN_PASSWORD=admin123
+      - PYTHONPATH=/app
     restart: unless-stopped
 
   frontend:

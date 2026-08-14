@@ -5,9 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.models import Asset, PriceHistory
 
-async def update_prices_for_assets(db: AsyncSession, asset_ids: Optional[List[int]] = None) -> int:
+async def update_prices_for_assets(
+    db: AsyncSession, 
+    asset_ids: Optional[List[int]] = None,
+    start_date: Optional[datetime.date] = None
+) -> int:
     """
-    Fetches latest price history from yfinance for given assets (or all assets if None).
+    Fetches price history from yfinance for given assets (or all assets if None).
+    If start_date is provided, queries historical price data starting from start_date to today.
     Returns number of prices inserted/updated.
     """
     stmt = select(Asset)
@@ -25,7 +30,12 @@ async def update_prices_for_assets(db: AsyncSession, asset_ids: Optional[List[in
             
         try:
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1mo")
+            if start_date:
+                start_str = start_date.strftime("%Y-%m-%d")
+                hist = ticker.history(start=start_str)
+            else:
+                hist = ticker.history(period="1y")
+
             if hist.empty:
                 continue
 

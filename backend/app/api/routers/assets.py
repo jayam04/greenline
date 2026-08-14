@@ -1,13 +1,55 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+import yfinance as yf
 from app.db.database import get_db
 from app.db.models import Asset, User
 from app.schemas.schemas import AssetCreate, AssetUpdate, AssetResponse
 from app.api.deps import get_current_user
+from app.services.fifo_engine import recalculate_all_lots
+from app.services.snapshot_engine import generate_daily_snapshot
 
 router = APIRouter(prefix="/assets", tags=["assets"])
+
+@router.get("/lookup")
+async def lookup_asset_metadata(
+    symbol: str = Query(..., description="Ticker symbol e.g. AAPL or RELIANCE.NS"),
+    current_user: User = Depends(get_current_user)
+):
+    clean_symbol = symbol.strip().upper()
+    if not clean_symbol:
+        raise HTTPException(status_code=400, detail="Symbol is required")
+
+    try:
+        ticker = yf.Ticker(clean_symbol)
+        info = ticker.info or {}
+
+        # Extract fields from Yahoo Finance info
+        name = info.get("longName") or info.get("shortName") or clean_symbol
+        exchange = info.get("exchange") or info.get("fullExchangeName") or "UNKNOWN"
+        sector = info.get("sector") or info.get("category") or ""
+        currency = info.get("currency") or info.get("financialCurrency") or "USD"
+
+        quote_type = str(info.get("quoteType", "")).upper()
+        asset_type = "stock"
+        if "ETF" in quote_type:
+            asset_type = "etf"
+        elif "MUTUAL" in quote_type:
+            asset_type = "mutual_fund"
+        elif "CRYPTO" in quote_type:
+            asset_type = "crypto"
+
+        return {
+            "symbol": clean_symbol,
+            "name": name,
+            "exchange": exchange,
+            "sector": sector,
+            "asset_type": asset_type,
+            "currency": currency.upper(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Could not fetch metadata for symbol {clean_symbol}: {str(e)}")
 
 @router.get("/", response_model=List[AssetResponse])
 async def list_assets(
@@ -37,10 +79,9 @@ async def create_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Normalize symbol
     asset_dict = asset_in.model_dump()
     asset_dict["symbol"] = asset_dict["symbol"].upper().strip()
-    
+
     asset = Asset(**asset_dict)
     db.add(asset)
     await db.commit()
@@ -70,9 +111,6 @@ async def update_asset(
     await db.commit()
     await db.refresh(asset)
     return asset
-
-from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import generate_daily_snapshot
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_asset(

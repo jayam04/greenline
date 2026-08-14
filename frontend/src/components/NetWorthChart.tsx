@@ -24,8 +24,8 @@ interface NetWorthChartProps {
 export function NetWorthChart({ data }: NetWorthChartProps) {
   if (!data || data.length === 0) {
     return (
-      <div className="h-72 flex items-center justify-center text-slate-500 text-sm">
-        No snapshot data available yet. Add transactions to see portfolio timeline.
+      <div className="h-60 flex items-center justify-center text-slate-400 font-medium text-xs">
+        No snapshot data available yet.
       </div>
     );
   }
@@ -43,54 +43,52 @@ export function NetWorthChart({ data }: NetWorthChartProps) {
   };
 
   return (
-    <div className="h-72 w-full">
+    <div className="h-60 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={formattedData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <defs>
-            <linearGradient id="netWorthGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-              <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-            </linearGradient>
-            <linearGradient id="investedGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
+            <linearGradient id="getquinAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#2563EB" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-          <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+          <XAxis 
+            dataKey="date" 
+            stroke="#94A3B8" 
+            fontSize={10} 
+            fontWeight={600} 
+            tickLine={false} 
+            axisLine={{ stroke: "#E2E8F0" }}
+          />
           <YAxis
-            stroke="#94a3b8"
-            fontSize={12}
+            stroke="#94A3B8"
+            fontSize={10}
+            fontWeight={600}
             tickLine={false}
+            axisLine={false}
             tickFormatter={formatCurrency}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#0f172a",
-              borderColor: "#334155",
+              backgroundColor: "#0F172A",
+              border: "none",
               borderRadius: "0.5rem",
-              color: "#f8fafc",
+              boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+              color: "#FFFFFF",
+              fontSize: "12px",
+              fontWeight: "600",
+              padding: "8px 12px",
             }}
-            formatter={(value: any) => [`$${Number(value).toLocaleString()}`, ""]}
+            formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Net Worth"]}
           />
           <Area
             type="monotone"
             dataKey="netWorth"
-            name="Net Worth"
-            stroke="#10b981"
+            stroke="#2563EB"
             strokeWidth={2}
             fillOpacity={1}
-            fill="url(#netWorthGrad)"
-          />
-          <Area
-            type="monotone"
-            dataKey="invested"
-            name="Invested"
-            stroke="#3b82f6"
-            strokeWidth={1.5}
-            strokeDasharray="4 4"
-            fillOpacity={1}
-            fill="url(#investedGrad)"
+            fill="url(#getquinAreaGrad)"
           />
         </AreaChart>
       </ResponsiveContainer>

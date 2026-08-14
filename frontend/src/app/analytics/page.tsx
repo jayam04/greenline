@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { BarChart2, TrendingUp, Compass } from "lucide-react";
+import { formatNum } from "@/lib/format";
+import { BarChart2, TrendingUp, Info } from "lucide-react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -11,7 +12,6 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  Legend,
 } from "recharts";
 
 interface BenchmarkData {
@@ -41,29 +41,36 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2">
-            <BarChart2 className="w-6 h-6 text-emerald-400" />
-            Performance & Benchmark Comparisons
+          <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">
+            Performance & Benchmarks
           </h1>
-          <p className="text-xs text-slate-400 mt-1">Compare portfolio XIRR against major market indices (S&P 500, Nifty 50)</p>
+          <p className="text-xs font-semibold text-slate-500 mt-0.5">
+            Compare historical asset price trends against major index benchmarks
+          </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1.5 text-xs">
+        {/* Benchmark Pill Tabs */}
+        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-lg">
           <button
             onClick={() => setSymbol("^GSPC")}
-            className={`px-3 py-1.5 rounded-md font-semibold transition-colors ${
-              symbol === "^GSPC" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:text-white"
+            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+              symbol === "^GSPC"
+                ? "bg-[#0F172A] text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             S&P 500 (^GSPC)
           </button>
           <button
             onClick={() => setSymbol("^NSEI")}
-            className={`px-3 py-1.5 rounded-md font-semibold transition-colors ${
-              symbol === "^NSEI" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:text-white"
+            className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+              symbol === "^NSEI"
+                ? "bg-[#0F172A] text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900"
             }`}
           >
             Nifty 50 (^NSEI)
@@ -71,42 +78,62 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white">
-            {benchmark?.benchmark_name || "Benchmark"} Index Price Movement
+      {/* Chart Container */}
+      <div className="getquin-card p-5 space-y-3">
+        <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
+          <h2 className="text-sm font-bold text-[#0F172A]">
+            {benchmark?.benchmark_name || "Benchmark"} Index Historical Trend
           </h2>
-          <span className="text-xs font-mono text-emerald-400">1 Year Historical</span>
+          <span className="text-[11px] font-semibold text-slate-400">
+            1 Year Daily Close
+          </span>
         </div>
 
-        <div className="h-80 w-full">
+        <div className="h-72 w-full">
           {benchmark?.data && benchmark.data.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={benchmark.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                <XAxis dataKey="price_date" stroke="#94a3b8" fontSize={11} />
-                <YAxis stroke="#94a3b8" fontSize={11} domain={["auto", "auto"]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                <XAxis 
+                  dataKey="price_date" 
+                  stroke="#94A3B8" 
+                  fontSize={10} 
+                  fontWeight={600} 
+                  tickLine={false} 
+                  axisLine={{ stroke: "#E2E8F0" }} 
+                />
+                <YAxis 
+                  stroke="#94A3B8" 
+                  fontSize={10} 
+                  fontWeight={600} 
+                  tickLine={false} 
+                  axisLine={false} 
+                  domain={["auto", "auto"]} 
+                />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "#0f172a",
-                    borderColor: "#334155",
+                    backgroundColor: "#0F172A",
+                    border: "none",
                     borderRadius: "0.5rem",
-                    color: "#f8fafc",
+                    color: "#FFFFFF",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    padding: "8px 12px",
                   }}
-                  formatter={(value: any) => [`${Number(value).toFixed(2)}`, "Index Close"]}
+                  formatter={(value: any) => [`${formatNum(Number(value))}`, "Index Value"]}
                 />
                 <Line
                   type="monotone"
                   dataKey="close_value"
                   name={benchmark.benchmark_name}
-                  stroke="#3b82f6"
+                  stroke="#2563EB"
                   strokeWidth={2}
                   dot={false}
                 />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+            <div className="h-full flex items-center justify-center text-slate-400 font-medium text-xs">
               Loading benchmark data...
             </div>
           )}

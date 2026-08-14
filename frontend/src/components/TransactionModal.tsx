@@ -58,6 +58,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
 
   useEffect(() => {
     if (isOpen) {
+      setError("");
       loadDropdowns();
       if (initialData) {
         setAccountId(initialData.account_id);
@@ -71,6 +72,8 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         setTaxes(initialData.taxes.toString());
         setNotes(initialData.notes || "");
       } else {
+        setTransactionType("buy");
+        setTransactionDate(new Date().toISOString().split("T")[0]);
         setQuantity("");
         setPricePerUnit("");
         setTotalAmount("");
@@ -87,18 +90,22 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         apiFetch<Account[]>("/accounts"),
         apiFetch<Asset[]>("/assets"),
       ]);
-      setAccounts(accData);
-      setAssets(astData);
+      setAccounts(accData || []);
+      setAssets(astData || []);
+
       if (!initialData) {
-        if (accData.length > 0 && !accountId) setAccountId(accData[0].account_id);
-        if (astData.length > 0 && !assetId) setAssetId(astData[0].asset_id);
+        if (accData && accData.length > 0) {
+          setAccountId(accData[0].account_id);
+        }
+        if (astData && astData.length > 0) {
+          setAssetId(astData[0].asset_id);
+        }
       }
     } catch (e: any) {
-      console.error(e);
+      console.error("Failed to load accounts/assets dropdowns:", e);
     }
   };
 
-  // Auto-compute total amount when qty & price change
   useEffect(() => {
     if (quantity && pricePerUnit && !initialData) {
       const calcTotal = (parseFloat(quantity) * parseFloat(pricePerUnit)).toFixed(2);
@@ -113,15 +120,35 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
     setLoading(true);
     setError("");
 
+    if (!accountId) {
+      setError("Please select an investment account.");
+      setLoading(false);
+      return;
+    }
+
+    const isAssetTransaction = ["buy", "sell", "dividend"].includes(transactionType);
+    if (isAssetTransaction && !assetId) {
+      setError("Please select a security from master.");
+      setLoading(false);
+      return;
+    }
+
+    const parsedTotal = parseFloat(totalAmount);
+    if (isNaN(parsedTotal) || parsedTotal < 0) {
+      setError("Please enter a valid total amount.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const payload = {
         account_id: Number(accountId),
-        asset_id: assetId ? Number(assetId) : null,
+        asset_id: isAssetTransaction && assetId ? Number(assetId) : null,
         transaction_type: transactionType,
         transaction_date: transactionDate,
         quantity: quantity ? parseFloat(quantity) : null,
         price_per_unit: pricePerUnit ? parseFloat(pricePerUnit) : null,
-        total_amount: parseFloat(totalAmount),
+        total_amount: parsedTotal,
         fees: parseFloat(fees || "0"),
         taxes: parseFloat(taxes || "0"),
         notes: notes || null,
@@ -149,34 +176,41 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-6 relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
+      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-lg shadow-xl p-6 relative">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
-        <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-          {initialData ? <Edit className="w-5 h-5 text-emerald-400" /> : <Plus className="w-5 h-5 text-emerald-400" />}
-          {initialData ? "Edit Transaction" : "Add New Transaction"}
-        </h2>
+        <div className="flex items-center gap-2.5 mb-5">
+          <div className="p-2 bg-[#0F172A] text-white rounded-xl">
+            {initialData ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-[#0F172A]">
+              {initialData ? "Edit Transaction" : "Add Transaction"}
+            </h2>
+            <p className="text-[11px] font-medium text-slate-400">Record buys, sells, dividends, deposits, or withdrawals</p>
+          </div>
+        </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs rounded-lg">
+          <div className="mb-4 p-2.5 bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold rounded-lg">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-sm">
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Transaction Type</label>
+              <label className="block font-semibold text-slate-600 mb-1">Transaction Type</label>
               <select
                 value={transactionType}
                 onChange={(e) => setTransactionType(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none cursor-pointer"
               >
                 <option value="buy">Buy</option>
                 <option value="sell">Sell</option>
@@ -187,12 +221,12 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Date</label>
+              <label className="block font-semibold text-slate-600 mb-1">Date</label>
               <input
                 type="date"
                 value={transactionDate}
                 onChange={(e) => setTransactionDate(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
                 required
               />
             </div>
@@ -200,11 +234,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Account</label>
+              <label className="block font-semibold text-slate-600 mb-1">Account</label>
               <select
                 value={accountId}
                 onChange={(e) => setAccountId(Number(e.target.value))}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none cursor-pointer"
                 required
               >
                 {accounts.map((acc) => (
@@ -217,11 +251,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
 
             {["buy", "sell", "dividend"].includes(transactionType) && (
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Asset</label>
+                <label className="block font-semibold text-slate-600 mb-1">Security / Asset</label>
                 <select
                   value={assetId}
                   onChange={(e) => setAssetId(Number(e.target.value))}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none cursor-pointer"
                   required
                 >
                   {assets.map((ast) => (
@@ -237,91 +271,93 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
           {["buy", "sell", "dividend"].includes(transactionType) && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Quantity</label>
+                <label className="block font-semibold text-slate-600 mb-1">Quantity</label>
                 <input
                   type="number"
                   step="any"
                   placeholder="e.g. 10"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
+                  required={transactionType === "buy" || transactionType === "sell"}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Price Per Unit</label>
+                <label className="block font-semibold text-slate-600 mb-1">Price Per Unit</label>
                 <input
                   type="number"
                   step="any"
                   placeholder="e.g. 150.50"
                   value={pricePerUnit}
                   onChange={(e) => setPricePerUnit(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                  className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
+                  required={transactionType === "buy" || transactionType === "sell"}
                 />
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2.5">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Total Amount</label>
+              <label className="block font-semibold text-slate-600 mb-1">Total Amount</label>
               <input
                 type="number"
                 step="any"
                 placeholder="0.00"
                 value={totalAmount}
                 onChange={(e) => setTotalAmount(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500 font-semibold"
+                className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Brokerage Fees</label>
+              <label className="block font-semibold text-slate-600 mb-1">Fees</label>
               <input
                 type="number"
                 step="any"
                 value={fees}
                 onChange={(e) => setFees(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Taxes</label>
+              <label className="block font-semibold text-slate-600 mb-1">Taxes</label>
               <input
                 type="number"
                 step="any"
                 value={taxes}
                 onChange={(e) => setTaxes(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+                className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:outline-none"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Notes</label>
+            <label className="block font-semibold text-slate-600 mb-1">Notes</label>
             <input
               type="text"
               placeholder="Optional notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-700 text-white rounded-lg px-3 py-2 focus:ring-2 focus:ring-emerald-500"
+              className="w-full bg-[#F3F4F6] text-slate-900 font-medium rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
             />
           </div>
 
-          <div className="mt-6 flex justify-end gap-3 pt-3 border-t border-slate-800">
+          <div className="mt-5 flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              className="btn-pill-gray text-xs"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 font-semibold text-slate-950 rounded-lg transition-colors disabled:opacity-50"
+              className="btn-pill-black text-xs disabled:opacity-50"
             >
               {loading ? "Saving..." : (initialData ? "Update Transaction" : "Save Transaction")}
             </button>

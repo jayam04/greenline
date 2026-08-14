@@ -6,7 +6,7 @@ from app.db.models import Account, Asset, Transaction, Lot, LotSale
 from app.services.fifo_engine import process_transaction_event
 from app.services.xirr_engine import calculate_xirr_for_scope
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fifo_lot_engine():
     # In-memory async SQLite engine for testing
     test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)

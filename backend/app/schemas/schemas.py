@@ -95,6 +95,7 @@ class TransactionUpdate(BaseModel):
 class TransactionResponse(TransactionCreate):
     transaction_id: int
     account_name: Optional[str] = None
+    account_currency: Optional[str] = "USD"
     asset_symbol: Optional[str] = None
     asset_name: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
@@ -160,6 +161,7 @@ class HoldingSummary(BaseModel):
     name: str
     asset_type: str
     sector: Optional[str] = None
+    currency: str = "USD"
     quantity_held: float
     avg_cost_price: float
     total_cost: float
@@ -179,8 +181,11 @@ class PortfolioSummaryResponse(BaseModel):
     cash_balance: float
     total_realized_pnl: float
     total_unrealized_pnl: float
+    total_fees: float = 0.0
+    total_taxes: float = 0.0
     portfolio_xirr: Optional[float] = None
     asset_allocation: dict
+    sector_allocation: dict = {}
     top_holdings: List[HoldingSummary]
 
 # Snapshot Schemas

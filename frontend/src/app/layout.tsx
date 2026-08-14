@@ -19,8 +19,8 @@ const generalSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Greenline | Personal Investment Tracker",
-  description: "Track portfolio XIRR, net worth, FIFO lots, realized P&L, and asset allocation.",
+  title: "Greenline | Neo-Fintech Investment Tracker",
+  description: "Modern minimalist portfolio tracker with precise FIFO lot tracking, XIRR, and Realized P&L.",
 };
 
 export default function RootLayout({
@@ -29,10 +29,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${generalSans.className} bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans`}>
+    <html lang="en" className={generalSans.variable}>
+      <body className={`${generalSans.className} bg-[#F3F4F6] text-[#0F172A] min-h-screen flex flex-col font-sans selection:bg-[#9FE837] selection:text-[#0F172A]`}>
         <Navbar />
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-8">
+        <main className="flex-1 w-full px-4 md:px-8 py-6">
           {children}
         </main>
       </body>

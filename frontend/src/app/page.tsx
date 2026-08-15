@@ -2,14 +2,14 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatQty, formatNum, formatMoney, getCurrencySymbol } from "@/lib/format";
+import { formatQty, formatNum, formatMoney, getCurrencySymbol, convertCurrencyToEUR } from "@/lib/format";
 import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
 import { AllocationChart } from "@/components/AllocationChart";
 import { TransactionModal } from "@/components/TransactionModal";
 import { 
-  Plus, Eye, EyeOff, ArrowUpDown, Info, MoreVertical, 
-  TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, 
-  Settings, Share2, RefreshCw, X, Check, BarChart2, AlertCircle
+  Plus, Eye, EyeOff, MoreVertical, 
+  ArrowUpRight, ArrowDownRight, 
+  Settings, RefreshCw, X, Check, BarChart2, AlertCircle, Info
 } from "lucide-react";
 import Link from "next/link";
 
@@ -75,7 +75,7 @@ export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("YTD");
-  const [positionsTimeRange, setPositionsTimeRange] = useState<string>("Max");
+  const [holdingsTimeRange, setHoldingsTimeRange] = useState<string>("Max");
   const [chartMode, setChartMode] = useState<"value" | "performance">("value");
   const [allocationTab, setAllocationTab] = useState<"positions" | "sectors" | "type">("positions");
   const [hideBalances, setHideBalances] = useState(false);
@@ -86,21 +86,35 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Load Accounts once on mount
   useEffect(() => {
-    loadData();
+    loadAccounts();
   }, []);
 
-  const loadData = async () => {
+  // Reload Summary & Snapshots whenever selectedAccount changes
+  useEffect(() => {
+    loadAccountData(selectedAccount);
+  }, [selectedAccount]);
+
+  const loadAccounts = async () => {
+    try {
+      const accData = await apiFetch<Account[]>("/accounts");
+      setAccounts(accData || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadAccountData = async (accId: string) => {
     try {
       setLoading(true);
-      const [sumData, snapData, accData] = await Promise.all([
-        apiFetch<PortfolioSummary>("/portfolio/summary"),
-        apiFetch<Snapshot[]>("/snapshots"),
-        apiFetch<Account[]>("/accounts"),
+      const queryParam = accId === "all" ? "" : `?account_id=${accId}`;
+      const [sumData, snapData] = await Promise.all([
+        apiFetch<PortfolioSummary>(`/portfolio/summary${queryParam}`),
+        apiFetch<Snapshot[]>(`/snapshots${queryParam}`),
       ]);
       setSummary(sumData);
       setSnapshots(snapData || []);
-      setAccounts(accData || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -112,28 +126,13 @@ export default function DashboardPage() {
     try {
       setRefreshing(true);
       await apiFetch("/prices/refresh", { method: "POST" });
-      await loadData();
+      await loadAccountData(selectedAccount);
     } catch (e) {
       console.error(e);
     } finally {
       setRefreshing(false);
     }
   };
-
-  // Determine active master currency
-  const activeCurrency = React.useMemo(() => {
-    if (selectedAccount !== "all") {
-      const acc = accounts.find((a) => a.account_id.toString() === selectedAccount);
-      if (acc?.currency) return acc.currency;
-    }
-    if (accounts.length > 0 && accounts[0].currency) {
-      return accounts[0].currency;
-    }
-    if (summary?.top_holdings && summary.top_holdings.length > 0) {
-      return summary.top_holdings[0].currency;
-    }
-    return "USD";
-  }, [selectedAccount, accounts, summary]);
 
   // Toggle benchmark selection & fetch series
   const toggleBenchmark = async (bmId: string) => {
@@ -154,10 +153,49 @@ export default function DashboardPage() {
     }
   };
 
+  // Convert summary values to EUR
+  const totalPositionsValueEUR = (summary?.top_holdings || []).reduce(
+    (acc, h) => acc + convertCurrencyToEUR(h.current_value, h.currency),
+    0
+  );
+  const totalInvestedEUR = (summary?.top_holdings || []).reduce(
+    (acc, h) => acc + convertCurrencyToEUR(h.total_cost, h.currency),
+    0
+  );
+  const totalCashEUR = Math.max(0, convertCurrencyToEUR(summary?.cash_balance || 0, "INR"));
+  const totalNetWorthEUR = totalPositionsValueEUR + totalCashEUR;
+  const totalUnrealizedEUR = totalPositionsValueEUR - totalInvestedEUR;
+  const totalRealizedEUR = (summary?.top_holdings || []).reduce(
+    (acc, h) => acc + convertCurrencyToEUR(h.realized_pnl, h.currency),
+    0
+  );
+  const totalPnLEUR = totalUnrealizedEUR + totalRealizedEUR;
+  const overallPnLPct = totalInvestedEUR > 0 ? (totalPnLEUR / totalInvestedEUR) * 100 : 0;
+
+  // Convert Snapshots to EUR for chart
+  const snapshotsInEUR: Snapshot[] = React.useMemo(() => {
+    if (!snapshots || snapshots.length === 0) return [];
+    
+    // In aggregated mode, backend /snapshots already aggregates all accounts converted to EUR
+    if (selectedAccount === "all") {
+      return snapshots;
+    }
+
+    // In single account mode, convert from that account's native currency
+    const a = accounts.find((acc) => acc.account_id.toString() === selectedAccount);
+    const repCurrency = a?.currency || "INR";
+
+    return snapshots.map((s) => ({
+      snapshot_date: s.snapshot_date,
+      net_worth: convertCurrencyToEUR(s.net_worth, repCurrency),
+      total_invested: convertCurrencyToEUR(s.total_invested, repCurrency),
+    }));
+  }, [snapshots, selectedAccount, accounts]);
+
   // Filter snapshots based on selected timeframe
   const filteredSnapshots = React.useMemo(() => {
-    if (!snapshots || snapshots.length === 0) return [];
-    const sorted = [...snapshots].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    if (!snapshotsInEUR || snapshotsInEUR.length === 0) return [];
+    const sorted = [...snapshotsInEUR].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
     
     const now = new Date();
     let cutoffStr = "";
@@ -186,9 +224,9 @@ export default function DashboardPage() {
 
     const filtered = sorted.filter((s) => s.snapshot_date >= cutoffStr);
     return filtered.length > 0 ? filtered : sorted.slice(-5);
-  }, [snapshots, timeRange]);
+  }, [snapshotsInEUR, timeRange]);
 
-  // Compute timeframe return metrics
+  // Compute timeframe return metrics (for Value Mode change subtitle)
   const timeframeReturn = React.useMemo(() => {
     if (!filteredSnapshots || filteredSnapshots.length === 0) {
       return { gain: 0, gainPct: 0 };
@@ -212,7 +250,6 @@ export default function DashboardPage() {
         return { id: bmId, name: meta.name, color: meta.color, data: [] };
       }
 
-      // Filter to date range
       const inRange = raw.data.filter((p) => p.price_date >= startDate);
       const basePoints = inRange.length > 0 ? inRange : raw.data.slice(-30);
       const baseVal = basePoints[0]?.close_value || 1;
@@ -231,47 +268,48 @@ export default function DashboardPage() {
     });
   }, [selectedBenchmarks, benchmarksDataMap, filteredSnapshots]);
 
-  // Helper to render formatted currency amounts
-  const renderFormattedAmount = (amount: number, currency: string) => {
+  // Helper to render EUR formatted amounts
+  const renderFormattedEUR = (amount: number) => {
     if (hideBalances) return "••••••";
-    const sym = getCurrencySymbol(currency);
     const formatted = formatNum(Math.abs(amount), 2);
     const [whole, decimal] = formatted.split(".");
     return (
       <span className="tabular-nums font-extrabold text-[#0F172A]">
-        {sym}{whole}
+        €{whole}
         <span className="text-slate-400 text-lg font-bold">.{decimal || "00"}</span>
       </span>
     );
   };
 
-  // Position allocation map
-  const getPositionAllocation = () => {
+  // Allocation Map converted to EUR
+  const activeAllocationMapEUR = () => {
     const alloc: Record<string, number> = {};
-    if (summary?.top_holdings) {
-      summary.top_holdings.forEach((h) => {
-        alloc[h.symbol] = h.current_value;
+    if (allocationTab === "positions") {
+      (summary?.top_holdings || []).forEach((h) => {
+        alloc[h.symbol] = convertCurrencyToEUR(h.current_value, h.currency);
       });
+      if (totalCashEUR > 0) alloc["CASH"] = totalCashEUR;
+      return alloc;
     }
-    if (summary?.cash_balance && summary.cash_balance > 0) {
-      alloc["CASH"] = summary.cash_balance;
+
+    if (allocationTab === "sectors") {
+      Object.entries(summary?.sector_allocation || {}).forEach(([k, v]) => {
+        alloc[k] = convertCurrencyToEUR(v, "INR");
+      });
+      return alloc;
     }
+
+    Object.entries(summary?.asset_allocation || {}).forEach(([k, v]) => {
+      alloc[k] = convertCurrencyToEUR(v, "INR");
+    });
     return alloc;
   };
-
-  const activeAllocationMap = () => {
-    if (allocationTab === "positions") return getPositionAllocation();
-    if (allocationTab === "sectors") return summary?.sector_allocation || {};
-    return summary?.asset_allocation || {};
-  };
-
-  const totalPnL = (summary?.total_unrealized_pnl || 0) + (summary?.total_realized_pnl || 0);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* LEFT COLUMN: Portfolios Hero & Positions (~68% width on desktop) */}
+        {/* LEFT COLUMN: Portfolios Hero & Holdings (~68% width on desktop) */}
         <div className="lg:col-span-8 space-y-5">
           {/* Card 1: Portfolios & Net Worth Hero Chart Card */}
           <div className="getquin-card p-5">
@@ -284,7 +322,7 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-1 overflow-x-auto text-xs">
                   <button
                     onClick={() => setSelectedAccount("all")}
-                    className={`px-3 py-1 font-bold rounded-lg transition-colors ${
+                    className={`px-3 py-1 font-bold rounded-lg transition-colors cursor-pointer ${
                       selectedAccount === "all"
                         ? "text-[#0F172A] border-b-2 border-[#0F172A] rounded-b-none"
                         : "text-slate-500 hover:text-slate-800"
@@ -296,13 +334,13 @@ export default function DashboardPage() {
                     <button
                       key={acc.account_id}
                       onClick={() => setSelectedAccount(acc.account_id.toString())}
-                      className={`px-3 py-1 font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1 font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
                         selectedAccount === acc.account_id.toString()
                           ? "text-[#0F172A] border-b-2 border-[#0F172A] rounded-b-none font-bold"
                           : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
-                      {acc.account_name} ({acc.currency || "INR"})
+                      {acc.account_name}
                     </button>
                   ))}
                 </div>
@@ -332,38 +370,38 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Sub-Header Toolbar: Hide, Performance / Value Mode Switch, Add Benchmark */}
+            {/* Sub-Header Toolbar: Hide, Value vs Performance Mode Switch, Add Benchmark */}
             <div className="flex items-center justify-between py-3 text-xs font-semibold text-slate-500 border-b border-[#F1F5F9] flex-wrap gap-2">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setHideBalances(!hideBalances)}
-                  className="flex items-center gap-1.5 hover:text-slate-900 transition-colors"
+                  className="flex items-center gap-1.5 hover:text-slate-900 transition-colors cursor-pointer"
                 >
                   {hideBalances ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   <span>{hideBalances ? "Show" : "Hide"}</span>
                 </button>
 
-                {/* Mode Switcher: Value vs Performance */}
+                {/* Clean Mode Switcher without suffixes: Value vs Performance */}
                 <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/70">
                   <button
                     onClick={() => setChartMode("value")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
                       chartMode === "value"
                         ? "bg-white text-[#0F172A] shadow-xs"
                         : "text-slate-500 hover:text-slate-900"
                     }`}
                   >
-                    Value ({activeCurrency})
+                    Value
                   </button>
                   <button
                     onClick={() => setChartMode("performance")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
                       chartMode === "performance"
                         ? "bg-[#0F172A] text-white shadow-xs"
                         : "text-slate-500 hover:text-slate-900"
                     }`}
                   >
-                    Performance (%)
+                    Performance
                   </button>
                 </div>
               </div>
@@ -372,7 +410,7 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsBenchmarkModalOpen(true)}
-                  className="flex items-center gap-1 text-slate-700 hover:text-[#0F172A] font-bold bg-slate-100/80 hover:bg-slate-200/70 px-2.5 py-1 rounded-lg transition-colors"
+                  className="flex items-center gap-1 text-slate-700 hover:text-[#0F172A] font-bold bg-slate-100/80 hover:bg-slate-200/70 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>
@@ -406,7 +444,7 @@ export default function DashboardPage() {
                 <span className="text-[11px] font-bold text-slate-400">Comparing:</span>
                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold text-[11px]">
                   <span className="w-2 h-2 rounded-full bg-[#2563EB]"></span>
-                  <span>Portfolio ({timeframeReturn.gainPct >= 0 ? "+" : ""}{timeframeReturn.gainPct.toFixed(1)}%)</span>
+                  <span>Portfolio P&L ({overallPnLPct >= 0 ? "+" : ""}{overallPnLPct.toFixed(1)}%)</span>
                 </div>
                 {normalizedBenchmarks.map((bm) => {
                   const latestVal = bm.data[bm.data.length - 1]?.value || 0;
@@ -416,7 +454,7 @@ export default function DashboardPage() {
                       <span>{bm.name} ({latestVal >= 0 ? "+" : ""}{latestVal.toFixed(1)}%)</span>
                       <button 
                         onClick={() => toggleBenchmark(bm.id)}
-                        className="hover:text-rose-600 ml-0.5 text-slate-400"
+                        className="hover:text-rose-600 ml-0.5 text-slate-400 cursor-pointer"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -426,35 +464,35 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Net Worth Headline & Timeframe Selector */}
+            {/* Net Worth / P&L Headline & Timeframe Selector */}
             <div className="pt-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-3">
               <div>
                 {chartMode === "performance" ? (
                   <div>
-                    <div className="text-3xl font-extrabold tracking-tight text-[#0F172A] tabular-nums">
-                      {timeframeReturn.gainPct >= 0 ? "+" : ""}{timeframeReturn.gainPct.toFixed(2)}%
+                    <div className={`text-3xl font-extrabold tracking-tight tabular-nums ${overallPnLPct >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                      {overallPnLPct >= 0 ? "+" : ""}{overallPnLPct.toFixed(2)}%
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
-                      <span className={timeframeReturn.gain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}>
-                        {formatMoney(timeframeReturn.gain, activeCurrency, 2, true)} in {timeRange}
+                      <span className={totalPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}>
+                        {formatMoney(totalPnLEUR, "EUR", 2, true)} Total Profit & Loss
                       </span>
                     </div>
                   </div>
                 ) : (
                   <div>
                     <div className="text-3xl font-extrabold tracking-tight">
-                      {renderFormattedAmount(summary?.total_net_worth || 0, activeCurrency)}
+                      {renderFormattedEUR(totalNetWorthEUR)}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
                       {timeframeReturn.gain >= 0 ? (
                         <span className="text-[#16A34A] flex items-center gap-0.5">
                           <ArrowUpRight className="w-3.5 h-3.5" />
-                          +{timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, activeCurrency, 2, true)})
+                          +{timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, "EUR", 2, true)})
                         </span>
                       ) : (
                         <span className="text-[#DC2626] flex items-center gap-0.5">
                           <ArrowDownRight className="w-3.5 h-3.5" />
-                          {timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, activeCurrency, 2, false)})
+                          {timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, "EUR", 2, false)})
                         </span>
                       )}
                     </div>
@@ -480,36 +518,37 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Net Worth Timeline Chart */}
+            {/* Net Worth / P&L Timeline Chart in EUR */}
             <div className="mt-4">
               <NetWorthChart 
                 data={filteredSnapshots} 
                 mode={chartMode}
-                currency={activeCurrency}
+                currency="EUR"
                 benchmarks={chartMode === "performance" ? normalizedBenchmarks : []}
               />
             </div>
 
-            <div className="pt-2 text-[10px] font-bold tracking-wider uppercase text-slate-300">
-              CHART BY <span className="text-slate-400">greenline</span>
+            <div className="pt-2 text-[10px] font-bold tracking-wider uppercase text-slate-300 flex items-center gap-1.5">
+              <span>CHART BY</span>
+              <span className="bg-[#99EF2E] text-[#0F172A] px-1.5 py-0.2 rounded-xs font-black lowercase text-[10px]">greenline</span>
             </div>
           </div>
 
-          {/* Card 2: Positions / Holdings Table */}
+          {/* Card 2: Holdings Table (Renamed from Positions) */}
           <div className="getquin-card p-5">
             {/* Header: Title, Timeframes, Add Transaction */}
             <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-4">
-                <h3 className="text-sm font-bold text-[#0F172A]">Positions</h3>
+                <h3 className="text-sm font-bold text-[#0F172A]">Holdings</h3>
                 
                 {/* Inline Timeframe Selector */}
                 <div className="hidden sm:flex items-center gap-1 text-xs font-semibold">
                   {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
                     <button
                       key={tf}
-                      onClick={() => setPositionsTimeRange(tf)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                        positionsTimeRange === tf
+                      onClick={() => setHoldingsTimeRange(tf)}
+                      className={`px-2 py-0.5 rounded text-[11px] font-bold cursor-pointer ${
+                        holdingsTimeRange === tf
                           ? "bg-slate-100 text-[#0F172A]"
                           : "text-slate-400 hover:text-slate-700"
                       }`}
@@ -522,14 +561,14 @@ export default function DashboardPage() {
 
               <button
                 onClick={() => setIsModalOpen(true)}
-                className="btn-pill-black text-[11px]"
+                className="btn-pill-black text-[11px] cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add transaction</span>
               </button>
             </div>
 
-            {/* Holdings Table */}
+            {/* Holdings Table in Native Currency */}
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -546,7 +585,7 @@ export default function DashboardPage() {
                     summary.top_holdings.map((h) => {
                       const initials = h.symbol.replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase();
                       const isPositive = h.unrealized_pnl >= 0;
-                      const curr = h.currency || activeCurrency;
+                      const curr = h.currency || "USD";
 
                       return (
                         <tr key={h.asset_id} className="hover:bg-slate-50/80 transition-colors group">
@@ -571,7 +610,7 @@ export default function DashboardPage() {
                             </div>
                           </td>
 
-                          {/* Buy in Column */}
+                          {/* Buy in Column (Native Currency) */}
                           <td className="py-3 px-3 text-right">
                             <div className="font-bold text-slate-800 text-xs">
                               {hideBalances ? "••••" : formatMoney(h.total_cost, curr)}
@@ -581,7 +620,7 @@ export default function DashboardPage() {
                             </div>
                           </td>
 
-                          {/* Position Column */}
+                          {/* Position Column (Native Currency) */}
                           <td className="py-3 px-3 text-right">
                             <div className="font-extrabold text-[#0F172A] text-xs">
                               {hideBalances ? "••••" : formatMoney(h.current_value, curr)}
@@ -591,7 +630,7 @@ export default function DashboardPage() {
                             </div>
                           </td>
 
-                          {/* P/L Column */}
+                          {/* P/L Column (Native Currency) */}
                           <td className="py-3 px-3 text-right">
                             <div className={`font-bold text-xs ${isPositive ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
                               {hideBalances ? "••••" : formatMoney(h.unrealized_pnl, curr, 2, true)}
@@ -614,7 +653,7 @@ export default function DashboardPage() {
                   ) : (
                     <tr>
                       <td colSpan={5} className="py-8 text-center text-slate-400 font-medium">
-                        No positions logged. Click "Add transaction" above.
+                        {loading ? "Loading holdings..." : "No holdings logged in this account."}
                       </td>
                     </tr>
                   )}
@@ -624,15 +663,15 @@ export default function DashboardPage() {
 
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
               <Link href="/holdings" className="font-bold text-slate-600 hover:text-[#0F172A] flex items-center gap-1">
-                View all positions in detail →
+                View all holdings in detail →
               </Link>
             </div>
           </div>
         </div>
 
-        {/* RIGHT COLUMN: Allocation Donut & Performance Breakdown (~32% width) */}
+        {/* RIGHT COLUMN: Allocation Donut (in EUR) & Performance Breakdown (in EUR) */}
         <div className="lg:col-span-4 space-y-5">
-          {/* Card 1: Allocation Widget (Clockwise Donut starting at 90°) */}
+          {/* Card 1: Allocation Widget (Clockwise Donut in EUR starting at 90°) */}
           <div className="getquin-card p-5">
             {/* Header: Title & Show More */}
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
@@ -651,7 +690,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 py-3 border-b border-[#F1F5F9] text-xs overflow-x-auto">
               <button
                 onClick={() => setAllocationTab("positions")}
-                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                className={`px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                   allocationTab === "positions"
                     ? "bg-[#0F172A] text-white"
                     : "text-slate-500 hover:text-slate-800"
@@ -661,7 +700,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => setAllocationTab("sectors")}
-                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                className={`px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                   allocationTab === "sectors"
                     ? "bg-[#0F172A] text-white"
                     : "text-slate-500 hover:text-slate-800"
@@ -671,7 +710,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => setAllocationTab("type")}
-                className={`px-2.5 py-1 rounded-md font-bold transition-colors ${
+                className={`px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                   allocationTab === "type"
                     ? "bg-[#0F172A] text-white"
                     : "text-slate-500 hover:text-slate-800"
@@ -681,18 +720,18 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* Donut Chart (Starts at top 90° and sweeps clockwise) */}
+            {/* Donut Chart (Starts at top 90°, clockwise, in EUR) */}
             <div className="pt-2">
               <AllocationChart
-                allocation={activeAllocationMap()}
+                allocation={activeAllocationMapEUR()}
                 centerLabel="Total Net Worth"
-                centerValue={hideBalances ? "••••••" : formatMoney(summary?.total_net_worth || 0, activeCurrency, 0)}
-                currency={activeCurrency}
+                centerValue={hideBalances ? "••••••" : formatMoney(totalNetWorthEUR, "EUR", 0)}
+                currency="EUR"
               />
             </div>
           </div>
 
-          {/* Card 2: Performance Breakdown Widget */}
+          {/* Card 2: Performance Breakdown Widget (in EUR) */}
           <div className="getquin-card p-5">
             {/* Header: Title & Show More */}
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
@@ -707,7 +746,7 @@ export default function DashboardPage() {
               </Link>
             </div>
 
-            {/* Performance Breakdown Content */}
+            {/* Performance Breakdown Content (in EUR) */}
             <div className="space-y-4 pt-3 text-xs">
               {/* Capital */}
               <div>
@@ -717,7 +756,7 @@ export default function DashboardPage() {
                     Invested capital <Info className="w-3 h-3 text-slate-400" />
                   </span>
                   <span className="font-bold text-[#0F172A] tabular-nums">
-                    {hideBalances ? "••••" : formatMoney(summary?.total_invested || 0, activeCurrency, 2)}
+                    {hideBalances ? "••••" : formatMoney(totalInvestedEUR, "EUR", 2)}
                   </span>
                 </div>
               </div>
@@ -731,11 +770,11 @@ export default function DashboardPage() {
                       Price gain <Info className="w-3 h-3 text-slate-400" />
                     </span>
                     <div className="flex items-center gap-2 tabular-nums">
-                      <span className={`font-bold ${summary && summary.total_unrealized_pnl >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                        {summary && summary.total_unrealized_pnl >= 0 ? "↗" : "↘"} {summary && summary.total_invested > 0 ? ((summary.total_unrealized_pnl / summary.total_invested) * 100).toFixed(2) : "0.00"}%
+                      <span className={`font-bold ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                        {totalUnrealizedEUR >= 0 ? "↗" : "↘"} {totalInvestedEUR > 0 ? ((totalUnrealizedEUR / totalInvestedEUR) * 100).toFixed(2) : "0.00"}%
                       </span>
                       <span className="font-bold text-slate-800">
-                        {hideBalances ? "••" : formatMoney(summary?.total_unrealized_pnl || 0, activeCurrency, 2, true)}
+                        {hideBalances ? "••" : formatMoney(totalUnrealizedEUR, "EUR", 2, true)}
                       </span>
                     </div>
                   </div>
@@ -745,11 +784,11 @@ export default function DashboardPage() {
                       Realized gain <Info className="w-3 h-3 text-slate-400" />
                     </span>
                     <div className="flex items-center gap-2 tabular-nums">
-                      <span className={`font-bold ${summary && summary.total_realized_pnl >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                        {summary && summary.total_realized_pnl >= 0 ? "↗" : "↘"} {summary && summary.total_invested > 0 ? ((summary.total_realized_pnl / summary.total_invested) * 100).toFixed(2) : "0.00"}%
+                      <span className={`font-bold ${totalRealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                        {totalRealizedEUR >= 0 ? "↗" : "↘"} {totalInvestedEUR > 0 ? ((totalRealizedEUR / totalInvestedEUR) * 100).toFixed(2) : "0.00"}%
                       </span>
                       <span className="font-bold text-slate-800">
-                        {hideBalances ? "••" : formatMoney(summary?.total_realized_pnl || 0, activeCurrency, 2, true)}
+                        {hideBalances ? "••" : formatMoney(totalRealizedEUR, "EUR", 2, true)}
                       </span>
                     </div>
                   </div>
@@ -760,8 +799,8 @@ export default function DashboardPage() {
               <div className="pt-3 border-t border-slate-100 space-y-2">
                 <div className="flex items-center justify-between py-1 font-bold text-slate-800">
                   <span>Total return</span>
-                  <span className={`font-extrabold tabular-nums ${totalPnL >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                    {totalPnL >= 0 ? "↗" : "↘"} {hideBalances ? "••••" : formatMoney(totalPnL, activeCurrency, 2, true)}
+                  <span className={`font-extrabold tabular-nums ${totalPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                    {totalPnLEUR >= 0 ? "↗" : "↘"} {hideBalances ? "••••" : formatMoney(totalPnLEUR, "EUR", 2, true)}
                   </span>
                 </div>
 
@@ -794,7 +833,7 @@ export default function DashboardPage() {
           <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md shadow-xl p-5 relative">
             <button
               onClick={() => setIsBenchmarkModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -852,7 +891,7 @@ export default function DashboardPage() {
                   }
                   setIsBenchmarkModalOpen(false);
                 }}
-                className="btn-pill-black text-xs w-full justify-center py-2"
+                className="btn-pill-black text-xs w-full justify-center py-2 cursor-pointer"
               >
                 Apply Comparison ({selectedBenchmarks.length} Selected)
               </button>
@@ -865,7 +904,7 @@ export default function DashboardPage() {
       <TransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSuccess={loadData}
+        onSuccess={() => loadAccountData(selectedAccount)}
       />
     </div>
   );

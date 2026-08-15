@@ -19,7 +19,7 @@ export interface BenchmarkSeries {
   id: string;
   name: string;
   color: string;
-  data: { date: string; value: number }[]; // value is already normalized %
+  data: { date: string; value: number }[]; // normalized %
 }
 
 interface SnapshotData {
@@ -38,13 +38,13 @@ interface NetWorthChartProps {
 export function NetWorthChart({ 
   data, 
   mode = "value", 
-  currency = "USD",
+  currency = "EUR",
   benchmarks = []
 }: NetWorthChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="h-60 flex items-center justify-center text-slate-400 font-medium text-xs">
-        No snapshot data available for the selected timeframe.
+        No timeline data available for this selection.
       </div>
     );
   }
@@ -64,9 +64,6 @@ export function NetWorthChart({
   const formatPercentTick = (val: number) => {
     return `${val >= 0 ? "+" : ""}${val.toFixed(1)}%`;
   };
-
-  // Performance calculation: normalize portfolio to 0.00% at start of timeframe
-  const baseNetWorth = data[0]?.net_worth || 1;
 
   // Build unified date points merging snapshot data and benchmarks
   const dateSet = new Set<string>();
@@ -98,13 +95,15 @@ export function NetWorthChart({
       lastInvested = snapshotMap[date].total_invested;
     }
 
-    const portfolioReturnPct = baseNetWorth > 0 ? ((lastNetWorth - baseNetWorth) / baseNetWorth) * 100 : 0;
+    // Profit & Loss %: (Net Worth - Invested) / Invested * 100
+    const pnl = lastNetWorth - lastInvested;
+    const pnlPct = lastInvested > 0 ? (pnl / lastInvested) * 100 : 0;
 
     const row: Record<string, any> = {
       date,
       netWorth: lastNetWorth,
       invested: lastInvested,
-      portfolioReturn: Number(portfolioReturnPct.toFixed(2)),
+      portfolioReturn: Number(pnlPct.toFixed(2)),
     };
 
     benchmarks.forEach((bm) => {
@@ -116,7 +115,7 @@ export function NetWorthChart({
     return row;
   });
 
-  // In Performance Mode
+  // In Performance Mode (P&L %)
   if (mode === "performance") {
     return (
       <div className="h-60 w-full">
@@ -155,7 +154,7 @@ export function NetWorthChart({
               formatter={(value: any, name: any) => {
                 const num = Number(value);
                 const prefix = num >= 0 ? "+" : "";
-                let label = "Portfolio Return";
+                let label = "Portfolio P&L %";
                 if (name !== "portfolioReturn") {
                   const foundBm = benchmarks.find((b) => b.id === name);
                   if (foundBm) label = foundBm.name;
@@ -164,11 +163,11 @@ export function NetWorthChart({
               }}
             />
             
-            {/* Primary Portfolio Return Line */}
+            {/* Primary Portfolio P&L % Line */}
             <Line
               type="monotone"
               dataKey="portfolioReturn"
-              name="Portfolio"
+              name="portfolioReturn"
               stroke="#2563EB"
               strokeWidth={2.5}
               dot={false}
@@ -193,7 +192,7 @@ export function NetWorthChart({
     );
   }
 
-  // In Value Mode (Area Chart)
+  // In Value Mode (Area Chart in EUR)
   return (
     <div className="h-60 w-full">
       <ResponsiveContainer width="100%" height="100%">

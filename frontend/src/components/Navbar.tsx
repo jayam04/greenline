@@ -44,8 +44,8 @@ export function Navbar() {
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-14 flex items-center justify-between gap-4">
         {/* Left: Brand Logo */}
         <div className="flex items-center gap-6">
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="font-extrabold text-xl tracking-tight text-[#0F172A] lowercase font-sans">
+          <Link href="/" className="flex items-center group">
+            <span className="font-black text-lg tracking-tight text-[#0F172A] lowercase font-sans bg-[#99EF2E] px-2 py-0.5 rounded-xs inline-block">
               greenline
             </span>
           </Link>

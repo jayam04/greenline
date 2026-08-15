@@ -1,7 +1,7 @@
 import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, asc
 from app.db.models import (
     NetworthSnapshot, NetworthByAssetClass, Lot, PriceHistory, 
     LotSale, Transaction, Asset, Account
@@ -193,3 +193,129 @@ async def recalculate_past_snapshots(
         curr_date += delta
 
     return count
+
+async def calculate_account_snapshots(
+    db: AsyncSession,
+    account_id: int,
+    start_date: Optional[datetime.date] = None,
+    end_date: Optional[datetime.date] = None
+) -> List[Dict]:
+    """
+    Computes daily timeline data points for a specific account.
+    """
+    if end_date is None:
+        end_date = datetime.date.today()
+
+    # Find earliest transaction date for this account
+    if start_date is None:
+        min_tx_stmt = select(func.min(Transaction.transaction_date)).where(Transaction.account_id == account_id)
+        min_tx_res = await db.execute(min_tx_stmt)
+        start_date = min_tx_res.scalar_one_or_none()
+        if start_date is None:
+            return []
+
+    # Fetch all lots for this account
+    lot_stmt = select(Lot).where(Lot.account_id == account_id)
+    lot_res = await db.execute(lot_stmt)
+    account_lots: List[Lot] = lot_res.scalars().all()
+    lot_ids = [l.lot_id for l in account_lots]
+
+    # Fetch all lot sales for this account's lots
+    sales_map: Dict[int, List[Tuple[datetime.date, float, float]]] = {}
+    if lot_ids:
+        sale_stmt = (
+            select(LotSale.lot_id, Transaction.transaction_date, LotSale.quantity_sold, LotSale.realized_pnl)
+            .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
+            .where(LotSale.lot_id.in_(lot_ids))
+        )
+        sale_res = await db.execute(sale_stmt)
+        for lid, sdate, qsold, rpnl in sale_res.all():
+            if lid not in sales_map:
+                sales_map[lid] = []
+            sales_map[lid].append((sdate, qsold, rpnl))
+
+    # Fetch all transactions for this account
+    tx_stmt = select(Transaction).where(Transaction.account_id == account_id).order_by(asc(Transaction.transaction_date))
+    tx_res = await db.execute(tx_stmt)
+    all_txs: List[Transaction] = tx_res.scalars().all()
+
+    # Fetch all price histories for assets in this account
+    asset_ids = list(set(l.asset_id for l in account_lots))
+    prices_map: Dict[int, List[Tuple[datetime.date, float]]] = {}
+    if asset_ids:
+        ph_stmt = select(PriceHistory.asset_id, PriceHistory.price_date, PriceHistory.close_price)\
+            .where(PriceHistory.asset_id.in_(asset_ids))\
+            .order_by(asc(PriceHistory.price_date))
+        ph_res = await db.execute(ph_stmt)
+        for aid, pdate, cprice in ph_res.all():
+            if aid not in prices_map:
+                prices_map[aid] = []
+            prices_map[aid].append((pdate, cprice))
+
+    # Iterate day by day from start_date to end_date
+    snapshots_list = []
+    curr_date = start_date
+    delta = datetime.timedelta(days=1)
+
+    while curr_date <= end_date:
+        # 1. Open lots as of curr_date
+        total_curr_val = 0.0
+        total_cost_basis = 0.0
+
+        for lot in account_lots:
+            if lot.buy_date <= curr_date:
+                # Sum sales of this lot on or before curr_date
+                sold_qty = sum(q for sdate, q, _ in sales_map.get(lot.lot_id, []) if sdate <= curr_date)
+                rem_qty = max(0.0, lot.quantity_original - sold_qty)
+                if rem_qty > 0.00000001:
+                    # Find latest price on or before curr_date
+                    p_list = [p for pdate, p in prices_map.get(lot.asset_id, []) if pdate <= curr_date]
+                    price = p_list[-1] if p_list else lot.cost_per_unit
+                    total_curr_val += rem_qty * price
+                    total_cost_basis += rem_qty * lot.cost_per_unit
+
+        # 2. Realized PnL as of curr_date
+        total_rpnl = sum(
+            sum(rpnl for sdate, _, rpnl in sales_list if sdate <= curr_date)
+            for sales_list in sales_map.values()
+        )
+
+        # 3. Cash balance and total invested as of curr_date
+        cash_balance = 0.0
+        total_invested = 0.0
+
+        for tx in all_txs:
+            if tx.transaction_date <= curr_date:
+                ttype = tx.transaction_type.lower()
+                if ttype == "deposit":
+                    cash_balance += tx.total_amount
+                    total_invested += tx.total_amount
+                elif ttype == "withdrawal":
+                    cash_balance -= tx.total_amount
+                    total_invested -= tx.total_amount
+                elif ttype == "buy":
+                    cash_balance -= (tx.total_amount + tx.fees + tx.taxes)
+                elif ttype == "sell":
+                    cash_balance += (tx.total_amount - tx.fees - tx.taxes)
+                elif ttype == "dividend":
+                    cash_balance += tx.total_amount
+
+        net_worth = total_curr_val + max(0.0, cash_balance)
+        total_unrealized = total_curr_val - total_cost_basis
+
+        snapshots_list.append({
+            "snapshot_id": 0,
+            "snapshot_date": curr_date,
+            "total_invested": total_invested if total_invested > 0 else total_cost_basis,
+            "total_current_value": total_curr_val,
+            "cash_balance": cash_balance,
+            "total_realized_pnl": total_rpnl,
+            "total_unrealized_pnl": total_unrealized,
+            "net_worth": net_worth,
+            "asset_class_breakdowns": []
+        })
+
+        curr_date += delta
+
+    return snapshots_list
+

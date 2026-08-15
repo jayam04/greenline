@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from app.db.database import get_db
 from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User
 from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse
@@ -73,14 +73,17 @@ async def get_portfolio_summary(
         unrealized = curr_val - cost_sum
         unrealized_pct = (unrealized / cost_sum * 100.0) if cost_sum > 0 else 0.0
         
-        # Realized PnL for this asset
-        rpnl_stmt = select(LotSale.realized_pnl)\
+        # Realized PnL & Cost Basis for this asset
+        rpnl_stmt = select(LotSale.realized_pnl, LotSale.cost_basis)\
             .join(Lot, LotSale.lot_id == Lot.lot_id)\
             .where(Lot.asset_id == aid)
         if account_id:
             rpnl_stmt = rpnl_stmt.where(Lot.account_id == account_id)
         rpnl_res = await db.execute(rpnl_stmt)
-        realized_pnl_for_asset = sum(rpnl_res.scalars().all())
+        rpnl_rows = rpnl_res.all()
+        realized_pnl_for_asset = sum(r[0] for r in rpnl_rows)
+        cost_basis_sold_for_asset = sum(r[1] for r in rpnl_rows)
+        realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0) if cost_basis_sold_for_asset > 0 else 0.0
         
         # XIRR for asset
         xirr_val = await calculate_xirr_for_scope(
@@ -133,6 +136,7 @@ async def get_portfolio_summary(
             unrealized_pnl=unrealized,
             unrealized_pnl_pct=unrealized_pct,
             realized_pnl=realized_pnl_for_asset,
+            realized_pnl_pct=realized_pnl_pct_for_asset,
             xirr=xirr_val,
             open_lots=lot_objs
         ))
@@ -147,14 +151,84 @@ async def get_portfolio_summary(
         else:
             sector_allocation["Other"] = sector_allocation.get("Other", 0.0) + curr_val
 
-    # 3. Fetch Realized PnL total
+    # 3. Fetch Closed Positions (Assets with LotSale records but 0 open quantity)
+    closed_lot_stmt = (
+        select(
+            Lot.asset_id,
+            func.sum(LotSale.realized_pnl),
+            func.sum(LotSale.cost_basis),
+            func.sum(LotSale.quantity_sold)
+        )
+        .join(LotSale, Lot.lot_id == LotSale.lot_id)
+    )
+    if account_id:
+        closed_lot_stmt = closed_lot_stmt.where(Lot.account_id == account_id)
+    closed_lot_stmt = closed_lot_stmt.group_by(Lot.asset_id)
+    closed_lot_res = await db.execute(closed_lot_stmt)
+
+    open_asset_ids_set = set(asset_ids)
+    closed_holdings_list: List[HoldingSummary] = []
+
+    for c_aid, c_rpnl, c_cost_basis, c_qty_sold in closed_lot_res.all():
+        if c_aid in open_asset_ids_set:
+            continue
+
+        c_asset_res = await db.execute(select(Asset).where(Asset.asset_id == c_aid))
+        c_asset = c_asset_res.scalar_one_or_none()
+        if not c_asset:
+            continue
+
+        c_rpnl = c_rpnl or 0.0
+        c_cost_basis = c_cost_basis or 0.0
+        c_qty_sold = c_qty_sold or 0.0
+        c_rpnl_pct = (c_rpnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
+
+        c_xirr = await calculate_xirr_for_scope(
+            db=db,
+            scope_type="asset",
+            scope_id=c_aid,
+            current_valuation=0.0
+        )
+
+        c_acc_stmt = select(Account.currency).join(Lot, Account.account_id == Lot.account_id).where(Lot.asset_id == c_aid)
+        if account_id:
+            c_acc_stmt = c_acc_stmt.where(Account.account_id == account_id)
+        c_acc_res = await db.execute(c_acc_stmt)
+        c_curr = c_acc_res.scalar_one_or_none() or c_asset.currency or "USD"
+
+        # Pre-fetch latest price
+        c_ph_stmt = select(PriceHistory.close_price).where(PriceHistory.asset_id == c_aid).order_by(desc(PriceHistory.price_date)).limit(1)
+        c_ph_res = await db.execute(c_ph_stmt)
+        c_latest_price = c_ph_res.scalar_one_or_none() or 0.0
+
+        closed_holdings_list.append(HoldingSummary(
+            asset_id=c_asset.asset_id,
+            symbol=c_asset.symbol,
+            name=c_asset.name,
+            asset_type=c_asset.asset_type,
+            sector=c_asset.sector,
+            currency=c_curr,
+            quantity_held=0.0,
+            avg_cost_price=c_cost_basis / c_qty_sold if c_qty_sold > 0 else 0.0,
+            total_cost=c_cost_basis,
+            latest_price=c_latest_price,
+            current_value=0.0,
+            unrealized_pnl=0.0,
+            unrealized_pnl_pct=0.0,
+            realized_pnl=c_rpnl,
+            realized_pnl_pct=c_rpnl_pct,
+            xirr=c_xirr,
+            open_lots=[]
+        ))
+
+    # 4. Fetch Realized PnL total
     tot_rpnl_stmt = select(LotSale.realized_pnl)
     if account_id:
         tot_rpnl_stmt = tot_rpnl_stmt.join(Lot, LotSale.lot_id == Lot.lot_id).where(Lot.account_id == account_id)
     tot_rpnl_res = await db.execute(tot_rpnl_stmt)
     total_realized_pnl = sum(tot_rpnl_res.scalars().all())
     
-    # 4. Fetch Cash Balance from transactions
+    # 5. Fetch Cash Balance from transactions
     tx_stmt = select(Transaction)
     if account_id:
         tx_stmt = tx_stmt.where(Transaction.account_id == account_id)
@@ -169,7 +243,7 @@ async def get_portfolio_summary(
         elif ttype in ["withdrawal", "buy", "fee"]:
             cash_balance -= (tx.total_amount + tx.fees + tx.taxes)
             
-    total_net_worth = total_current_value + cash_balance
+    total_net_worth = total_current_value + max(0.0, cash_balance)
     total_unrealized_pnl = total_current_value - total_invested
     
     # Portfolio-wide XIRR
@@ -185,6 +259,7 @@ async def get_portfolio_summary(
 
     # Sort top holdings by current value
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)
+    closed_holdings_list.sort(key=lambda h: abs(h.realized_pnl), reverse=True)
     
     return PortfolioSummaryResponse(
         total_net_worth=total_net_worth,
@@ -198,7 +273,8 @@ async def get_portfolio_summary(
         portfolio_xirr=portfolio_xirr,
         asset_allocation=asset_allocation,
         sector_allocation=sector_allocation,
-        top_holdings=holdings_list
+        top_holdings=holdings_list,
+        closed_holdings=closed_holdings_list
     )
 
 @router.get("/holdings", response_model=List[HoldingSummary])
@@ -209,6 +285,15 @@ async def get_holdings(
 ):
     summary = await get_portfolio_summary(account_id=account_id, db=db, current_user=current_user)
     return summary.top_holdings
+
+@router.get("/closed-holdings", response_model=List[HoldingSummary])
+async def get_closed_holdings(
+    account_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    summary = await get_portfolio_summary(account_id=account_id, db=db, current_user=current_user)
+    return summary.closed_holdings
 
 @router.get("/realized-pnl", response_model=List[LotSaleResponse])
 async def get_realized_pnl(

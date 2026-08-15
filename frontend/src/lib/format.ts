@@ -80,6 +80,27 @@ export function formatMoney(
 }
 
 /**
+ * Formats a monetary number WITHOUT any + or - signs:
+ * e.g., $150.00, €150.00, ₹5,635.80
+ */
+export function formatCleanMoney(
+  val: number | null | undefined,
+  currency: string = "USD",
+  decimals: number = 2
+): string {
+  if (val === null || val === undefined || isNaN(val)) {
+    const sym = getCurrencySymbol(currency);
+    return `${sym}0.00`;
+  }
+
+  const num = Number(val);
+  const sym = getCurrencySymbol(currency);
+  const absNum = Math.abs(num);
+  const formattedNum = formatNum(absNum, decimals);
+  return `${sym}${formattedNum}`;
+}
+
+/**
  * FX Exchange rates to EUR (Base: EUR = 1.0)
  */
 export const FX_RATES_TO_EUR: Record<string, number> = {

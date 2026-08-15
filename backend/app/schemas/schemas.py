@@ -171,6 +171,7 @@ class HoldingSummary(BaseModel):
     unrealized_pnl: float
     unrealized_pnl_pct: float
     realized_pnl: float = 0.0
+    realized_pnl_pct: float = 0.0
     xirr: Optional[float] = None
     open_lots: List[LotResponse] = []
 
@@ -187,6 +188,7 @@ class PortfolioSummaryResponse(BaseModel):
     asset_allocation: dict
     sector_allocation: dict = {}
     top_holdings: List[HoldingSummary]
+    closed_holdings: List[HoldingSummary] = []
 
 # Snapshot Schemas
 class AssetClassBreakdown(BaseModel):

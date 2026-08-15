@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatQty, formatNum, formatMoney, convertCurrencyToEUR } from "@/lib/format";
+import { formatQty, formatNum, formatCleanMoney, convertCurrencyToEUR } from "@/lib/format";
 import { 
   ChevronDown, ChevronRight, Layers, ArrowUpRight, ArrowDownRight, 
-  Plus, ArrowUpDown, ArrowUp, ArrowDown, Info, ShieldCheck, DollarSign
+  Plus, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2
 } from "lucide-react";
 import { TransactionModal } from "@/components/TransactionModal";
 
@@ -33,6 +33,7 @@ interface Holding {
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   realized_pnl: number;
+  realized_pnl_pct: number;
   xirr: number | null;
   open_lots: Lot[];
 }
@@ -47,12 +48,15 @@ interface PortfolioSummary {
   total_fees?: number;
   total_taxes?: number;
   portfolio_xirr: number | null;
+  top_holdings: Holding[];
+  closed_holdings?: Holding[];
 }
 
 type SortField = "current_value" | "unrealized_pnl" | "realized_pnl" | "xirr" | "symbol" | "total_cost" | "avg_cost_price" | "latest_price" | "quantity_held";
 
 export default function HoldingsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [closedHoldings, setClosedHoldings] = useState<Holding[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
@@ -69,12 +73,10 @@ export default function HoldingsPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [holdingsData, sumData] = await Promise.all([
-        apiFetch<Holding[]>("/portfolio/holdings"),
-        apiFetch<PortfolioSummary>("/portfolio/summary"),
-      ]);
-      setHoldings(holdingsData || []);
+      const sumData = await apiFetch<PortfolioSummary>("/portfolio/summary");
       setSummary(sumData);
+      setHoldings(sumData?.top_holdings || []);
+      setClosedHoldings(sumData?.closed_holdings || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -181,7 +183,7 @@ export default function HoldingsPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsModalOpen(true)}
-            className="btn-pill-black text-xs"
+            className="btn-pill-black text-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add transaction</span>
@@ -189,7 +191,7 @@ export default function HoldingsPage() {
         </div>
       </div>
 
-      {/* 6 Summary KPI Cards (Converted to EUR) */}
+      {/* 6 Summary KPI Cards (Converted to EUR, No + / - Signs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
         {/* Card 1: Total Positions Value */}
         <div className="getquin-card p-3.5">
@@ -200,7 +202,7 @@ export default function HoldingsPage() {
             </span>
           </div>
           <div className="text-xl font-extrabold text-[#0F172A] tabular-nums mt-1 truncate">
-            {formatMoney(totalValueEUR, "EUR")}
+            {formatCleanMoney(totalValueEUR, "EUR")}
           </div>
         </div>
 
@@ -213,7 +215,7 @@ export default function HoldingsPage() {
             </span>
           </div>
           <div className="text-xl font-extrabold text-slate-800 tabular-nums mt-1 truncate">
-            {formatMoney(totalCostEUR, "EUR")}
+            {formatCleanMoney(totalCostEUR, "EUR")}
           </div>
         </div>
 
@@ -225,9 +227,9 @@ export default function HoldingsPage() {
               EUR
             </span>
           </div>
-          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-0.5 truncate ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalUnrealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatMoney(totalUnrealizedEUR, "EUR", 2, true)}</span>
+            <span className="truncate">{formatCleanMoney(totalUnrealizedEUR, "EUR")}</span>
           </div>
         </div>
 
@@ -239,9 +241,9 @@ export default function HoldingsPage() {
               EUR
             </span>
           </div>
-          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-0.5 truncate ${totalRealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalRealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalRealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatMoney(totalRealizedEUR, "EUR", 2, true)}</span>
+            <span className="truncate">{formatCleanMoney(totalRealizedEUR, "EUR")}</span>
           </div>
         </div>
 
@@ -254,7 +256,7 @@ export default function HoldingsPage() {
             </span>
           </div>
           <div className="text-xl font-extrabold text-slate-700 tabular-nums mt-1 truncate">
-            {formatMoney(totalFeesAndTaxesEUR, "EUR")}
+            {formatCleanMoney(totalFeesAndTaxesEUR, "EUR")}
           </div>
         </div>
 
@@ -266,15 +268,20 @@ export default function HoldingsPage() {
               EUR
             </span>
           </div>
-          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-0.5 truncate ${totalNetPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalNetPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalNetPnLEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatMoney(totalNetPnLEUR, "EUR", 2, true)}</span>
+            <span className="truncate">{formatCleanMoney(totalNetPnLEUR, "EUR")}</span>
           </div>
         </div>
       </div>
 
-      {/* Holdings Table Card */}
+      {/* Active Holdings Table Card */}
       <div className="getquin-card p-5">
+        <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#F1F5F9]">
+          <h3 className="text-sm font-bold text-[#0F172A]">Active Holdings</h3>
+          <span className="text-[10px] font-bold text-slate-400">{sortedHoldings.length} Positions</span>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -390,9 +397,9 @@ export default function HoldingsPage() {
                   const initials = h.symbol.replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase();
                   const isPositiveUnrealized = h.unrealized_pnl >= 0;
                   const isPositiveRealized = h.realized_pnl >= 0;
+                  const hasRealized = Math.abs(h.realized_pnl) > 0.0001;
                   const hasXirr = h.xirr !== null && h.xirr !== undefined;
-                  const isPositiveXirr = hasXirr && h.xirr! > 0;
-                  const isNegativeXirr = hasXirr && h.xirr! < 0;
+                  const isPositiveXirr = hasXirr && h.xirr! >= 0;
 
                   return (
                     <React.Fragment key={h.asset_id}>
@@ -424,32 +431,50 @@ export default function HoldingsPage() {
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right font-bold">{formatQty(h.quantity_held)}</td>
-                        <td className="py-3 px-3 text-right">{formatMoney(h.avg_cost_price, h.currency)}</td>
-                        <td className="py-3 px-3 text-right font-semibold text-slate-700">{formatMoney(h.total_cost, h.currency)}</td>
-                        <td className="py-3 px-3 text-right">{formatMoney(h.latest_price, h.currency)}</td>
-                        <td className="py-3 px-3 text-right font-extrabold text-[#0F172A]">{formatMoney(h.current_value, h.currency)}</td>
-                        <td className={`py-3 px-3 text-right font-bold ${isPositiveUnrealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                          {formatMoney(h.unrealized_pnl, h.currency, 2, true)} ({formatNum(h.unrealized_pnl_pct, 1)}%)
-                        </td>
-                        <td className={`py-3 px-3 text-right font-bold ${isPositiveRealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                          {formatMoney(h.realized_pnl, h.currency, 2, true)}
+                        <td className="py-3 px-3 text-right">{formatCleanMoney(h.avg_cost_price, h.currency)}</td>
+                        <td className="py-3 px-3 text-right font-semibold text-slate-700">{formatCleanMoney(h.total_cost, h.currency)}</td>
+                        <td className="py-3 px-3 text-right">{formatCleanMoney(h.latest_price, h.currency)}</td>
+                        <td className="py-3 px-3 text-right font-extrabold text-[#0F172A]">{formatCleanMoney(h.current_value, h.currency)}</td>
+
+                        {/* 2-Line Unrealized P&L: Line 1 Amount, Line 2 % with Arrow */}
+                        <td className="py-3 px-3 text-right">
+                          <div className={`font-bold text-xs ${isPositiveUnrealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                            {formatCleanMoney(h.unrealized_pnl, h.currency)}
+                          </div>
+                          <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveUnrealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                            {isPositiveUnrealized ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                            <span>{formatNum(Math.abs(h.unrealized_pnl_pct), 2)}%</span>
+                          </div>
                         </td>
 
-                        {/* XIRR Column with Red for Negative and Green for Positive */}
+                        {/* 2-Line Realized P&L: Line 1 Amount, Line 2 % with Arrow */}
+                        <td className="py-3 px-3 text-right">
+                          <div className={`font-bold text-xs ${isPositiveRealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                            {formatCleanMoney(h.realized_pnl, h.currency)}
+                          </div>
+                          {hasRealized ? (
+                            <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveRealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                              {isPositiveRealized ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                              <span>{formatNum(Math.abs(h.realized_pnl_pct || 0), 2)}%</span>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] font-medium text-slate-400 mt-0.5">-</div>
+                          )}
+                        </td>
+
+                        {/* XIRR Column with Sign-free Arrow */}
                         <td className="py-3 px-3 text-right">
                           {hasXirr ? (
                             isPositiveXirr ? (
                               <span className="font-extrabold text-[#16A34A] flex items-center justify-end gap-0.5">
                                 <ArrowUpRight className="w-3 h-3" />
-                                +{(h.xirr! * 100).toFixed(1)}%
-                              </span>
-                            ) : isNegativeXirr ? (
-                              <span className="font-extrabold text-[#DC2626] flex items-center justify-end gap-0.5">
-                                <ArrowDownRight className="w-3 h-3" />
-                                -{Math.abs(h.xirr! * 100).toFixed(1)}%
+                                {(Math.abs(h.xirr!) * 100).toFixed(1)}%
                               </span>
                             ) : (
-                              <span className="font-bold text-slate-700">0.0%</span>
+                              <span className="font-extrabold text-[#DC2626] flex items-center justify-end gap-0.5">
+                                <ArrowDownRight className="w-3 h-3" />
+                                {(Math.abs(h.xirr!) * 100).toFixed(1)}%
+                              </span>
                             )
                           ) : (
                             <span className="text-slate-400 font-medium">-</span>
@@ -483,7 +508,7 @@ export default function HoldingsPage() {
                                         <td className="py-1.5 px-2 text-slate-600">{lot.buy_date}</td>
                                         <td className="py-1.5 px-2 text-right">{formatQty(lot.quantity_original)}</td>
                                         <td className="py-1.5 px-2 text-right font-bold text-[#16A34A]">{formatQty(lot.quantity_remaining)}</td>
-                                        <td className="py-1.5 px-2 text-right font-bold">{formatMoney(lot.cost_per_unit, h.currency)}</td>
+                                        <td className="py-1.5 px-2 text-right font-bold">{formatCleanMoney(lot.cost_per_unit, h.currency)}</td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -509,6 +534,101 @@ export default function HoldingsPage() {
           </table>
         </div>
       </div>
+
+      {/* Dedicated Closed Positions Table (Conditional: Only visible if closed positions exist) */}
+      {closedHoldings.length > 0 && (
+        <div className="getquin-card p-5">
+          <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#F1F5F9]">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-slate-500" />
+              <h3 className="text-sm font-bold text-[#0F172A]">Closed Positions</h3>
+            </div>
+            <span className="text-[10px] font-extrabold uppercase bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+              {closedHoldings.length} Sold Out
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-[11px] font-bold text-slate-400 border-b border-slate-100">
+                  <th className="py-2.5 px-3">Asset</th>
+                  <th className="py-2.5 px-3">Type</th>
+                  <th className="py-2.5 px-3 text-right">Cost Basis</th>
+                  <th className="py-2.5 px-3 text-right">Last Price</th>
+                  <th className="py-2.5 px-3 text-right">Realized P&L</th>
+                  <th className="py-2.5 px-3 text-right">XIRR</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 tabular-nums">
+                {closedHoldings.map((c) => {
+                  const initials = c.symbol.replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase();
+                  const isPositiveRealized = c.realized_pnl >= 0;
+                  const hasXirr = c.xirr !== null && c.xirr !== undefined;
+                  const isPositiveXirr = hasXirr && c.xirr! >= 0;
+
+                  return (
+                    <tr key={c.asset_id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 font-bold text-[10px] flex items-center justify-center border border-slate-200 shrink-0">
+                            {initials}
+                          </div>
+                          <div>
+                            <div className="font-bold text-[#0F172A] text-xs">{c.name || c.symbol}</div>
+                            <div className="text-[11px] font-semibold text-slate-400">{c.symbol}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-slate-100 text-slate-600 rounded-md">
+                          {c.asset_type}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-semibold text-slate-700">
+                        {formatCleanMoney(c.total_cost, c.currency)}
+                      </td>
+                      <td className="py-3 px-3 text-right text-slate-500">
+                        {formatCleanMoney(c.latest_price, c.currency)}
+                      </td>
+
+                      {/* 2-Line Realized P&L */}
+                      <td className="py-3 px-3 text-right">
+                        <div className={`font-bold text-xs ${isPositiveRealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                          {formatCleanMoney(c.realized_pnl, c.currency)}
+                        </div>
+                        <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveRealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                          {isPositiveRealized ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          <span>{formatNum(Math.abs(c.realized_pnl_pct || 0), 2)}%</span>
+                        </div>
+                      </td>
+
+                      {/* XIRR Column */}
+                      <td className="py-3 px-3 text-right">
+                        {hasXirr ? (
+                          isPositiveXirr ? (
+                            <span className="font-extrabold text-[#16A34A] flex items-center justify-end gap-0.5">
+                              <ArrowUpRight className="w-3 h-3" />
+                              {(Math.abs(c.xirr!) * 100).toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="font-extrabold text-[#DC2626] flex items-center justify-end gap-0.5">
+                              <ArrowDownRight className="w-3 h-3" />
+                              {(Math.abs(c.xirr!) * 100).toFixed(1)}%
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-slate-400 font-medium">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <TransactionModal
         isOpen={isModalOpen}

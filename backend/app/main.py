@@ -35,6 +35,12 @@ async def lifespan(app: FastAPI):
     # Startup actions: create DB tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Ensure industry column exists if table was created previously
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE assets ADD COLUMN industry VARCHAR"))
+        except Exception:
+            pass
         
     # Seed default user if none exists
     async with AsyncSessionLocal() as session:

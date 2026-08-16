@@ -1,0 +1,111 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { removeAuthToken } from "@/lib/api";
+import { 
+  Search, TrendingUp, LayoutDashboard, Briefcase, Receipt, 
+  DollarSign, Building2, BarChart2, LogOut, Bell, Star, User, ChevronDown
+} from "lucide-react";
+
+export function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  if (pathname === "/login") return null;
+
+  const navItems = [
+    { name: "Net worth", href: "/", icon: TrendingUp },
+    { name: "Holdings", href: "/holdings", icon: Briefcase },
+    { name: "Transactions", href: "/transactions", icon: Receipt },
+    { name: "Realized P&L", href: "/realized", icon: DollarSign },
+    { name: "Accounts & Master", href: "/accounts", icon: Building2 },
+    { name: "Analytics", href: "/analytics", icon: BarChart2 },
+  ];
+
+  const handleLogout = () => {
+    removeAuthToken();
+    router.push("/login");
+  };
+
+  const getBreadcrumb = () => {
+    if (pathname === "/") return "Net worth > Investments";
+    if (pathname === "/holdings") return "Investments > Positions & Holdings";
+    if (pathname === "/transactions") return "Investments > Transaction Ledger";
+    if (pathname === "/realized") return "Investments > Realized Gains & Tax Lots";
+    if (pathname === "/accounts") return "Settings > Accounts & Securities Master";
+    if (pathname === "/analytics") return "Analytics > Portfolio Performance";
+    return "Net worth > Overview";
+  };
+
+  return (
+    <header className="sticky top-0 z-50 bg-[#FFFFFF] border-b border-[#E5E7EB]">
+      {/* Primary Top Bar */}
+      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-14 flex items-center justify-between gap-4">
+        {/* Left: Brand Logo */}
+        <div className="flex items-center gap-6">
+          <Link href="/" className="flex items-center group">
+            <span className="font-black text-lg tracking-tight text-[#0F172A] lowercase font-sans bg-[#99EF2E] px-2 py-0.5 rounded-xs inline-block">
+              greenline
+            </span>
+          </Link>
+        </div>
+
+        {/* Center: Search Bar */}
+        <div className="flex-1 max-w-md hidden sm:block">
+          <div className="relative flex items-center w-full">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search for stocks, etfs or accounts..."
+              className="w-full bg-[#F3F4F6] hover:bg-[#EAEBED] focus:bg-white text-xs font-semibold text-slate-800 placeholder-slate-400 pl-9 pr-4 py-2 rounded-lg border border-transparent focus:border-slate-300 focus:outline-none transition-all"
+            />
+          </div>
+        </div>
+
+        {/* Right: Nav Tabs & Profile */}
+        <div className="flex items-center gap-1 sm:gap-2">
+          <nav className="hidden lg:flex items-center gap-1 mr-2">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                    isActive
+                      ? "text-[#0F172A] bg-slate-100 font-extrabold"
+                      : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <button
+            onClick={handleLogout}
+            className="p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+            title="Logout"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+
+          <div className="w-7 h-7 bg-slate-200 text-slate-700 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300">
+            <User className="w-4 h-4" />
+          </div>
+        </div>
+      </div>
+
+      {/* Sub-header Breadcrumb Bar */}
+      <div className="bg-[#F8F9FA] border-t border-[#E5E7EB]/80 px-4 lg:px-6 py-1.5 text-[11px] font-semibold text-slate-500 max-w-[1600px] mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <span>{getBreadcrumb()}</span>
+        </div>
+      </div>
+    </header>
+  );
+}

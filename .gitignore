@@ -1,0 +1,67 @@
+# Database & SQLite files
+/data/*.db
+/data/*.sqlite
+/data/*.sqlite3
+/data/backups/
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment Variables & Secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# Frontend (Node.js & Next.js)
+/frontend/node_modules/
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+/frontend/.turbo/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+.next/
+
+# Backend (Python & FastAPI)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/app/__pycache__/
+backend/tests/__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.venv/
+venv/
+ENV/
+env/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# IDEs & System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

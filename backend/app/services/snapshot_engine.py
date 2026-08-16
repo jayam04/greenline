@@ -1,4 +1,5 @@
 import datetime
+import math
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc, asc
@@ -54,7 +55,7 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
         )
         p_res = await db.execute(p_stmt)
         price = p_res.scalar_one_or_none()
-        if price is None:
+        if price is None or (isinstance(price, float) and (math.isnan(price) or math.isinf(price) or price <= 0)):
             # Fallback to lot cost_per_unit if no market price found on/before snapshot_date
             lot_cost = next((item["cost_per_unit"] for item in open_lots_as_of_date if item["asset_id"] == aid), 0.0)
             price = lot_cost
@@ -268,9 +269,10 @@ async def calculate_account_snapshots(
                 sold_qty = sum(q for sdate, q, _ in sales_map.get(lot.lot_id, []) if sdate <= curr_date)
                 rem_qty = max(0.0, lot.quantity_original - sold_qty)
                 if rem_qty > 0.00000001:
-                    # Find latest price on or before curr_date
-                    p_list = [p for pdate, p in prices_map.get(lot.asset_id, []) if pdate <= curr_date]
+                    p_list = [p for pdate, p in prices_map.get(lot.asset_id, []) if pdate <= curr_date and p is not None and not math.isnan(p) and p > 0]
                     price = p_list[-1] if p_list else lot.cost_per_unit
+                    if price is None or (isinstance(price, float) and (math.isnan(price) or math.isinf(price) or price <= 0)):
+                        price = lot.cost_per_unit
                     total_curr_val += rem_qty * price
                     total_cost_basis += rem_qty * lot.cost_per_unit
 

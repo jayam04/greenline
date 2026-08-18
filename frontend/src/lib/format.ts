@@ -79,6 +79,8 @@ export function formatMoney(
   }
 }
 
+export const formatCurrency = formatMoney;
+
 /**
  * Formats a monetary number WITHOUT any + or - signs:
  * e.g., $150.00, €150.00, ₹5,635.80

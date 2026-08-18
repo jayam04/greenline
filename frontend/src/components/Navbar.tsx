@@ -5,7 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { removeAuthToken } from "@/lib/api";
 import { 
   Search, TrendingUp, LayoutDashboard, Briefcase, Receipt, 
-  DollarSign, Building2, BarChart2, LogOut, Bell, Star, User, ChevronDown
+  DollarSign, Building2, BarChart2, LogOut, Bell, Star, User, ChevronDown,
+  ArrowLeftRight, FolderTree
 } from "lucide-react";
 
 export function Navbar() {
@@ -18,6 +19,8 @@ export function Navbar() {
     { name: "Net worth", href: "/", icon: TrendingUp },
     { name: "Holdings", href: "/holdings", icon: Briefcase },
     { name: "Transactions", href: "/transactions", icon: Receipt },
+    { name: "Income & Spends", href: "/cashflow", icon: ArrowLeftRight },
+    { name: "Categories", href: "/categories", icon: FolderTree },
     { name: "Realized P&L", href: "/realized", icon: DollarSign },
     { name: "Accounts & Master", href: "/accounts", icon: Building2 },
     { name: "Analytics", href: "/analytics", icon: BarChart2 },
@@ -32,6 +35,8 @@ export function Navbar() {
     if (pathname === "/") return "Net worth > Investments";
     if (pathname === "/holdings") return "Investments > Positions & Holdings";
     if (pathname === "/transactions") return "Investments > Transaction Ledger";
+    if (pathname === "/cashflow") return "Cashflow > Income, Spends & Sankey Flow";
+    if (pathname === "/categories") return "Cashflow > Category Hierarchy & Labels";
     if (pathname === "/realized") return "Investments > Realized Gains & Tax Lots";
     if (pathname === "/accounts") return "Settings > Accounts & Securities Master";
     if (pathname === "/analytics") return "Analytics > Portfolio Performance";

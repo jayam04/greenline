@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict
 
 # Auth Schemas
@@ -219,3 +219,129 @@ class BenchmarkDataPoint(BaseModel):
 class BenchmarkResponse(BaseModel):
     benchmark_name: str
     data: List[BenchmarkDataPoint]
+
+# Category Schemas
+class CategoryBase(BaseModel):
+    name: str
+    parent_id: Optional[int] = None
+    category_type: str = "EXPENSE" # INCOME, EXPENSE, INVESTMENT, TRANSFER
+    default_label: Optional[str] = None # ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
+    category_type: Optional[str] = None
+    default_label: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+class CategoryResponse(CategoryBase):
+    category_id: int
+    created_at: datetime.datetime
+    effective_label: Optional[str] = None
+    full_path: Optional[str] = None
+    level: int = 1
+    model_config = ConfigDict(from_attributes=True)
+
+class CategoryTreeResponse(CategoryResponse):
+    subcategories: List['CategoryTreeResponse'] = []
+
+# Cashflow Payment Schemas
+class CashflowPaymentCreate(BaseModel):
+    account_id: int
+    amount: float
+
+class CashflowPaymentResponse(BaseModel):
+    payment_id: int
+    cashflow_id: int
+    account_id: int
+    account_name: Optional[str] = None
+    amount: float
+    model_config = ConfigDict(from_attributes=True)
+
+# Cashflow Item Schemas
+class CashflowItemCreate(BaseModel):
+    category_id: int
+    amount: float
+    label: Optional[str] = None # ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT
+    description: Optional[str] = None
+
+class CashflowItemResponse(BaseModel):
+    item_id: int
+    cashflow_id: int
+    category_id: int
+    category_name: Optional[str] = None
+    category_type: Optional[str] = None
+    amount: float
+    label: Optional[str] = None
+    effective_label: Optional[str] = None
+    description: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+# Cashflow Transaction Schemas
+class CashflowTransactionCreate(BaseModel):
+    transaction_date: datetime.date
+    title: str
+    total_amount: float
+    currency: str = "EUR"
+    notes: Optional[str] = None
+    payments: List[CashflowPaymentCreate]
+    items: List[CashflowItemCreate]
+
+class CashflowTransactionUpdate(BaseModel):
+    transaction_date: Optional[datetime.date] = None
+    title: Optional[str] = None
+    total_amount: Optional[float] = None
+    currency: Optional[str] = None
+    notes: Optional[str] = None
+    payments: Optional[List[CashflowPaymentCreate]] = None
+    items: Optional[List[CashflowItemCreate]] = None
+
+class CashflowTransactionResponse(BaseModel):
+    cashflow_id: int
+    transaction_date: datetime.date
+    title: str
+    total_amount: float
+    currency: str = "EUR"
+    notes: Optional[str] = None
+    created_at: datetime.datetime
+    payments: List[CashflowPaymentResponse] = []
+    items: List[CashflowItemResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class CashflowSummaryResponse(BaseModel):
+    total_income: float
+    total_expenses: float
+    total_invested: float
+    net_savings: float
+    savings_rate_pct: float
+    breakdown_by_label: Dict[str, float] = {}
+    top_expense_categories: List[Dict[str, Any]] = []
+
+# Sankey Schemas
+class SankeyNode(BaseModel):
+    id: str
+    name: str
+    category_type: Optional[str] = None
+    level: int = 1
+    color: Optional[str] = None
+
+class SankeyLink(BaseModel):
+    source: str
+    target: str
+    value: float
+    color: Optional[str] = None
+
+class SankeyDataResponse(BaseModel):
+    nodes: List[SankeyNode]
+    links: List[SankeyLink]
+    total_income: float
+    total_expenses: float
+    total_investments: float
+    depth: int = 2
+

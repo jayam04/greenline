@@ -11,11 +11,13 @@ from app.scheduler import start_scheduler
 
 from app.api.routers import (
     auth, accounts, assets, transactions, portfolio, 
-    snapshots, prices, corporate_actions, benchmarks, backup
+    snapshots, prices, corporate_actions, benchmarks, backup,
+    categories, cashflow
 )
 
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
+from app.services.cashflow_engine import seed_default_categories
 
 async def _startup_backfill():
     async with AsyncSessionLocal() as session:
@@ -42,7 +44,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
         
-    # Seed default user if none exists
+    # Seed default user if none exists & seed default categories
     async with AsyncSessionLocal() as session:
         stmt = select(User)
         res = await session.execute(stmt)
@@ -55,6 +57,12 @@ async def lifespan(app: FastAPI):
             session.add(default_user)
             await session.commit()
             print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER}")
+
+        # Seed categories
+        try:
+            await seed_default_categories(session)
+        except Exception as ce:
+            print(f"[Init Categories Error] {ce}")
             
     asyncio.create_task(_startup_backfill())
     start_scheduler()
@@ -87,6 +95,8 @@ app.include_router(prices.router, prefix=settings.API_V1_STR)
 app.include_router(corporate_actions.router, prefix=settings.API_V1_STR)
 app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
 app.include_router(backup.router, prefix=settings.API_V1_STR)
+app.include_router(categories.router, prefix=settings.API_V1_STR)
+app.include_router(cashflow.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():

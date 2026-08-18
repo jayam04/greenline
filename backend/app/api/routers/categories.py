@@ -1,3 +1,4 @@
+import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,9 +6,9 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import Category, CashflowItem, User
+from app.db.models import Category, CashflowItem, CashflowTransaction, User
 from app.schemas.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryTreeResponse
-from app.services.cashflow_engine import build_category_lineage_map
+from app.services.cashflow_engine import build_category_lineage_map, convert_currency_to_eur
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -81,6 +82,36 @@ async def get_category_tree(
                 roots.append(node)
 
     return roots
+
+@router.get("/totals")
+async def get_category_totals(
+    start_date: Optional[datetime.date] = Query(None),
+    end_date: Optional[datetime.date] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, float]:
+    lineage_map = await build_category_lineage_map(db)
+    stmt = select(CashflowTransaction).options(selectinload(CashflowTransaction.items))
+    if start_date:
+        stmt = stmt.where(CashflowTransaction.transaction_date >= start_date)
+    if end_date:
+        stmt = stmt.where(CashflowTransaction.transaction_date <= end_date)
+    res = await db.execute(stmt)
+    transactions = res.scalars().all()
+
+    totals: Dict[str, float] = {str(cid): 0.0 for cid in lineage_map}
+    for tx in transactions:
+        for item in tx.items:
+            meta = lineage_map.get(item.category_id)
+            if not meta or meta["category"].category_type == "TRANSFER":
+                continue
+            raw_amt = float(item.amount or 0.0)
+            amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
+            # Accumulate for self and all ancestors
+            for anc in meta["ancestors"]:
+                k = str(anc.category_id)
+                totals[k] = round(totals.get(k, 0.0) + amt, 2)
+    return totals
 
 @router.get("/{category_id}", response_model=CategoryResponse)
 async def get_category(

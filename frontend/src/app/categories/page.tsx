@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { 
   Plus, Edit, Trash2, ChevronRight, ChevronDown, Folder, 
-  FolderOpen, Tag, Sparkles, X, Layers, CheckCircle2 
+  FolderOpen, Tag, Sparkles, X, Layers, CheckCircle2,
+  FolderPlus, Search, Calendar, ChevronUp
 } from "lucide-react";
+import { formatCurrency } from "@/lib/format";
+import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateUtils";
+import { CategoryModal, FlatCategory } from "@/components/CategoryModal";
 
 interface CategoryTreeItem {
   category_id: number;
@@ -21,45 +25,32 @@ interface CategoryTreeItem {
   subcategories: CategoryTreeItem[];
 }
 
-interface FlatCategory {
-  category_id: number;
-  parent_id?: number | null;
-  name: string;
-  category_type: string;
-  default_label?: string | null;
-  effective_label?: string | null;
-  full_path?: string | null;
-  level: number;
-}
-
-const CLASSIFICATION_LABELS = [
-  { key: "ESSENTIAL", label: "Essential (Need)" },
-  { key: "DISCRETIONARY", label: "Discretionary (Want)" },
-  { key: "LUXURY", label: "Luxury" },
-  { key: "INVESTMENT", label: "Investment / Savings" },
-];
-
 export default function CategoriesPage() {
   const [tree, setTree] = useState<CategoryTreeItem[]>([]);
   const [flatCategories, setFlatCategories] = useState<FlatCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedNodes, setExpandedNodes] = useState<{ [id: number]: boolean }>({});
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // Form State
+  // Dynamic Timeline Columns (Default: This Month & Last Month)
+  const [activeColumns, setActiveColumns] = useState<TimelineKey[]>(["THIS_MONTH", "LAST_MONTH"]);
+  const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [columnTotals, setColumnTotals] = useState<{ [timelineKey: string]: { [categoryId: string]: number } }>({});
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<FlatCategory | null>(null);
-  const [name, setName] = useState("");
-  const [parentId, setParentId] = useState<number | "">("");
-  const [categoryType, setCategoryType] = useState("EXPENSE");
-  const [defaultLabel, setDefaultLabel] = useState<string>("");
-
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [parentPresetId, setParentPresetId] = useState<number | null>(null);
 
   useEffect(() => {
-    loadData();
+    loadCategoryData();
   }, []);
 
-  const loadData = async () => {
+  useEffect(() => {
+    loadAllColumnTotals();
+  }, [activeColumns]);
+
+  const loadCategoryData = async () => {
     try {
       setLoading(true);
       const [treeData, flatData] = await Promise.all([
@@ -69,7 +60,7 @@ export default function CategoriesPage() {
       setTree(treeData || []);
       setFlatCategories(flatData || []);
 
-      // Auto-expand level 1 and level 2 nodes
+      // Auto-expand level 1 & 2
       const initialExpanded: { [id: number]: boolean } = {};
       (flatData || []).forEach((c) => {
         if (c.level <= 2) initialExpanded[c.category_id] = true;
@@ -82,75 +73,94 @@ export default function CategoriesPage() {
     }
   };
 
+  const loadAllColumnTotals = async () => {
+    for (const key of activeColumns) {
+      if (columnTotals[key]) continue; // already loaded
+      loadTotalsForTimeline(key);
+    }
+  };
+
+  const loadTotalsForTimeline = async (key: TimelineKey) => {
+    try {
+      const { startDate, endDate } = getTimelineDateRange(key);
+      const queryParams = new URLSearchParams();
+      if (startDate) queryParams.append("start_date", startDate);
+      if (endDate) queryParams.append("end_date", endDate);
+      const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
+
+      const totals = await apiFetch<{ [categoryId: string]: number }>(`/categories/totals${qs}`);
+      setColumnTotals((prev) => ({ ...prev, [key]: totals || {} }));
+    } catch (e) {
+      console.error(`Failed to load totals for ${key}:`, e);
+    }
+  };
+
+  const handleAddColumn = (key: TimelineKey) => {
+    if (!activeColumns.includes(key)) {
+      setActiveColumns((prev) => [...prev, key]);
+      loadTotalsForTimeline(key);
+    }
+    setIsAddColumnOpen(false);
+  };
+
+  const handleRemoveColumn = (key: TimelineKey) => {
+    setActiveColumns((prev) => prev.filter((k) => k !== key));
+  };
+
   const toggleExpand = (id: number) => {
     setExpandedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleEdit = (cat: FlatCategory) => {
-    setEditingCategory(cat);
-    setName(cat.name);
-    setParentId(cat.parent_id ?? "");
-    setCategoryType(cat.category_type);
-    setDefaultLabel(cat.default_label || "");
+  const handleExpandAll = () => {
+    const all: { [id: number]: boolean } = {};
+    flatCategories.forEach((c) => {
+      all[c.category_id] = true;
+    });
+    setExpandedNodes(all);
   };
 
-  const handleCancelEdit = () => {
+  const handleCollapseAll = () => {
+    setExpandedNodes({});
+  };
+
+  const handleOpenAdd = (parentId?: number) => {
     setEditingCategory(null);
-    setName("");
-    setParentId("");
-    setCategoryType("EXPENSE");
-    setDefaultLabel("");
-    setError("");
+    setParentPresetId(parentId ?? null);
+    setIsModalOpen(true);
   };
 
-  const handleSaveCategory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setError("");
-
-    try {
-      const payload = {
-        name: name.trim(),
-        parent_id: parentId ? Number(parentId) : null,
-        category_type: categoryType.toUpperCase(),
-        default_label: defaultLabel || null,
-      };
-
-      if (editingCategory) {
-        await apiFetch(`/categories/${editingCategory.category_id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await apiFetch("/categories", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      }
-
-      handleCancelEdit();
-      loadData();
-    } catch (err: any) {
-      setError(err.message || "Failed to save category");
-    } finally {
-      setSaving(false);
-    }
+  const handleOpenEdit = (cat: FlatCategory) => {
+    setEditingCategory(cat);
+    setParentPresetId(null);
+    setIsModalOpen(true);
   };
 
   const handleDeleteCategory = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this category? Subcategories must be deleted first.")) return;
+    if (!confirm("Are you sure you want to delete this category? (Subcategories and used categories cannot be deleted)")) return;
     try {
       await apiFetch(`/categories/${id}`, { method: "DELETE" });
-      loadData();
+      loadCategoryData();
+      // Reload totals
+      setColumnTotals({});
+      loadAllColumnTotals();
     } catch (err: any) {
       alert(err.message || "Failed to delete category");
     }
   };
 
-  const renderTreeNode = (node: CategoryTreeItem) => {
+  // Filter tree by search query
+  const matchesSearch = (node: CategoryTreeItem): boolean => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    if (node.name.toLowerCase().includes(q)) return true;
+    return (node.subcategories || []).some((sub) => matchesSearch(sub));
+  };
+
+  const renderTreeRows = (node: CategoryTreeItem): React.ReactNode => {
+    if (!matchesSearch(node)) return null;
+
     const hasChildren = node.subcategories && node.subcategories.length > 0;
     const isExpanded = !!expandedNodes[node.category_id];
-    const isExplicit = !!node.default_label;
     const effLabel = node.effective_label || node.default_label || "DISCRETIONARY";
 
     const badgeColor =
@@ -162,67 +172,115 @@ export default function CategoriesPage() {
         ? "bg-blue-50 text-blue-700 border-blue-200"
         : "bg-amber-50 text-amber-700 border-amber-200";
 
+    const typeBadge =
+      node.category_type === "INCOME"
+        ? "bg-emerald-50 text-emerald-700"
+        : node.category_type === "TRANSFER"
+        ? "bg-purple-50 text-purple-700"
+        : node.category_type === "INVESTMENT"
+        ? "bg-blue-50 text-blue-700"
+        : "bg-slate-100 text-slate-700";
+
     return (
-      <div key={node.category_id} className="space-y-1">
-        <div 
-          className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-100 transition-all text-xs"
-          style={{ paddingLeft: `${(node.level - 1) * 20 + 8}px` }}
-        >
-          <div className="flex items-center gap-2">
-            {hasChildren ? (
-              <button
-                type="button"
-                onClick={() => toggleExpand(node.category_id)}
-                className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
-              >
-                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-              </button>
-            ) : (
-              <div className="w-5" />
-            )}
-
-            <div className="flex items-center gap-1.5 font-bold text-[#0F172A]">
+      <React.Fragment key={node.category_id}>
+        <tr className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 group">
+          {/* Column 1: Category Name with Tree Indentation */}
+          <td className="py-2.5 px-3">
+            <div 
+              className="flex items-center gap-1.5"
+              style={{ paddingLeft: `${(node.level - 1) * 22}px` }}
+            >
               {hasChildren ? (
-                isExpanded ? <FolderOpen className="w-3.5 h-3.5 text-amber-500" /> : <Folder className="w-3.5 h-3.5 text-amber-500" />
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(node.category_id)}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+                >
+                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                </button>
               ) : (
-                <Tag className="w-3.5 h-3.5 text-slate-400" />
+                <span className="w-5.5" />
               )}
-              <span>{node.name}</span>
+
+              {hasChildren ? (
+                isExpanded ? <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" /> : <Folder className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              ) : (
+                <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              )}
+
+              <span className={`text-xs font-bold text-[#0F172A] ${node.level === 1 ? "text-[13px]" : ""}`}>
+                {node.name}
+              </span>
+
+              {hasChildren && (
+                <span className="text-[10px] text-slate-400 font-semibold ml-1">
+                  ({node.subcategories.length})
+                </span>
+              )}
             </div>
+          </td>
 
-            <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-slate-100 text-slate-500 rounded">
-              L{node.level}
+          {/* Column 2: Category Type */}
+          <td className="py-2.5 px-3">
+            <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md ${typeBadge}`}>
+              {node.category_type}
             </span>
+          </td>
 
-            <span className={`px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded border ${badgeColor}`}>
-              {effLabel} {!isExplicit && <span className="opacity-60 text-[8px]">(Inherited)</span>}
+          {/* Column 3: Classification Label */}
+          <td className="py-2.5 px-3">
+            <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md border ${badgeColor}`}>
+              {effLabel}
             </span>
-          </div>
+          </td>
 
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => handleEdit(node)}
-              className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 cursor-pointer"
-              title="Edit Category"
-            >
-              <Edit className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => handleDeleteCategory(node.category_id)}
-              className="p-1 text-rose-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer"
-              title="Delete Category"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
+          {/* Dynamic Timeline Totals Columns */}
+          {activeColumns.map((colKey) => {
+            const val = columnTotals[colKey]?.[String(node.category_id)] || 0;
+            return (
+              <td key={colKey} className="py-2.5 px-3 text-right tabular-nums font-semibold text-xs">
+                {val > 0.001 ? (
+                  <span className={node.category_type === "INCOME" ? "text-emerald-600 font-bold" : "text-[#0F172A]"}>
+                    {formatCurrency(val, "EUR")}
+                  </span>
+                ) : (
+                  <span className="text-slate-300">-</span>
+                )}
+              </td>
+            );
+          })}
 
-        {hasChildren && isExpanded && (
-          <div className="space-y-1">
-            {node.subcategories.map((sub) => renderTreeNode(sub))}
-          </div>
-        )}
-      </div>
+          {/* Column Actions */}
+          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+            <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={() => handleOpenAdd(node.category_id)}
+                className="p-1 text-slate-400 hover:text-blue-600 rounded hover:bg-blue-50 cursor-pointer"
+                title="Add Subcategory"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleOpenEdit(node)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 cursor-pointer"
+                title="Edit Category"
+              >
+                <Edit className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleDeleteCategory(node.category_id)}
+                className="p-1 text-slate-400 hover:text-rose-600 rounded hover:bg-rose-50 cursor-pointer"
+                title="Delete Category"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </td>
+        </tr>
+
+        {/* Recursive Child Rows */}
+        {hasChildren && isExpanded && node.subcategories.map((sub) => renderTreeRows(sub))}
+      </React.Fragment>
     );
   };
 
@@ -232,127 +290,164 @@ export default function CategoriesPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9]">
         <div>
           <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">
-            Category Hierarchy & Classification
+            Category Hierarchy & Comparative Spends
           </h1>
           <p className="text-xs font-semibold text-slate-500 mt-0.5">
-            Organize up to 5 levels of income & spend categories with automatic label inheritance
+            Organize up to 5 levels of taxonomy with dynamic timeline comparative analysis
           </p>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Left 2 Cols: Interactive Category Tree */}
-        <div className="lg:col-span-2 getquin-card p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-600" />
-              <span>Hierarchical Category Tree ({flatCategories.length})</span>
-            </h2>
-            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400">
-              <span>Depths 1 to 5</span>
-            </div>
+        {/* Header Action Controls */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Search Input */}
+          <div className="relative flex items-center">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search category name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-[#F3F4F6] text-xs font-semibold text-slate-800 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none w-52"
+            />
           </div>
 
-          <div className="space-y-1 max-h-[700px] overflow-y-auto pr-1">
-            {tree.map((rootNode) => renderTreeNode(rootNode))}
-          </div>
-        </div>
-
-        {/* Right 1 Col: Add / Edit Form */}
-        <div className="getquin-card p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <h2 className="text-sm font-bold text-[#0F172A]">
-              {editingCategory ? "Edit Category" : "Add New Category"}
-            </h2>
-            {editingCategory && (
-              <button
-                onClick={handleCancelEdit}
-                className="text-xs font-bold text-rose-600 flex items-center gap-1 hover:underline cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" /> Cancel
-              </button>
-            )}
-          </div>
-
-          {error && (
-            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-600 text-xs font-bold rounded-lg">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSaveCategory} className="space-y-3 text-xs">
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">Category Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Electric Vehicle Charging, Spotify"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">Parent Category (Optional)</label>
-              <select
-                value={parentId}
-                onChange={(e) => setParentId(Number(e.target.value) || "")}
-                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:outline-none cursor-pointer"
-              >
-                <option value="">None (Top-Level Root)</option>
-                {flatCategories
-                  .filter((c) => !editingCategory || c.category_id !== editingCategory.category_id)
-                  .map((c) => (
-                    <option key={c.category_id} value={c.category_id}>
-                      {c.full_path || c.name} (L{c.level})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">Category Type</label>
-              <select
-                value={categoryType}
-                onChange={(e) => setCategoryType(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:outline-none uppercase"
-              >
-                <option value="EXPENSE">Expense</option>
-                <option value="INCOME">Income</option>
-                <option value="INVESTMENT">Investment</option>
-                <option value="TRANSFER">Transfer</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-slate-600 font-semibold mb-1">
-                Default Classification Label
-              </label>
-              <select
-                value={defaultLabel}
-                onChange={(e) => setDefaultLabel(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:outline-none"
-              >
-                <option value="">Inherit from Parent Category</option>
-                {CLASSIFICATION_LABELS.map((lbl) => (
-                  <option key={lbl.key} value={lbl.key}>
-                    {lbl.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
+          {/* Expand / Collapse Controls */}
+          <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold">
             <button
-              type="submit"
-              disabled={saving}
-              className="w-full btn-pill-black justify-center py-2 text-xs cursor-pointer disabled:opacity-50 mt-2"
+              onClick={handleExpandAll}
+              className="px-2.5 py-1 text-slate-600 hover:text-black rounded-lg transition-all cursor-pointer"
             >
-              {saving ? "Saving..." : (editingCategory ? "Update Category" : "Create Category")}
+              Expand All
             </button>
-          </form>
+            <button
+              onClick={handleCollapseAll}
+              className="px-2.5 py-1 text-slate-600 hover:text-black rounded-lg transition-all cursor-pointer"
+            >
+              Collapse All
+            </button>
+          </div>
+
+          {/* Add New Category Button */}
+          <button
+            onClick={() => handleOpenAdd()}
+            className="btn-pill-black text-xs cursor-pointer shadow-xs"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Category</span>
+          </button>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* FULL-WIDTH TABULAR CATEGORY TREE                         */}
+      {/* ======================================================== */}
+      <div className="getquin-card p-5 space-y-4 w-full">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-600" />
+            <span>Category Taxonomy & Spend Aggregates ({flatCategories.length} Categories)</span>
+          </h2>
+          <p className="text-[11px] font-medium text-slate-400">
+            Totals include direct transactions plus all child subcategories
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                <th className="pb-2.5 px-3 font-bold min-w-[280px]">Category Hierarchy</th>
+                <th className="pb-2.5 px-3 font-bold w-24">Type</th>
+                <th className="pb-2.5 px-3 font-bold w-32">Classification</th>
+
+                {/* Dynamic Timeline Headers */}
+                {activeColumns.map((colKey) => {
+                  const opt = TIMELINE_OPTIONS.find((o) => o.key === colKey);
+                  return (
+                    <th key={colKey} className="pb-2.5 px-3 font-bold text-right min-w-[120px]">
+                      <div className="inline-flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-md text-[#0F172A]">
+                        <span>{opt?.label || colKey}</span>
+                        {activeColumns.length > 1 && (
+                          <button
+                            onClick={() => handleRemoveColumn(colKey)}
+                            className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 rounded"
+                            title="Remove column"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
+
+                {/* Add Column Dropdown */}
+                <th className="pb-2.5 px-3 font-bold text-right w-24 relative">
+                  <div className="inline-block relative">
+                    <button
+                      onClick={() => setIsAddColumnOpen(!isAddColumnOpen)}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md transition-all cursor-pointer"
+                      title="Add timeline comparison column"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add Period</span>
+                    </button>
+
+                    {isAddColumnOpen && (
+                      <div className="absolute right-0 top-7 z-30 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 w-40 text-left normal-case space-y-0.5">
+                        <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                          Select Timeline
+                        </div>
+                        {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).map((opt) => (
+                          <button
+                            key={opt.key}
+                            onClick={() => handleAddColumn(opt.key)}
+                            className="w-full text-left px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-black rounded-lg transition-colors cursor-pointer"
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                        {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).length === 0 && (
+                          <div className="px-2 py-1.5 text-[11px] text-slate-400">
+                            All periods added
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </th>
+
+                <th className="pb-2.5 px-3 font-bold text-right w-24">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium">
+              {tree.map((rootNode) => renderTreeRows(rootNode))}
+
+              {tree.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5 + activeColumns.length} className="py-8 text-center text-slate-400 font-medium text-xs">
+                    No categories found. Click "Add Category" to create one.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Category Add & Edit Modal */}
+      <CategoryModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={() => {
+          loadCategoryData();
+          setColumnTotals({});
+          loadAllColumnTotals();
+        }}
+        categories={flatCategories}
+        initialData={editingCategory}
+        parentPresetId={parentPresetId}
+      />
     </div>
   );
 }

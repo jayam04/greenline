@@ -454,6 +454,14 @@ async def generate_sankey_data(
         add_node(src_id, src_name, level=1, color="#10B981", c_type="INCOME")
         links.append(SankeyLink(source=src_id, target=hub_id, value=round(amt, 2), color="#34D399"))
 
+    # Check for Deficit (Expenses > Income) -> Draw from past savings
+    total_outflows = total_expenses + total_investments
+    if total_outflows > total_income + 0.001:
+        deficit = total_outflows - total_income
+        sav_src_id = "inc_savings_used"
+        add_node(sav_src_id, "Savings / Reserves Used", level=1, color="#F59E0B", c_type="INCOME")
+        links.append(SankeyLink(source=sav_src_id, target=hub_id, value=round(deficit, 2), color="#FBBF24"))
+
     # Outflow Nodes & Links based on Depth:
     if depth == 1:
         # High Level: Inflow Pool -> Expenses, Investments, Savings
@@ -467,11 +475,11 @@ async def generate_sankey_data(
             add_node(inv_id, "Investments & Savings", level=3, color="#3B82F6", c_type="INVESTMENT")
             links.append(SankeyLink(source=hub_id, target=inv_id, value=round(total_investments, 2), color="#60A5FA"))
 
-        net_savings = total_income - (total_expenses + total_investments)
-        if net_savings > 0:
+        if total_income > total_outflows + 0.001:
+            surplus = total_income - total_outflows
             sav_id = "node_retained_cash"
-            add_node(sav_id, "Retained Cash Buffer", level=3, color="#059669")
-            links.append(SankeyLink(source=hub_id, target=sav_id, value=round(net_savings, 2), color="#10B981"))
+            add_node(sav_id, "Retained Cash / Added to Savings", level=3, color="#059669")
+            links.append(SankeyLink(source=hub_id, target=sav_id, value=round(surplus, 2), color="#10B981"))
     else:
         # Depth >= 2: Inflow Pool -> Label Nodes -> Category Breakdown Nodes
         for label_key, cat_map in expense_flows_by_label.items():
@@ -492,11 +500,11 @@ async def generate_sankey_data(
                 links.append(SankeyLink(source=label_node_id, target=cat_node_id, value=round(cat_amt, 2), color=lbl_color))
 
         # Retained buffer link if income > outflows
-        net_savings = total_income - (total_expenses + total_investments)
-        if net_savings > 0.01:
+        if total_income > total_outflows + 0.001:
+            surplus = total_income - total_outflows
             sav_id = "node_retained_cash"
-            add_node(sav_id, "Retained Cash", level=3, color="#059669")
-            links.append(SankeyLink(source=hub_id, target=sav_id, value=round(net_savings, 2), color="#10B981"))
+            add_node(sav_id, "Retained Cash / Added to Savings", level=3, color="#059669")
+            links.append(SankeyLink(source=hub_id, target=sav_id, value=round(surplus, 2), color="#10B981"))
 
     return SankeyDataResponse(
         nodes=nodes,

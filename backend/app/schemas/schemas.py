@@ -39,6 +39,7 @@ class AccountUpdate(BaseModel):
 class AccountResponse(AccountBase):
     account_id: int
     created_at: datetime.date
+    current_balance: Optional[float] = 0.0
     model_config = ConfigDict(from_attributes=True)
 
 # Asset Schemas
@@ -192,6 +193,20 @@ class PortfolioSummaryResponse(BaseModel):
     sector_allocation: dict = {}
     top_holdings: List[HoldingSummary]
     closed_holdings: List[HoldingSummary] = []
+
+class AnnualSnapshotResponse(BaseModel):
+    year_label: str
+    start_date: datetime.date
+    end_date: datetime.date
+    total_income: float
+    total_expenses: float
+    investments_done: float
+    investments_closed: float
+    net_worth_delta: float
+    net_worth_delta_pct: float
+    taxes_and_fees: float
+    net_savings: float
+    currency: str = "EUR"
 
 # Snapshot Schemas
 class AssetClassBreakdown(BaseModel):

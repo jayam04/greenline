@@ -6,14 +6,22 @@ import { useRouter } from "next/navigation";
 import { 
   Settings, User, Link as LinkIcon, ShieldCheck, 
   Coins, CheckCircle2, AlertCircle, LogOut, ArrowRight,
-  HelpCircle, Sliders, Database, Check
+  HelpCircle, Sliders, Database, Check, Calendar
 } from "lucide-react";
 import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
+
+const FISCAL_YEAR_PRESETS = [
+  { label: "January 1st (Calendar Year)", value: "01-01", description: "Standard calendar year (Global/US)" },
+  { label: "April 1st (Fiscal Year)", value: "04-01", description: "Standard fiscal year (India, UK, Canada, Japan)" },
+  { label: "July 1st (Fiscal Year)", value: "07-01", description: "Mid-year fiscal cycle (Australia, Egypt)" },
+  { label: "October 1st (Federal Fiscal Year)", value: "10-01", description: "Q4 fiscal cycle (US Federal, Thailand)" },
+];
 
 export default function SettingsPage() {
   const router = useRouter();
   const [linkBrokerage, setLinkBrokerage] = useState(false);
   const [masterCurrency, setMasterCurrency] = useState("EUR");
+  const [fiscalYearStart, setFiscalYearStart] = useState("01-01");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -25,7 +33,12 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch<{ link_brokerage_with_bank: boolean; master_currency: string }>("/settings");
+      const res = await apiFetch<{ 
+        link_brokerage_with_bank: boolean; 
+        master_currency: string;
+        fiscal_year_start?: string;
+      }>("/settings");
+      
       if (res) {
         if (typeof res.link_brokerage_with_bank === "boolean") {
           setLinkBrokerage(res.link_brokerage_with_bank);
@@ -36,13 +49,20 @@ export default function SettingsPage() {
           setMasterCurrency(curr);
           localStorage.setItem("greenline_master_currency", curr);
         }
+        if (res.fiscal_year_start) {
+          const fy = res.fiscal_year_start.trim();
+          setFiscalYearStart(fy);
+          localStorage.setItem("greenline_fiscal_year_start", fy);
+        }
       }
     } catch (e) {
       console.error("Failed to load settings from server, using localStorage:", e);
       const localLink = localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
       const localCurr = localStorage.getItem("greenline_master_currency") || "EUR";
+      const localFy = localStorage.getItem("greenline_fiscal_year_start") || "01-01";
       setLinkBrokerage(localLink);
       setMasterCurrency(localCurr);
+      setFiscalYearStart(localFy);
     } finally {
       setLoading(false);
     }
@@ -51,16 +71,22 @@ export default function SettingsPage() {
   const handleToggleLinkBrokerage = async (newValue: boolean) => {
     setLinkBrokerage(newValue);
     localStorage.setItem("greenline_link_brokerage_with_bank", String(newValue));
-    saveSettings({ link_brokerage_with_bank: newValue, master_currency: masterCurrency });
+    saveSettings({ link_brokerage_with_bank: newValue, master_currency: masterCurrency, fiscal_year_start: fiscalYearStart });
   };
 
   const handleChangeMasterCurrency = async (newCurrency: string) => {
     setMasterCurrency(newCurrency);
     localStorage.setItem("greenline_master_currency", newCurrency);
-    saveSettings({ link_brokerage_with_bank: linkBrokerage, master_currency: newCurrency });
+    saveSettings({ link_brokerage_with_bank: linkBrokerage, master_currency: newCurrency, fiscal_year_start: fiscalYearStart });
   };
 
-  const saveSettings = async (payload: { link_brokerage_with_bank: boolean; master_currency: string }) => {
+  const handleChangeFiscalYearStart = async (newFy: string) => {
+    setFiscalYearStart(newFy);
+    localStorage.setItem("greenline_fiscal_year_start", newFy);
+    saveSettings({ link_brokerage_with_bank: linkBrokerage, master_currency: masterCurrency, fiscal_year_start: newFy });
+  };
+
+  const saveSettings = async (payload: { link_brokerage_with_bank: boolean; master_currency: string; fiscal_year_start: string }) => {
     setSaving(true);
     setSavedMessage("");
 
@@ -86,6 +112,7 @@ export default function SettingsPage() {
   };
 
   const selectedCurrencyObj = SUPPORTED_CURRENCIES.find((c) => c.code === masterCurrency) || SUPPORTED_CURRENCIES[0];
+  const activeFiscalPreset = FISCAL_YEAR_PRESETS.find((p) => p.value === fiscalYearStart) || FISCAL_YEAR_PRESETS[0];
 
   return (
     <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-5 space-y-6 font-sans">
@@ -97,7 +124,7 @@ export default function SettingsPage() {
             <span>Settings & Preferences</span>
           </h1>
           <p className="text-xs font-semibold text-slate-500 mt-0.5">
-            Manage application integration rules, master currency selection, and display behaviors
+            Manage application integration rules, master currency selection, and financial year boundaries
           </p>
         </div>
 
@@ -173,7 +200,65 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Card 2: Account & Cashflow Integration Rules */}
+          {/* Card 2: Financial Year Start Date Selection */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-purple-50 text-purple-600 rounded-xl">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-[#0F172A]">
+                    Financial Year Start Date
+                  </h2>
+                  <p className="text-[11px] font-medium text-slate-400">
+                    Defines the annual snapshot baseline date for Net Worth change, annual income, expenses, and savings
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-2.5 py-1 bg-purple-50 text-purple-800 rounded-lg text-xs font-bold">
+                {activeFiscalPreset.label.split(" (")[0]}
+              </div>
+            </div>
+
+            {/* Presets Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {FISCAL_YEAR_PRESETS.map((preset) => {
+                const isSelected = preset.value === fiscalYearStart;
+                return (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => handleChangeFiscalYearStart(preset.value)}
+                    disabled={loading || saving}
+                    className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex items-start justify-between ${
+                      isSelected
+                        ? "border-[#0F172A] bg-slate-50/80 shadow-xs"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                    }`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs text-[#0F172A]">
+                        {preset.label}
+                      </div>
+                      <div className="text-[11px] font-medium text-slate-400 mt-0.5">
+                        {preset.description}
+                      </div>
+                    </div>
+
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-[#0F172A] text-white flex items-center justify-center shrink-0 ml-2 mt-0.5">
+                        <Check className="w-3 h-3" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card 3: Account & Cashflow Integration Rules */}
           <div className="getquin-card p-5 space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
               <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
@@ -260,6 +345,13 @@ export default function SettingsPage() {
                 <span className="font-semibold text-slate-500">Master Currency</span>
                 <span className="font-bold text-emerald-700">
                   {selectedCurrencyObj.symbol} {selectedCurrencyObj.code}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="font-semibold text-slate-500">Year Baseline</span>
+                <span className="font-bold text-purple-700">
+                  {activeFiscalPreset.value} ({activeFiscalPreset.label.split(" (")[0]})
                 </span>
               </div>
 

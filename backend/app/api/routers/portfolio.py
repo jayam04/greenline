@@ -1,11 +1,15 @@
+import datetime
 from typing import List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc, func
+from sqlalchemy.orm import selectinload
 from app.db.database import get_db
-from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User
-from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse
+from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem
+from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
 from app.services.xirr_engine import calculate_xirr_for_scope
+from app.services.cashflow_engine import convert_currency
+from app.api.routers.accounts import calculate_all_account_balances
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -326,3 +330,125 @@ async def get_realized_pnl(
         ))
         
     return out
+
+@router.get("/annual_snapshot", response_model=AnnualSnapshotResponse)
+async def get_annual_snapshot(
+    fiscal_year_start: Optional[str] = Query("01-01"),
+    master_currency: Optional[str] = Query("EUR"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    target_currency = (master_currency or "EUR").strip().upper()
+    today = datetime.date.today()
+
+    # Parse fiscal_year_start e.g. "01-01" or "04-01"
+    try:
+        parts = (fiscal_year_start or "01-01").split("-")
+        fy_month = int(parts[0])
+        fy_day = int(parts[1])
+    except Exception:
+        fy_month = 1
+        fy_day = 1
+
+    if (today.month, today.day) < (fy_month, fy_day):
+        start_year = today.year - 1
+    else:
+        start_year = today.year
+
+    start_date = datetime.date(start_year, fy_month, fy_day)
+    end_date = today
+
+    # Year label e.g. "FY 2026-27" or "CY 2026"
+    year_label = f"FY {start_year}-{start_year+1}" if (fy_month, fy_day) != (1, 1) else f"CY {start_year}"
+
+    # 1. Fetch Income & Expenses from CashflowTransaction
+    c_stmt = select(CashflowTransaction).options(
+        selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
+    ).where(CashflowTransaction.transaction_date >= start_date, CashflowTransaction.transaction_date <= end_date)
+    c_res = await db.execute(c_stmt)
+    c_txs = c_res.scalars().all()
+
+    total_income = 0.0
+    total_expenses = 0.0
+    investments_done = 0.0
+    investments_closed = 0.0
+    taxes_and_fees = 0.0
+
+    for ctx in c_txs:
+        for itm in ctx.items:
+            amt = convert_currency(float(itm.amount or 0.0), ctx.currency or "EUR", target_currency)
+            cat_type = itm.category.category_type if itm.category else "EXPENSE"
+            if cat_type == "INCOME":
+                total_income += amt
+            elif cat_type == "INVESTMENT":
+                investments_done += amt
+            elif cat_type == "TRANSFER":
+                pass
+            else: # EXPENSE
+                total_expenses += amt
+
+    # 2. Fetch Investment transactions in date range
+    tx_stmt = select(Transaction, Account.currency)\
+        .join(Account, Transaction.account_id == Account.account_id)\
+        .where(Transaction.transaction_date >= start_date, Transaction.transaction_date <= end_date)
+    tx_res = await db.execute(tx_stmt)
+    inv_txs = tx_res.all()
+
+    for tx, acc_curr in inv_txs:
+        curr = acc_curr or "USD"
+        amt = convert_currency(float(tx.total_amount or 0.0), curr, target_currency)
+        fees = convert_currency(float(tx.fees or 0.0), curr, target_currency)
+        taxes = convert_currency(float(tx.taxes or 0.0), curr, target_currency)
+        taxes_and_fees += (fees + taxes)
+
+        ttype = (tx.transaction_type or "").lower()
+        if ttype == "buy":
+            investments_done += amt
+        elif ttype == "sell":
+            investments_closed += amt
+        elif ttype == "dividend":
+            total_income += amt
+
+    # 3. Calculate current net worth & estimated delta
+    all_balances = await calculate_all_account_balances(db)
+    acc_map_res = await db.execute(select(Account))
+    all_accs = acc_map_res.scalars().all()
+    
+    current_cash_target = sum(
+        convert_currency(all_balances.get(a.account_id, 0.0), a.currency or "EUR", target_currency)
+        for a in all_accs
+    )
+    
+    open_lots_res = await db.execute(select(Lot).where(Lot.quantity_remaining > 0))
+    open_lots = open_lots_res.scalars().all()
+    
+    current_holdings_val = 0.0
+    for l in open_lots:
+        ph_stmt = select(PriceHistory.close_price).where(PriceHistory.asset_id == l.asset_id).order_by(desc(PriceHistory.price_date)).limit(1)
+        ph_res = await db.execute(ph_stmt)
+        price = ph_res.scalar_one_or_none() or l.cost_per_unit
+        asset_res = await db.execute(select(Asset.currency).where(Asset.asset_id == l.asset_id))
+        a_curr = asset_res.scalar_one_or_none() or "USD"
+        val = l.quantity_remaining * price
+        current_holdings_val += convert_currency(val, a_curr, target_currency)
+        
+    current_total_nw = current_cash_target + current_holdings_val
+    net_savings = total_income - total_expenses
+    net_worth_delta = net_savings
+    start_nw_est = max(1.0, current_total_nw - net_worth_delta)
+    net_worth_delta_pct = (net_worth_delta / start_nw_est * 100.0) if start_nw_est > 0 else 0.0
+
+    return AnnualSnapshotResponse(
+        year_label=year_label,
+        start_date=start_date,
+        end_date=end_date,
+        total_income=round(total_income, 2),
+        total_expenses=round(total_expenses, 2),
+        investments_done=round(investments_done, 2),
+        investments_closed=round(investments_closed, 2),
+        net_worth_delta=round(net_worth_delta, 2),
+        net_worth_delta_pct=round(net_worth_delta_pct, 2),
+        taxes_and_fees=round(taxes_and_fees, 2),
+        net_savings=round(net_savings, 2),
+        currency=target_currency
+    )

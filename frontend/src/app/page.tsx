@@ -232,14 +232,16 @@ export default function NetWorthDashboardPage() {
   const snapshotsInMaster: Snapshot[] = useMemo(() => {
     if (!snapshots || snapshots.length === 0) return [];
     
+    // In aggregated mode, backend /snapshots aggregates all accounts (both bank & demat) in EUR base
     if (selectedAccount === "all") {
       return snapshots.map((s) => ({
         snapshot_date: s.snapshot_date,
-        net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency) + totalBankCashMaster,
+        net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency),
         total_invested: convertCurrency(s.total_invested, "EUR", masterCurrency),
       }));
     }
 
+    // In single account mode, convert from that account's native currency
     const a = accounts.find((acc) => acc.account_id.toString() === selectedAccount);
     const repCurrency = a?.currency || "INR";
 
@@ -248,7 +250,7 @@ export default function NetWorthDashboardPage() {
       net_worth: convertCurrency(s.net_worth, repCurrency, masterCurrency),
       total_invested: convertCurrency(s.total_invested, repCurrency, masterCurrency),
     }));
-  }, [snapshots, selectedAccount, accounts, masterCurrency, totalBankCashMaster]);
+  }, [snapshots, selectedAccount, accounts, masterCurrency]);
 
   // Filter snapshots based on selected timeframe
   const filteredSnapshots = useMemo(() => {

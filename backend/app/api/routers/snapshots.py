@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.db.models import NetworthSnapshot, Account, User
 from app.schemas.schemas import NetworthSnapshotResponse
 from app.services.snapshot_engine import calculate_account_snapshots
+from app.services.cashflow_engine import convert_currency
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
@@ -15,12 +16,13 @@ router = APIRouter(prefix="/snapshots", tags=["snapshots"])
 FX_RATES_TO_EUR = {
     "EUR": 1.0,
     "USD": 0.92,
-    "INR": 0.011,
+    "INR": 0.0102,
     "GBP": 1.17,
-    "JPY": 0.0062,
-    "CAD": 0.68,
-    "AUD": 0.61,
-    "CHF": 1.05,
+    "CAD": 0.67,
+    "AUD": 0.60,
+    "JPY": 0.0059,
+    "CHF": 1.06,
+    "SGD": 0.68,
 }
 
 def to_eur(amount: float, curr: str) -> float:

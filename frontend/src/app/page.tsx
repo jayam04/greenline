@@ -681,7 +681,7 @@ export default function DashboardPage() {
                   PRO
                 </span>
               </div>
-              <Link href="/analytics" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <Link href="/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
                 Show more
               </Link>
             </div>
@@ -741,7 +741,7 @@ export default function DashboardPage() {
                   PRO
                 </span>
               </div>
-              <Link href="/analytics" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <Link href="/realized" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
                 Show more
               </Link>
             </div>

@@ -48,13 +48,23 @@ export default function CashflowPage() {
 
   const loadAllData = async () => {
     try {
-      setLoading(true);
+      let includeInvestments = true;
+      try {
+        const settingsRes = await apiFetch<{ link_brokerage_with_bank: boolean }>("/settings");
+        if (settingsRes && typeof settingsRes.link_brokerage_with_bank === "boolean") {
+          includeInvestments = !settingsRes.link_brokerage_with_bank;
+        }
+      } catch {
+        const localVal = typeof window !== "undefined" && localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
+        includeInvestments = !localVal;
+      }
+
       const queryParams = new URLSearchParams();
       if (startDate) queryParams.append("start_date", startDate);
       if (endDate) queryParams.append("end_date", endDate);
 
       const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
-      const sankeyQs = `?depth=${sankeyDepth}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
+      const sankeyQs = `?depth=${sankeyDepth}&include_investments=${includeInvestments}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
 
       const [sumRes, sankeyRes, txRes] = await Promise.all([
         apiFetch<CashflowSummary>(`/cashflow/summary${qs}`),

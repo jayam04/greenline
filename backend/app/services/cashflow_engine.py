@@ -387,6 +387,8 @@ async def generate_sankey_data(
                 src_name = target_name
                 income_flows[src_name] = income_flows.get(src_name, 0.0) + amt
             elif cat_type == "INVESTMENT":
+                if not include_investments:
+                    continue
                 total_investments += amt
                 expense_flows_by_label[LABEL_INVESTMENT][target_name] = (
                     expense_flows_by_label[LABEL_INVESTMENT].get(target_name, 0.0) + amt

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatMoney, getCurrencySymbol, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
 import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
@@ -9,7 +9,7 @@ import { TransactionModal } from "@/components/TransactionModal";
 import { 
   Plus, Eye, EyeOff, MoreVertical, 
   ArrowUpRight, ArrowDownRight, 
-  Settings, RefreshCw, X, Check, BarChart2, AlertCircle, Info
+  Settings, RefreshCw, X, Check, BarChart2, AlertCircle, Info, Briefcase
 } from "lucide-react";
 import Link from "next/link";
 
@@ -322,6 +322,11 @@ export default function InvestmentsDashboardPage() {
     return alloc;
   };
 
+  // Filter only investment / brokerage accounts (exclude bank accounts)
+  const investmentAccounts = useMemo(() => {
+    return accounts.filter((a) => a.account_type !== "bank");
+  }, [accounts]);
+
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
       {/* Main Two-Column Layout */}
@@ -330,41 +335,17 @@ export default function InvestmentsDashboardPage() {
         <div className="lg:col-span-8 space-y-5">
           {/* Card 1: Portfolios & Net Worth Hero Chart Card */}
           <div className="getquin-card p-5">
-            {/* Header: Title, Account Tabs, Add Account */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-4 flex-wrap">
-                <h2 className="text-sm font-bold text-[#0F172A]">Portfolios</h2>
-                
-                {/* Account Tabs */}
-                <div className="flex items-center gap-1 overflow-x-auto text-xs">
-                  <button
-                    onClick={() => setSelectedAccount("all")}
-                    className={`px-3 py-1 font-bold rounded-lg transition-colors cursor-pointer ${
-                      selectedAccount === "all"
-                        ? "text-[#0F172A] border-b-2 border-[#0F172A] rounded-b-none"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  >
-                    Aggregated
-                  </button>
-                  {accounts.map((acc) => (
-                    <button
-                      key={acc.account_id}
-                      onClick={() => setSelectedAccount(acc.account_id.toString())}
-                      className={`px-3 py-1 font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-                        selectedAccount === acc.account_id.toString()
-                          ? "text-[#0F172A] border-b-2 border-[#0F172A] rounded-b-none font-bold"
-                          : "text-slate-500 hover:text-slate-800"
-                      }`}
-                    >
-                      {acc.account_name}
-                    </button>
-                  ))}
-                </div>
+            {/* Header Row 1: Title on Left, Action Buttons on Right */}
+            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F1F5F9]">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-[#0F172A] text-white rounded-lg">
+                  <Briefcase className="w-4 h-4" />
+                </span>
+                <h2 className="text-sm font-bold text-[#0F172A]">Investment Portfolios</h2>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 self-end sm:self-auto">
+              <div className="flex items-center gap-2">
                 <Link href="/accounts" className="btn-pill-black text-[11px]">
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add account</span>
@@ -372,7 +353,7 @@ export default function InvestmentsDashboardPage() {
                 <button
                   onClick={handleRefreshPrices}
                   disabled={refreshing}
-                  className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                  className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   title="Sync Market Prices"
                 >
                   <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
@@ -385,6 +366,40 @@ export default function InvestmentsDashboardPage() {
                   <Settings className="w-4 h-4" />
                 </Link>
               </div>
+            </div>
+
+            {/* Header Row 2: Investment Account Tabs (Wraps to new lines when many accounts) */}
+            <div className="pt-2.5 pb-2 flex items-center gap-1.5 flex-wrap text-xs border-b border-[#F1F5F9]">
+              <button
+                onClick={() => setSelectedAccount("all")}
+                className={`px-3 py-1 font-bold rounded-lg transition-colors cursor-pointer ${
+                  selectedAccount === "all"
+                    ? "bg-[#0F172A] text-white shadow-xs"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                }`}
+              >
+                Aggregated
+              </button>
+              {investmentAccounts.map((acc) => (
+                <button
+                  key={acc.account_id}
+                  onClick={() => setSelectedAccount(acc.account_id.toString())}
+                  className={`px-2.5 py-1 font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    selectedAccount === acc.account_id.toString()
+                      ? "bg-[#0F172A] text-white font-bold shadow-xs"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                  }`}
+                >
+                  <span>{acc.account_name}</span>
+                  <span className={`text-[9px] font-extrabold uppercase px-1 rounded ${
+                    selectedAccount === acc.account_id.toString()
+                      ? "bg-slate-800 text-slate-200"
+                      : "bg-blue-50 text-blue-700"
+                  }`}>
+                    {acc.currency}
+                  </span>
+                </button>
+              ))}
             </div>
 
             {/* Sub-Header Toolbar: Hide, Value vs Performance Mode Switch, Add Benchmark */}

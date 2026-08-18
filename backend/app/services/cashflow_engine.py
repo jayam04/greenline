@@ -13,6 +13,25 @@ LABEL_DISCRETIONARY = "DISCRETIONARY"
 LABEL_LUXURY = "LUXURY"
 LABEL_INVESTMENT = "INVESTMENT"
 
+FX_RATES_TO_EUR: Dict[str, float] = {
+    "EUR": 1.0,
+    "USD": 0.92,
+    "INR": 0.0102,
+    "GBP": 1.17,
+    "CAD": 0.67,
+    "AUD": 0.60,
+    "JPY": 0.0059,
+    "CHF": 1.06,
+    "SGD": 0.68,
+}
+
+def convert_currency_to_eur(amount: float, from_currency: str = "EUR") -> float:
+    if not amount:
+        return 0.0
+    curr = (from_currency or "EUR").strip().upper()
+    rate = FX_RATES_TO_EUR.get(curr, 1.0)
+    return amount * rate
+
 DEFAULT_CATEGORY_COLORS = {
     "INCOME": "#10B981",       # Emerald green
     "EXPENSE": "#EF4444",      # Rose red
@@ -331,7 +350,8 @@ async def generate_sankey_data(
             ancestors = meta["ancestors"]
             cat_type = meta["category"].category_type
             effective_label = item.label or meta["effective_label"]
-            amt = float(item.amount or 0.0)
+            raw_amt = float(item.amount or 0.0)
+            amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
 
             # Determine category name at requested depth
             target_idx = min(depth - 1, len(ancestors) - 1)
@@ -505,7 +525,8 @@ async def get_cashflow_summary(
 
             cat_type = meta["category"].category_type
             effective_label = item.label or meta["effective_label"]
-            amt = float(item.amount or 0.0)
+            raw_amt = float(item.amount or 0.0)
+            amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
 
             if cat_type == "INCOME":
                 total_income += amt

@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { 
   X, Plus, Edit, Trash2, Split, CheckCircle2, AlertCircle, 
-  Layers, ArrowDownLeft, ArrowUpRight, Sparkles 
+  ArrowDownLeft, ArrowUpRight, DollarSign 
 } from "lucide-react";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, getCurrencySymbol, convertCurrencyToEUR } from "@/lib/format";
 
 interface Account {
   account_id: number;
@@ -30,11 +30,13 @@ export interface CashflowTransactionItem {
   title: string;
   total_amount: number;
   currency: string;
+  master_amount_eur?: number | null;
   notes?: string | null;
   payments: {
     payment_id?: number;
     account_id: number;
     account_name?: string;
+    account_currency?: string;
     amount: number;
   }[];
   items: {
@@ -56,10 +58,10 @@ interface CashflowModalProps {
 }
 
 const CLASSIFICATION_LABELS = [
-  { key: "ESSENTIAL", label: "Essential (Need)", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  { key: "DISCRETIONARY", label: "Discretionary (Want)", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  { key: "LUXURY", label: "Luxury", color: "bg-pink-50 text-pink-700 border-pink-200" },
-  { key: "INVESTMENT", label: "Investment / Savings", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  { key: "ESSENTIAL", label: "Essential (Need)" },
+  { key: "DISCRETIONARY", label: "Discretionary (Want)" },
+  { key: "LUXURY", label: "Luxury" },
+  { key: "INVESTMENT", label: "Investment / Savings" },
 ];
 
 export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: CashflowModalProps) {
@@ -69,7 +71,6 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
   // Form State
   const [title, setTitle] = useState("");
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().split("T")[0]);
-  const [totalAmount, setTotalAmount] = useState("");
   const [notes, setNotes] = useState("");
 
   // Simple Mode vs Split Modes
@@ -78,6 +79,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
 
   // Single mode state
   const [simpleAccountId, setSimpleAccountId] = useState<number | "">("");
+  const [simpleAmount, setSimpleAmount] = useState<string>("");
   const [simpleCategoryId, setSimpleCategoryId] = useState<number | "">("");
   const [simpleLabel, setSimpleLabel] = useState<string>("");
 
@@ -102,7 +104,6 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
       if (initialData) {
         setTitle(initialData.title);
         setTransactionDate(initialData.transaction_date);
-        setTotalAmount(initialData.total_amount.toString());
         setNotes(initialData.notes || "");
 
         const hasMultiplePayments = initialData.payments.length > 1;
@@ -112,6 +113,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
 
         if (initialData.payments.length > 0) {
           setSimpleAccountId(initialData.payments[0].account_id);
+          setSimpleAmount(initialData.payments[0].amount.toString());
           setPayments(initialData.payments.map((p) => ({ account_id: p.account_id, amount: p.amount.toString() })));
         }
         if (initialData.items.length > 0) {
@@ -127,10 +129,10 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
       } else {
         setTitle("");
         setTransactionDate(new Date().toISOString().split("T")[0]);
-        setTotalAmount("");
         setNotes("");
         setIsSplitPayments(false);
         setIsSplitItems(false);
+        setSimpleAmount("");
         setSimpleLabel("");
         setPayments([{ account_id: "", amount: "" }]);
         setItems([{ category_id: "", amount: "", label: "", description: "" }]);
@@ -162,6 +164,14 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     }
   };
 
+  // Selected account for simple mode
+  const selectedSimpleAccount = useMemo(() => {
+    return accounts.find((a) => a.account_id === simpleAccountId);
+  }, [accounts, simpleAccountId]);
+
+  const simpleCurrency = selectedSimpleAccount?.currency || "EUR";
+  const simpleCurrencySymbol = getCurrencySymbol(simpleCurrency);
+
   // Sync category default label when simpleCategoryId changes
   useEffect(() => {
     if (simpleCategoryId && !simpleLabel) {
@@ -172,17 +182,23 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     }
   }, [simpleCategoryId, categories, simpleLabel]);
 
-  // Balance checking calculations
-  const parsedTotal = parseFloat(totalAmount) || 0;
-  const totalPaymentsSum = isSplitPayments
-    ? payments.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0)
-    : parsedTotal;
-  const totalItemsSum = isSplitItems
-    ? items.reduce((acc, i) => acc + (parseFloat(i.amount) || 0), 0)
-    : parsedTotal;
+  // Compute total payment amount
+  const totalPaymentCalculated = useMemo(() => {
+    if (!isSplitPayments) {
+      return parseFloat(simpleAmount) || 0;
+    }
+    return payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  }, [isSplitPayments, simpleAmount, payments]);
 
-  const paymentBalanceDiff = parsedTotal - totalPaymentsSum;
-  const itemBalanceDiff = parsedTotal - totalItemsSum;
+  // Compute total itemized amount
+  const totalItemsCalculated = useMemo(() => {
+    if (!isSplitItems) {
+      return totalPaymentCalculated;
+    }
+    return items.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  }, [isSplitItems, totalPaymentCalculated, items]);
+
+  const itemBalanceDiff = totalPaymentCalculated - totalItemsCalculated;
 
   if (!isOpen) return null;
 
@@ -198,16 +214,22 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
       return;
     }
 
-    if (parsedTotal <= 0) {
-      setError("Please enter a valid total amount.");
+    if (totalPaymentCalculated <= 0) {
+      setError("Please enter a payment amount greater than 0.");
       setLoading(false);
       return;
     }
 
     // Build payload
     const finalPayments = isSplitPayments
-      ? payments.map((p) => ({ account_id: Number(p.account_id), amount: parseFloat(p.amount) || 0 }))
-      : [{ account_id: Number(simpleAccountId), amount: parsedTotal }];
+      ? payments.map((p) => ({
+          account_id: Number(p.account_id),
+          amount: parseFloat(p.amount) || 0,
+        }))
+      : [{
+          account_id: Number(simpleAccountId),
+          amount: totalPaymentCalculated,
+        }];
 
     const finalItems = isSplitItems
       ? items.map((i) => ({
@@ -218,20 +240,16 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
         }))
       : [{
           category_id: Number(simpleCategoryId),
-          amount: parsedTotal,
+          amount: totalPaymentCalculated,
           label: simpleLabel ? simpleLabel.toUpperCase() : null,
           description: title.trim(),
         }];
 
-    // Validate splits
-    if (isSplitPayments && Math.abs(paymentBalanceDiff) > 0.01) {
-      setError(`Payment methods sum (${formatCurrency(totalPaymentsSum, "EUR")}) must equal Total Amount (${formatCurrency(parsedTotal, "EUR")}). Remaining: ${formatCurrency(paymentBalanceDiff, "EUR")}`);
-      setLoading(false);
-      return;
-    }
-
+    // Validate item splits
     if (isSplitItems && Math.abs(itemBalanceDiff) > 0.01) {
-      setError(`Category items sum (${formatCurrency(totalItemsSum, "EUR")}) must equal Total Amount (${formatCurrency(parsedTotal, "EUR")}). Remaining: ${formatCurrency(itemBalanceDiff, "EUR")}`);
+      setError(
+        `Category items sum (${formatCurrency(totalItemsCalculated, simpleCurrency)}) must equal Payment sum (${formatCurrency(totalPaymentCalculated, simpleCurrency)}). Difference: ${formatCurrency(itemBalanceDiff, simpleCurrency)}`
+      );
       setLoading(false);
       return;
     }
@@ -240,8 +258,8 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
       const payload = {
         transaction_date: transactionDate,
         title: title.trim(),
-        total_amount: parsedTotal,
-        currency: "EUR",
+        total_amount: totalPaymentCalculated,
+        currency: simpleCurrency,
         notes: notes || null,
         payments: finalPayments,
         items: finalItems,
@@ -262,9 +280,9 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
         onSuccess();
 
         if (isAddNew) {
-          setSuccessBanner("Transaction saved successfully! Enter next spend or income below.");
+          setSuccessBanner("Transaction recorded! Ready for next entry.");
           setTitle("");
-          setTotalAmount("");
+          setSimpleAmount("");
           setNotes("");
           setPayments([{ account_id: simpleAccountId || accounts[0]?.account_id || "", amount: "" }]);
           setItems([{ category_id: simpleCategoryId || categories[0]?.category_id || "", amount: "", label: "", description: "" }]);
@@ -281,7 +299,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
-      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-2xl shadow-xl p-6 relative max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-xl shadow-xl p-6 relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
@@ -299,7 +317,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
               {initialData ? "Edit Income / Spend" : "Record Income or Spend"}
             </h2>
             <p className="text-[11px] font-medium text-slate-400">
-              Track salary, Amazon purchases, groceries, split payments & multi-category receipts
+              Enter title, date, account funding amounts, and category classification
             </p>
           </div>
         </div>
@@ -319,13 +337,13 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
         )}
 
         <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-4 text-xs">
-          {/* Header Row: Title, Date, Total Amount */}
+          {/* Header Row: Title & Date (No redundant top-level Total Amount field) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
+            <div className="sm:col-span-2">
               <label className="block font-semibold text-slate-600 mb-1">Title / Merchant</label>
               <input
                 type="text"
-                placeholder="e.g. Amazon Order, Base Salary"
+                placeholder="e.g. Amazon Order, Base Salary, Grocery Run"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
@@ -343,103 +361,118 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                 required
               />
             </div>
-
-            <div>
-              <label className="block font-semibold text-slate-600 mb-1">Total Amount (€)</label>
-              <input
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={totalAmount}
-                onChange={(e) => setTotalAmount(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold text-sm rounded-lg px-3 py-1.5 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
-                required
-              />
-            </div>
           </div>
 
-          {/* Section 1: Payment Method(s) */}
+          {/* Section 1: Payment Method / Funding Source with Direct Amount Input */}
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-bold text-[#0F172A] text-xs flex items-center gap-1.5">
                 <ArrowDownLeft className="w-3.5 h-3.5 text-blue-600" />
-                Payment Method / Funding Source
+                Payment Method & Amount
               </span>
               <button
                 type="button"
                 onClick={() => {
                   setIsSplitPayments(!isSplitPayments);
-                  if (!isSplitPayments && payments.length === 1 && totalAmount) {
-                    setPayments([{ account_id: simpleAccountId || accounts[0]?.account_id || "", amount: totalAmount }]);
+                  if (!isSplitPayments && payments.length === 1 && simpleAmount) {
+                    setPayments([{ account_id: simpleAccountId || accounts[0]?.account_id || "", amount: simpleAmount }]);
                   }
                 }}
                 className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
               >
                 <Split className="w-3 h-3" />
-                {isSplitPayments ? "Use Single Account" : "Split Multiple Accounts"}
+                {isSplitPayments ? "Single Account" : "Split Multiple Accounts"}
               </button>
             </div>
 
             {!isSplitPayments ? (
-              <div>
-                <select
-                  value={simpleAccountId}
-                  onChange={(e) => setSimpleAccountId(Number(e.target.value))}
-                  className="w-full bg-white text-slate-900 font-semibold rounded-lg px-3 py-2 border border-slate-200 focus:outline-none cursor-pointer"
-                  required
-                >
-                  {accounts.map((acc) => (
-                    <option key={acc.account_id} value={acc.account_id}>
-                      {acc.account_name} ({acc.currency})
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {/* Account Selection */}
+                <div className="sm:col-span-2">
+                  <select
+                    value={simpleAccountId}
+                    onChange={(e) => setSimpleAccountId(Number(e.target.value))}
+                    className="w-full bg-white text-slate-900 font-semibold rounded-lg px-3 py-2 border border-slate-200 focus:outline-none cursor-pointer"
+                    required
+                  >
+                    {accounts.map((acc) => (
+                      <option key={acc.account_id} value={acc.account_id}>
+                        {acc.account_name} ({acc.currency})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Amount Input next to Account in Native Currency */}
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 font-bold text-slate-400 pointer-events-none text-xs">
+                    {simpleCurrencySymbol}
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="0.00"
+                    value={simpleAmount}
+                    onChange={(e) => setSimpleAmount(e.target.value)}
+                    className="w-full bg-white text-slate-900 font-bold tabular-nums rounded-lg pl-7 pr-3 py-2 border border-slate-200 focus:outline-none text-xs"
+                    required
+                  />
+                </div>
               </div>
             ) : (
               <div className="space-y-2">
-                {payments.map((p, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <select
-                      value={p.account_id}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setPayments((prev) => prev.map((item, i) => i === idx ? { ...item, account_id: val } : item));
-                      }}
-                      className="flex-1 bg-white text-slate-900 font-semibold rounded-lg px-3 py-1.5 border border-slate-200 focus:outline-none text-xs"
-                      required
-                    >
-                      <option value="">Select Account</option>
-                      {accounts.map((acc) => (
-                        <option key={acc.account_id} value={acc.account_id}>
-                          {acc.account_name}
-                        </option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      step="any"
-                      placeholder="Amount"
-                      value={p.amount}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setPayments((prev) => prev.map((item, i) => i === idx ? { ...item, amount: val } : item));
-                      }}
-                      className="w-28 bg-white text-slate-900 font-bold tabular-nums rounded-lg px-3 py-1.5 border border-slate-200 focus:outline-none text-xs"
-                      required
-                    />
-
-                    {payments.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}
-                        className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                {payments.map((p, idx) => {
+                  const acc = accounts.find((a) => a.account_id === p.account_id);
+                  const currSym = getCurrencySymbol(acc?.currency || "EUR");
+                  return (
+                    <div key={idx} className="flex items-center gap-2">
+                      <select
+                        value={p.account_id}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setPayments((prev) => prev.map((item, i) => i === idx ? { ...item, account_id: val } : item));
+                        }}
+                        className="flex-1 bg-white text-slate-900 font-semibold rounded-lg px-3 py-1.5 border border-slate-200 focus:outline-none text-xs"
+                        required
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                        <option value="">Select Account</option>
+                        {accounts.map((acc) => (
+                          <option key={acc.account_id} value={acc.account_id}>
+                            {acc.account_name} ({acc.currency})
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="relative flex items-center w-32">
+                        <span className="absolute left-2.5 font-bold text-slate-400 pointer-events-none text-xs">
+                          {currSym}
+                        </span>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Amount"
+                          value={p.amount}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPayments((prev) => prev.map((item, i) => i === idx ? { ...item, amount: val } : item));
+                          }}
+                          className="w-full bg-white text-slate-900 font-bold tabular-nums rounded-lg pl-6 pr-2 py-1.5 border border-slate-200 focus:outline-none text-xs"
+                          required
+                        />
+                      </div>
+
+                      {payments.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
 
                 <div className="flex items-center justify-between pt-1">
                   <button
@@ -447,26 +480,18 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                     onClick={() => setPayments((prev) => [...prev, { account_id: accounts[0]?.account_id || "", amount: "" }])}
                     className="text-[11px] font-bold text-slate-700 hover:text-black flex items-center gap-1 cursor-pointer"
                   >
-                    <Plus className="w-3 h-3" /> Add Payment Account
+                    <Plus className="w-3 h-3" /> Add Account Split
                   </button>
 
-                  <div className="text-[11px] font-bold">
-                    {Math.abs(paymentBalanceDiff) < 0.01 ? (
-                      <span className="text-emerald-600 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Balanced: {formatCurrency(totalPaymentsSum, "EUR")}
-                      </span>
-                    ) : (
-                      <span className="text-rose-600">
-                        Remaining: {formatCurrency(paymentBalanceDiff, "EUR")}
-                      </span>
-                    )}
+                  <div className="text-[11px] font-bold font-mono text-slate-700">
+                    Total: {formatCurrency(totalPaymentCalculated, simpleCurrency)}
                   </div>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Section 2: Categories / Itemization */}
+          {/* Section 2: Category & Classification (Auto-inherits amount in single mode) */}
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="font-bold text-[#0F172A] text-xs flex items-center gap-1.5">
@@ -477,8 +502,8 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                 type="button"
                 onClick={() => {
                   setIsSplitItems(!isSplitItems);
-                  if (!isSplitItems && items.length === 1 && totalAmount) {
-                    setItems([{ category_id: simpleCategoryId || categories[0]?.category_id || "", amount: totalAmount, label: simpleLabel, description: title }]);
+                  if (!isSplitItems && items.length === 1 && totalPaymentCalculated) {
+                    setItems([{ category_id: simpleCategoryId || categories[0]?.category_id || "", amount: totalPaymentCalculated.toString(), label: simpleLabel, description: title }]);
                   }
                 }}
                 className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
@@ -511,7 +536,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                 {/* Label Override Selector */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                    Classification Label (Inherited: <span className="font-bold">{categories.find(c => c.category_id === simpleCategoryId)?.effective_label || "None"}</span>)
+                    Classification (Default: <span className="font-bold">{categories.find(c => c.category_id === simpleCategoryId)?.effective_label || "None"}</span>)
                   </label>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {CLASSIFICATION_LABELS.map((lbl) => (
@@ -558,18 +583,23 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         ))}
                       </select>
 
-                      <input
-                        type="number"
-                        step="any"
-                        placeholder="Amount"
-                        value={itm.amount}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setItems((prev) => prev.map((item, i) => i === idx ? { ...item, amount: val } : item));
-                        }}
-                        className="w-24 bg-slate-50 text-slate-900 font-bold tabular-nums rounded-lg px-2.5 py-1.5 border border-slate-200 text-xs"
-                        required
-                      />
+                      <div className="relative flex items-center w-28">
+                        <span className="absolute left-2 font-bold text-slate-400 pointer-events-none text-xs">
+                          {simpleCurrencySymbol}
+                        </span>
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Amount"
+                          value={itm.amount}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setItems((prev) => prev.map((item, i) => i === idx ? { ...item, amount: val } : item));
+                          }}
+                          className="w-full bg-slate-50 text-slate-900 font-bold tabular-nums rounded-lg pl-5 pr-2 py-1.5 border border-slate-200 text-xs"
+                          required
+                        />
+                      </div>
 
                       {items.length > 1 && (
                         <button
@@ -624,11 +654,11 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                   <div className="text-[11px] font-bold">
                     {Math.abs(itemBalanceDiff) < 0.01 ? (
                       <span className="text-emerald-600 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Balanced: {formatCurrency(totalItemsSum, "EUR")}
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Balanced: {formatCurrency(totalItemsCalculated, simpleCurrency)}
                       </span>
                     ) : (
                       <span className="text-rose-600">
-                        Remaining: {formatCurrency(itemBalanceDiff, "EUR")}
+                        Remaining: {formatCurrency(itemBalanceDiff, simpleCurrency)}
                       </span>
                     )}
                   </div>

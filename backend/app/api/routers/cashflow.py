@@ -11,7 +11,9 @@ from app.schemas.schemas import (
     CashflowTransactionCreate, CashflowTransactionUpdate, CashflowTransactionResponse,
     CashflowPaymentResponse, CashflowItemResponse, CashflowSummaryResponse, SankeyDataResponse
 )
-from app.services.cashflow_engine import generate_sankey_data, get_cashflow_summary, build_category_lineage_map
+from app.services.cashflow_engine import (
+    generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur
+)
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
@@ -62,6 +64,7 @@ async def list_cashflow_transactions(
                 cashflow_id=p.cashflow_id,
                 account_id=p.account_id,
                 account_name=p.account.account_name if p.account else f"Account #{p.account_id}",
+                account_currency=p.account.currency if p.account and p.account.currency else "EUR",
                 amount=p.amount
             )
             for p in tx.payments
@@ -96,7 +99,8 @@ async def list_cashflow_transactions(
             transaction_date=tx.transaction_date,
             title=tx.title,
             total_amount=tx.total_amount,
-            currency=tx.currency,
+            currency=tx.currency or "EUR",
+            master_amount_eur=convert_currency_to_eur(tx.total_amount, tx.currency or "EUR"),
             notes=tx.notes,
             created_at=tx.created_at,
             payments=payments_out,
@@ -158,6 +162,7 @@ async def get_cashflow_transaction(
             cashflow_id=p.cashflow_id,
             account_id=p.account_id,
             account_name=p.account.account_name if p.account else f"Account #{p.account_id}",
+            account_currency=p.account.currency if p.account and p.account.currency else "EUR",
             amount=p.amount
         )
         for p in tx.payments
@@ -183,7 +188,8 @@ async def get_cashflow_transaction(
         transaction_date=tx.transaction_date,
         title=tx.title,
         total_amount=tx.total_amount,
-        currency=tx.currency,
+        currency=tx.currency or "EUR",
+        master_amount_eur=convert_currency_to_eur(tx.total_amount, tx.currency or "EUR"),
         notes=tx.notes,
         created_at=tx.created_at,
         payments=payments_out,
@@ -202,27 +208,47 @@ async def create_cashflow_transaction(
     if not tx_in.items:
         raise HTTPException(status_code=400, detail="At least one category line item is required")
 
+    # Fetch accounts to verify currencies
+    acc_ids = [p.account_id for p in tx_in.payments]
+    acc_stmt = select(Account).where(Account.account_id.in_(acc_ids))
+    acc_res = await db.execute(acc_stmt)
+    accounts = {a.account_id: a for a in acc_res.scalars().all()}
+
+    currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
+
     total_payments = sum(p.amount for p in tx_in.payments)
     total_items = sum(i.amount for i in tx_in.items)
 
-    # Validate amount balances with tolerance for floating point rounding
-    if abs(total_payments - tx_in.total_amount) > 0.01:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Sum of payment methods ({total_payments:.2f}) does not match total amount ({tx_in.total_amount:.2f})"
+    # Determine primary currency and total amount
+    if len(currencies) == 1:
+        primary_currency = list(currencies)[0]
+        final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else total_payments
+    else:
+        primary_currency = "EUR"
+        final_total = sum(
+            convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+            for p in tx_in.payments
         )
-    if abs(total_items - tx_in.total_amount) > 0.01:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Sum of category line items ({total_items:.2f}) does not match total amount ({tx_in.total_amount:.2f})"
-        )
+
+    # Validate balance if single currency
+    if len(currencies) <= 1:
+        if abs(total_payments - final_total) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sum of payment methods ({total_payments:.2f}) does not match total ({final_total:.2f})"
+            )
+        if abs(total_items - final_total) > 0.01:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sum of category line items ({total_items:.2f}) does not match total ({final_total:.2f})"
+            )
 
     # Create parent transaction
     tx = CashflowTransaction(
         transaction_date=tx_in.transaction_date,
         title=tx_in.title,
-        total_amount=tx_in.total_amount,
-        currency=tx_in.currency or "EUR",
+        total_amount=round(final_total, 2),
+        currency=tx_in.currency or primary_currency,
         notes=tx_in.notes
     )
     db.add(tx)
@@ -281,11 +307,8 @@ async def update_cashflow_transaction(
     # If payments provided, replace all
     if tx_in.payments is not None:
         total_payments = sum(p.amount for p in tx_in.payments)
-        if abs(total_payments - tx.total_amount) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Sum of payment methods ({total_payments:.2f}) does not match total amount ({tx.total_amount:.2f})"
-            )
+        tx.total_amount = total_payments
+
         # Delete old payments
         del_p_stmt = select(CashflowPayment).where(CashflowPayment.cashflow_id == cashflow_id)
         p_res = await db.execute(del_p_stmt)
@@ -297,12 +320,6 @@ async def update_cashflow_transaction(
 
     # If items provided, replace all
     if tx_in.items is not None:
-        total_items = sum(i.amount for i in tx_in.items)
-        if abs(total_items - tx.total_amount) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Sum of category line items ({total_items:.2f}) does not match total amount ({tx.total_amount:.2f})"
-            )
         # Delete old items
         del_i_stmt = select(CashflowItem).where(CashflowItem.cashflow_id == cashflow_id)
         i_res = await db.execute(del_i_stmt)

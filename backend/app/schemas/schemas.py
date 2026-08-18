@@ -255,12 +255,14 @@ class CategoryTreeResponse(CategoryResponse):
 class CashflowPaymentCreate(BaseModel):
     account_id: int
     amount: float
+    currency: Optional[str] = None
 
 class CashflowPaymentResponse(BaseModel):
     payment_id: int
     cashflow_id: int
     account_id: int
     account_name: Optional[str] = None
+    account_currency: Optional[str] = "EUR"
     amount: float
     model_config = ConfigDict(from_attributes=True)
 
@@ -287,8 +289,8 @@ class CashflowItemResponse(BaseModel):
 class CashflowTransactionCreate(BaseModel):
     transaction_date: datetime.date
     title: str
-    total_amount: float
-    currency: str = "EUR"
+    total_amount: Optional[float] = None
+    currency: Optional[str] = None
     notes: Optional[str] = None
     payments: List[CashflowPaymentCreate]
     items: List[CashflowItemCreate]
@@ -308,6 +310,7 @@ class CashflowTransactionResponse(BaseModel):
     title: str
     total_amount: float
     currency: str = "EUR"
+    master_amount_eur: Optional[float] = None
     notes: Optional[str] = None
     created_at: datetime.datetime
     payments: List[CashflowPaymentResponse] = []

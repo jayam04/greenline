@@ -386,17 +386,18 @@ export default function CashflowPage() {
 
                     <td className="py-3">
                       <div className="flex flex-col gap-1">
-                        {tx.payments.map((p, pIdx) => (
-                          <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
-                            <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                            <span>{p.account_name}</span>
-                            {tx.payments.length > 1 && (
-                              <span className="font-mono text-slate-400 tabular-nums">
-                                ({formatCurrency(p.amount, "EUR")})
+                        {tx.payments.map((p, pIdx) => {
+                          const pCurr = p.account_currency || tx.currency || "EUR";
+                          return (
+                            <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                              <span>{p.account_name}</span>
+                              <span className="font-mono text-slate-500 tabular-nums">
+                                ({formatCurrency(p.amount, pCurr)})
                               </span>
-                            )}
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
                       </div>
                     </td>
 
@@ -428,7 +429,7 @@ export default function CashflowPage() {
                               </span>
                               {tx.items.length > 1 && (
                                 <span className="font-mono font-bold text-slate-500 text-[11px] tabular-nums">
-                                  {formatCurrency(itm.amount, "EUR")}
+                                  {formatCurrency(itm.amount, tx.currency || "EUR")}
                                 </span>
                               )}
                             </div>
@@ -438,9 +439,14 @@ export default function CashflowPage() {
                     </td>
 
                     <td className="py-3 text-right font-mono font-bold tabular-nums">
-                      <span className={isIncome ? "text-emerald-600" : "text-[#0F172A]"}>
-                        {isIncome ? "+" : ""}{formatCurrency(tx.total_amount, "EUR")}
-                      </span>
+                      <div className={isIncome ? "text-emerald-600 text-xs" : "text-[#0F172A] text-xs"}>
+                        {isIncome ? "+" : ""}{formatCurrency(tx.total_amount, tx.currency || "EUR")}
+                      </div>
+                      {tx.currency && tx.currency !== "EUR" && tx.master_amount_eur && (
+                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          ≈ {formatCurrency(tx.master_amount_eur, "EUR")}
+                        </div>
+                      )}
                     </td>
 
                     <td className="py-3 text-right whitespace-nowrap">

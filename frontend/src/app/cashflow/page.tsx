@@ -372,7 +372,9 @@ export default function CashflowPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredTransactions.map((tx) => {
-                const isIncome = tx.items.some((i) => i.category_type === "INCOME");
+                const isTransfer = tx.transaction_kind === "TRANSFER" || tx.items.some((i) => i.category_type === "TRANSFER");
+                const isIncome = !isTransfer && tx.items.some((i) => i.category_type === "INCOME");
+
                 return (
                   <tr key={tx.cashflow_id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
@@ -380,7 +382,10 @@ export default function CashflowPage() {
                     </td>
 
                     <td className="py-3 font-bold text-[#0F172A]">
-                      <div>{tx.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        {isTransfer && <span className="text-blue-600 font-bold">🔄</span>}
+                        <span>{tx.title}</span>
+                      </div>
                       {tx.notes && <div className="text-[10px] text-slate-400 font-normal mt-0.5">{tx.notes}</div>}
                     </td>
 
@@ -388,12 +393,13 @@ export default function CashflowPage() {
                       <div className="flex flex-col gap-1">
                         {tx.payments.map((p, pIdx) => {
                           const pCurr = p.account_currency || tx.currency || "EUR";
+                          const isOut = p.amount < 0;
                           return (
                             <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
-                              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${isTransfer ? (isOut ? "bg-rose-500" : "bg-emerald-500") : "bg-blue-500"}`} />
                               <span>{p.account_name}</span>
-                              <span className="font-mono text-slate-500 tabular-nums">
-                                ({formatCurrency(p.amount, pCurr)})
+                              <span className={`font-mono tabular-nums ${isTransfer ? (isOut ? "text-rose-600" : "text-emerald-600") : "text-slate-500"}`}>
+                                ({isOut ? "-" : isTransfer ? "+" : ""}{formatCurrency(Math.abs(p.amount), pCurr)})
                               </span>
                             </div>
                           );
@@ -403,44 +409,57 @@ export default function CashflowPage() {
 
                     <td className="py-3">
                       <div className="flex flex-col gap-1.5">
-                        {tx.items.map((itm, iIdx) => {
-                          const lbl = itm.effective_label || itm.label || "DISCRETIONARY";
-                          const badgeColor =
-                            lbl === "ESSENTIAL"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : lbl === "LUXURY"
-                              ? "bg-pink-50 text-pink-700 border-pink-200"
-                              : lbl === "INVESTMENT"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-amber-50 text-amber-700 border-amber-200";
+                        {isTransfer ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                              Account Transfer & FX
+                            </span>
+                            {tx.items.find(i => i.category_name?.includes("Fee")) && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-bold bg-slate-100 text-slate-600 rounded">
+                                + Fee
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          tx.items.map((itm, iIdx) => {
+                            const lbl = itm.effective_label || itm.label || "DISCRETIONARY";
+                            const badgeColor =
+                              lbl === "ESSENTIAL"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : lbl === "LUXURY"
+                                ? "bg-pink-50 text-pink-700 border-pink-200"
+                                : lbl === "INVESTMENT"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200";
 
-                          return (
-                            <div key={iIdx} className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-slate-800 text-xs">
-                                {itm.category_name}
-                              </span>
-                              {itm.description && (
-                                <span className="text-slate-400 text-[11px]">
-                                  • {itm.description}
+                            return (
+                              <div key={iIdx} className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-800 text-xs">
+                                  {itm.category_name}
                                 </span>
-                              )}
-                              <span className={`px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded-md border ${badgeColor}`}>
-                                {lbl}
-                              </span>
-                              {tx.items.length > 1 && (
-                                <span className="font-mono font-bold text-slate-500 text-[11px] tabular-nums">
-                                  {formatCurrency(itm.amount, tx.currency || "EUR")}
+                                {itm.description && (
+                                  <span className="text-slate-400 text-[11px]">
+                                    • {itm.description}
+                                  </span>
+                                )}
+                                <span className={`px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded-md border ${badgeColor}`}>
+                                  {lbl}
                                 </span>
-                              )}
-                            </div>
-                          );
-                        })}
+                                {tx.items.length > 1 && (
+                                  <span className="font-mono font-bold text-slate-500 text-[11px] tabular-nums">
+                                    {formatCurrency(itm.amount, tx.currency || "EUR")}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </td>
 
                     <td className="py-3 text-right font-mono font-bold tabular-nums">
-                      <div className={isIncome ? "text-emerald-600 text-xs" : "text-[#0F172A] text-xs"}>
-                        {isIncome ? "+" : ""}{formatCurrency(tx.total_amount, tx.currency || "EUR")}
+                      <div className={isTransfer ? "text-blue-700 text-xs font-extrabold" : isIncome ? "text-emerald-600 text-xs" : "text-[#0F172A] text-xs"}>
+                        {isTransfer ? "" : isIncome ? "+" : ""}{formatCurrency(tx.total_amount, tx.currency || "EUR")}
                       </div>
                       {tx.currency && tx.currency !== "EUR" && tx.master_amount_eur && (
                         <div className="text-[10px] text-slate-400 font-semibold mt-0.5">

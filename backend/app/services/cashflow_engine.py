@@ -218,6 +218,18 @@ DEFAULT_CATEGORIES_TREE = [
             {"name": "Emergency Fund Reserve", "default_label": LABEL_INVESTMENT},
             {"name": "Pension & Retirement (NPS / 401k)", "default_label": LABEL_INVESTMENT},
         ]
+    },
+    # 4. Account Transfers & FX Tree
+    {
+        "name": "Account Transfers",
+        "category_type": "TRANSFER",
+        "default_label": None,
+        "icon": "ArrowLeftRight",
+        "color": "#8B5CF6",
+        "children": [
+            {"name": "Internal Account Transfer", "category_type": "TRANSFER", "default_label": None},
+            {"name": "FX Currency Conversion", "category_type": "TRANSFER", "default_label": None},
+        ]
     }
 ]
 
@@ -228,8 +240,6 @@ async def seed_default_categories(db: AsyncSession):
     stmt = select(func.count(Category.category_id))
     res = await db.execute(stmt)
     count = res.scalar() or 0
-    if count > 0:
-        return
 
     async def _insert_node(node_dict: dict, parent_id: Optional[int], parent_type: str, parent_label: str):
         c_type = node_dict.get("category_type") or parent_type
@@ -250,11 +260,20 @@ async def seed_default_categories(db: AsyncSession):
         for child in node_dict.get("children", []):
             await _insert_node(child, cat.category_id, c_type, c_label)
 
-    for root_node in DEFAULT_CATEGORIES_TREE:
-        await _insert_node(root_node, None, root_node["category_type"], root_node["default_label"])
-
-    await db.commit()
-    print("[Seed] Successfully seeded default 5-level category hierarchy.")
+    if count == 0:
+        for root_node in DEFAULT_CATEGORIES_TREE:
+            await _insert_node(root_node, None, root_node["category_type"], root_node.get("default_label"))
+        await db.commit()
+        print("[Seed] Successfully seeded default 5-level category hierarchy.")
+    else:
+        # Check if Transfer category exists, if not add it
+        trans_stmt = select(Category).where(Category.name == "Account Transfers")
+        trans_res = await db.execute(trans_stmt)
+        if not trans_res.scalar_one_or_none():
+            transfer_tree = DEFAULT_CATEGORIES_TREE[3]
+            await _insert_node(transfer_tree, None, transfer_tree["category_type"], transfer_tree.get("default_label"))
+            await db.commit()
+            print("[Seed] Successfully added Account Transfers category.")
 
 async def build_category_lineage_map(db: AsyncSession) -> Dict[int, Dict[str, Any]]:
     """
@@ -356,6 +375,9 @@ async def generate_sankey_data(
             # Determine category name at requested depth
             target_idx = min(depth - 1, len(ancestors) - 1)
             target_name = ancestors[target_idx].name
+
+            if cat_type == "TRANSFER":
+                continue
 
             if cat_type == "INCOME":
                 total_income += amt
@@ -527,6 +549,9 @@ async def get_cashflow_summary(
             effective_label = item.label or meta["effective_label"]
             raw_amt = float(item.amount or 0.0)
             amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
+
+            if cat_type == "TRANSFER":
+                continue
 
             if cat_type == "INCOME":
                 total_income += amt

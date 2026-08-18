@@ -291,6 +291,7 @@ class CashflowTransactionCreate(BaseModel):
     title: str
     total_amount: Optional[float] = None
     currency: Optional[str] = None
+    transaction_kind: Optional[str] = "EXPENSE" # EXPENSE, INCOME, TRANSFER
     notes: Optional[str] = None
     payments: List[CashflowPaymentCreate]
     items: List[CashflowItemCreate]
@@ -300,6 +301,7 @@ class CashflowTransactionUpdate(BaseModel):
     title: Optional[str] = None
     total_amount: Optional[float] = None
     currency: Optional[str] = None
+    transaction_kind: Optional[str] = None
     notes: Optional[str] = None
     payments: Optional[List[CashflowPaymentCreate]] = None
     items: Optional[List[CashflowItemCreate]] = None
@@ -311,6 +313,7 @@ class CashflowTransactionResponse(BaseModel):
     total_amount: float
     currency: str = "EUR"
     master_amount_eur: Optional[float] = None
+    transaction_kind: Optional[str] = "EXPENSE"
     notes: Optional[str] = None
     created_at: datetime.datetime
     payments: List[CashflowPaymentResponse] = []

@@ -94,6 +94,10 @@ async def list_cashflow_transactions(
         if label and not items_out:
             continue
 
+        is_trans = any(p.amount < 0 for p in tx.payments) or any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
+        is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in tx.items)
+        tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE"
+
         results.append(CashflowTransactionResponse(
             cashflow_id=tx.cashflow_id,
             transaction_date=tx.transaction_date,
@@ -101,6 +105,7 @@ async def list_cashflow_transactions(
             total_amount=tx.total_amount,
             currency=tx.currency or "EUR",
             master_amount_eur=convert_currency_to_eur(tx.total_amount, tx.currency or "EUR"),
+            transaction_kind=tx_kind,
             notes=tx.notes,
             created_at=tx.created_at,
             payments=payments_out,
@@ -147,6 +152,7 @@ async def get_cashflow_transaction(
             selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
             selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
         )
+        .execution_options(populate_existing=True)
         .where(CashflowTransaction.cashflow_id == cashflow_id)
     )
     res = await db.execute(stmt)
@@ -183,6 +189,10 @@ async def get_cashflow_transaction(
         for i in tx.items
     ]
 
+    is_trans = any(p.amount < 0 for p in tx.payments) or any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
+    is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in tx.items)
+    tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE"
+
     return CashflowTransactionResponse(
         cashflow_id=tx.cashflow_id,
         transaction_date=tx.transaction_date,
@@ -190,6 +200,7 @@ async def get_cashflow_transaction(
         total_amount=tx.total_amount,
         currency=tx.currency or "EUR",
         master_amount_eur=convert_currency_to_eur(tx.total_amount, tx.currency or "EUR"),
+        transaction_kind=tx_kind,
         notes=tx.notes,
         created_at=tx.created_at,
         payments=payments_out,
@@ -219,8 +230,18 @@ async def create_cashflow_transaction(
     total_payments = sum(p.amount for p in tx_in.payments)
     total_items = sum(i.amount for i in tx_in.items)
 
+    is_transfer = tx_in.transaction_kind == "TRANSFER"
+
     # Determine primary currency and total amount
-    if len(currencies) == 1:
+    if is_transfer:
+        # For transfers, primary currency is the destination (or source) currency
+        primary_currency = list(currencies)[0] if currencies else "EUR"
+        # Find positive payment (destination) or max absolute payment
+        dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
+        final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
+        if dest_pmt and dest_pmt.account_id in accounts:
+            primary_currency = accounts[dest_pmt.account_id].currency or primary_currency
+    elif len(currencies) == 1:
         primary_currency = list(currencies)[0]
         final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else total_payments
     else:
@@ -230,8 +251,8 @@ async def create_cashflow_transaction(
             for p in tx_in.payments
         )
 
-    # Validate balance if single currency
-    if len(currencies) <= 1:
+    # Validate balance if single currency non-transfer
+    if not is_transfer and len(currencies) <= 1:
         if abs(total_payments - final_total) > 0.01:
             raise HTTPException(
                 status_code=400,
@@ -306,8 +327,29 @@ async def update_cashflow_transaction(
 
     # If payments provided, replace all
     if tx_in.payments is not None:
-        total_payments = sum(p.amount for p in tx_in.payments)
-        tx.total_amount = total_payments
+        acc_ids = [p.account_id for p in tx_in.payments]
+        acc_stmt = select(Account).where(Account.account_id.in_(acc_ids))
+        acc_res = await db.execute(acc_stmt)
+        accounts = {a.account_id: a for a in acc_res.scalars().all()}
+        currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
+
+        is_transfer = (tx_in.transaction_kind == "TRANSFER") or any(p.amount < 0 for p in tx_in.payments)
+        if is_transfer:
+            dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
+            final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
+            primary_currency = accounts[dest_pmt.account_id].currency if dest_pmt and dest_pmt.account_id in accounts else "EUR"
+        elif len(currencies) == 1:
+            primary_currency = list(currencies)[0]
+            final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else sum(p.amount for p in tx_in.payments)
+        else:
+            primary_currency = "EUR"
+            final_total = sum(
+                convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+                for p in tx_in.payments
+            )
+
+        tx.total_amount = round(final_total, 2)
+        tx.currency = tx_in.currency or primary_currency
 
         # Delete old payments
         del_p_stmt = select(CashflowPayment).where(CashflowPayment.cashflow_id == cashflow_id)

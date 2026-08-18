@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatQty, formatNum, formatCleanMoney, convertCurrencyToEUR } from "@/lib/format";
+import { formatQty, formatNum, formatCleanMoney, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
 import { 
   ChevronDown, ChevronRight, Layers, ArrowUpRight, ArrowDownRight, 
   Plus, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2
@@ -58,6 +58,7 @@ export default function HoldingsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [closedHoldings, setClosedHoldings] = useState<Holding[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
+  const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
   const [loading, setLoading] = useState(true);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -68,6 +69,16 @@ export default function HoldingsPage() {
 
   useEffect(() => {
     loadData();
+    apiFetch<{ master_currency: string }>("/settings")
+      .then((res) => {
+        if (res?.master_currency) {
+          setMasterCurrency(res.master_currency.trim().toUpperCase());
+        }
+      })
+      .catch(() => {
+        const local = (typeof window !== "undefined" && localStorage.getItem("greenline_master_currency")) || "EUR";
+        setMasterCurrency(local);
+      });
   }, []);
 
   const loadData = async () => {
@@ -97,23 +108,23 @@ export default function HoldingsPage() {
     }
   };
 
-  // Convert all holdings & metrics to EUR for the top 6 KPI cards
+  // Convert all holdings & metrics to active master currency for the top 6 KPI cards
   const totalValueEUR = holdings.reduce(
-    (acc, h) => acc + convertCurrencyToEUR(h.current_value, h.currency),
+    (acc, h) => acc + convertCurrency(h.current_value, h.currency, masterCurrency),
     0
   );
   const totalCostEUR = holdings.reduce(
-    (acc, h) => acc + convertCurrencyToEUR(h.total_cost, h.currency),
+    (acc, h) => acc + convertCurrency(h.total_cost, h.currency, masterCurrency),
     0
   );
   const totalUnrealizedEUR = totalValueEUR - totalCostEUR;
   const totalRealizedEUR = holdings.reduce(
-    (acc, h) => acc + convertCurrencyToEUR(h.realized_pnl, h.currency),
+    (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
     0
   );
   
   const rawFeesTaxes = (summary?.total_fees || 0) + (summary?.total_taxes || 0);
-  const totalFeesAndTaxesEUR = convertCurrencyToEUR(rawFeesTaxes, "USD");
+  const totalFeesAndTaxesEUR = convertCurrency(rawFeesTaxes, "USD", masterCurrency);
   const totalNetPnLEUR = totalRealizedEUR + totalUnrealizedEUR - totalFeesAndTaxesEUR;
 
   // Sorted holdings
@@ -191,18 +202,18 @@ export default function HoldingsPage() {
         </div>
       </div>
 
-      {/* 6 Summary KPI Cards (Converted to EUR, No + / - Signs) */}
+      {/* 6 Summary KPI Cards (Converted to Master Currency, No + / - Signs) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
         {/* Card 1: Total Positions Value */}
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Positions Value</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              EUR
+              {masterCurrency}
             </span>
           </div>
           <div className="text-xl font-extrabold text-[#0F172A] tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalValueEUR, "EUR")}
+            {formatCleanMoney(totalValueEUR, masterCurrency)}
           </div>
         </div>
 
@@ -211,11 +222,11 @@ export default function HoldingsPage() {
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Invested Cost</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              EUR
+              {masterCurrency}
             </span>
           </div>
           <div className="text-xl font-extrabold text-slate-800 tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalCostEUR, "EUR")}
+            {formatCleanMoney(totalCostEUR, masterCurrency)}
           </div>
         </div>
 
@@ -224,12 +235,12 @@ export default function HoldingsPage() {
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Unrealized P&L</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              EUR
+              {masterCurrency}
             </span>
           </div>
           <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalUnrealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatCleanMoney(totalUnrealizedEUR, "EUR")}</span>
+            <span className="truncate">{formatCleanMoney(totalUnrealizedEUR, masterCurrency)}</span>
           </div>
         </div>
 
@@ -238,12 +249,12 @@ export default function HoldingsPage() {
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Realized P&L</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              EUR
+              {masterCurrency}
             </span>
           </div>
           <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalRealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalRealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatCleanMoney(totalRealizedEUR, "EUR")}</span>
+            <span className="truncate">{formatCleanMoney(totalRealizedEUR, masterCurrency)}</span>
           </div>
         </div>
 
@@ -252,11 +263,11 @@ export default function HoldingsPage() {
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Fees & Taxes</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              EUR
+              {masterCurrency}
             </span>
           </div>
           <div className="text-xl font-extrabold text-slate-700 tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalFeesAndTaxesEUR, "EUR")}
+            {formatCleanMoney(totalFeesAndTaxesEUR, masterCurrency)}
           </div>
         </div>
 
@@ -265,12 +276,12 @@ export default function HoldingsPage() {
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Total Net P&L</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              EUR
+              {masterCurrency}
             </span>
           </div>
           <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalNetPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalNetPnLEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatCleanMoney(totalNetPnLEUR, "EUR")}</span>
+            <span className="truncate">{formatCleanMoney(totalNetPnLEUR, masterCurrency)}</span>
           </div>
         </div>
       </div>

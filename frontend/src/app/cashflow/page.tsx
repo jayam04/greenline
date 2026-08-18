@@ -7,7 +7,7 @@ import {
   Calendar, Layers, Filter, Search, Edit, Trash2, Split,
   ArrowRight, ShieldCheck, Tag, Sparkles
 } from "lucide-react";
-import { formatCurrency, formatCleanMoney } from "@/lib/format";
+import { formatCurrency, formatCleanMoney, convertCurrency } from "@/lib/format";
 import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateUtils";
 import { SankeyChart, SankeyDataResponse } from "@/components/SankeyChart";
 import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowModal";
@@ -27,6 +27,8 @@ export default function CashflowPage() {
   const [sankeyData, setSankeyData] = useState<SankeyDataResponse | null>(null);
   const [transactions, setTransactions] = useState<CashflowTransactionItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
 
   // Filters
   const [sankeyDepth, setSankeyDepth] = useState<number>(2);
@@ -49,22 +51,33 @@ export default function CashflowPage() {
   const loadAllData = async () => {
     try {
       let includeInvestments = true;
+      let activeCurrency = "EUR";
       try {
-        const settingsRes = await apiFetch<{ link_brokerage_with_bank: boolean }>("/settings");
-        if (settingsRes && typeof settingsRes.link_brokerage_with_bank === "boolean") {
-          includeInvestments = !settingsRes.link_brokerage_with_bank;
+        const settingsRes = await apiFetch<{ link_brokerage_with_bank: boolean; master_currency: string }>("/settings");
+        if (settingsRes) {
+          if (typeof settingsRes.link_brokerage_with_bank === "boolean") {
+            includeInvestments = !settingsRes.link_brokerage_with_bank;
+          }
+          if (settingsRes.master_currency) {
+            activeCurrency = settingsRes.master_currency.trim().toUpperCase();
+            setMasterCurrency(activeCurrency);
+          }
         }
       } catch {
         const localVal = typeof window !== "undefined" && localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
         includeInvestments = !localVal;
+        activeCurrency = (typeof window !== "undefined" && localStorage.getItem("greenline_master_currency")) || "EUR";
+        setMasterCurrency(activeCurrency);
       }
 
       const queryParams = new URLSearchParams();
       if (startDate) queryParams.append("start_date", startDate);
       if (endDate) queryParams.append("end_date", endDate);
+      queryParams.append("include_investments", String(includeInvestments));
+      queryParams.append("master_currency", activeCurrency);
 
       const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
-      const sankeyQs = `?depth=${sankeyDepth}&include_investments=${includeInvestments}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
+      const sankeyQs = `?depth=${sankeyDepth}&include_investments=${includeInvestments}&master_currency=${activeCurrency}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
 
       const [sumRes, sankeyRes, txRes] = await Promise.all([
         apiFetch<CashflowSummary>(`/cashflow/summary${qs}`),
@@ -183,7 +196,7 @@ export default function CashflowPage() {
             </div>
             <div className="mt-2.5">
               <div className="text-xl font-bold text-[#0F172A] tabular-nums">
-                {formatCleanMoney(summary?.total_income || 0, "EUR")}
+                {formatCleanMoney(summary?.total_income || 0, masterCurrency)}
               </div>
               <p className="text-[10px] font-semibold text-emerald-600 mt-0.5">
                 Salary, Consulting & Dividends
@@ -201,7 +214,7 @@ export default function CashflowPage() {
             </div>
             <div className="mt-2.5">
               <div className="text-xl font-bold text-[#0F172A] tabular-nums">
-                {formatCleanMoney(summary?.total_expenses || 0, "EUR")}
+                {formatCleanMoney(summary?.total_expenses || 0, masterCurrency)}
               </div>
               <p className="text-[10px] font-semibold text-rose-600 mt-0.5">
                 Outflows & Lifestyle Spends
@@ -219,7 +232,7 @@ export default function CashflowPage() {
             </div>
             <div className="mt-2.5">
               <div className="text-xl font-bold text-[#0F172A] tabular-nums">
-                {formatCleanMoney(summary?.net_savings || 0, "EUR")}
+                {formatCleanMoney(summary?.net_savings || 0, masterCurrency)}
               </div>
               <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
                 Savings Rate: <span className="font-bold text-[#0F172A]">{summary?.savings_rate_pct || 0}%</span>
@@ -238,15 +251,15 @@ export default function CashflowPage() {
             <div className="mt-2 space-y-1 text-[11px] font-semibold">
               <div className="flex items-center justify-between">
                 <span className="text-emerald-700">Essential (Need):</span>
-                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["ESSENTIAL"] || 0, "EUR")}</span>
+                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["ESSENTIAL"] || 0, masterCurrency)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-amber-700">Discretionary:</span>
-                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["DISCRETIONARY"] || 0, "EUR")}</span>
+                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["DISCRETIONARY"] || 0, masterCurrency)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-pink-700">Luxury:</span>
-                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["LUXURY"] || 0, "EUR")}</span>
+                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["LUXURY"] || 0, masterCurrency)}</span>
               </div>
             </div>
           </div>
@@ -293,7 +306,7 @@ export default function CashflowPage() {
                 Generating flow ribbons...
               </div>
             ) : (
-              <SankeyChart data={sankeyData} />
+              <SankeyChart data={sankeyData} currency={masterCurrency} />
             )}
           </div>
         </div>
@@ -456,9 +469,9 @@ export default function CashflowPage() {
                       <div className={isTransfer ? "text-[#0F172A] text-xs" : isIncome ? "text-emerald-600 text-xs" : "text-rose-600 text-xs"}>
                         {formatCurrency(Math.abs(tx.total_amount), tx.currency || "EUR")}
                       </div>
-                      {tx.currency && tx.currency !== "EUR" && tx.master_amount_eur && (
+                      {tx.currency && tx.currency !== masterCurrency && (
                         <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                          ≈ {formatCurrency(Math.abs(tx.master_amount_eur), "EUR")}
+                          ≈ {formatCurrency(convertCurrency(Math.abs(tx.total_amount), tx.currency, masterCurrency), masterCurrency)}
                         </div>
                       )}
                     </td>

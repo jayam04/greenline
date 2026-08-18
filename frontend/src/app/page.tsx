@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatQty, formatNum, formatMoney, getCurrencySymbol, convertCurrencyToEUR } from "@/lib/format";
+import { formatQty, formatNum, formatMoney, getCurrencySymbol, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
 import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
 import { AllocationChart } from "@/components/AllocationChart";
 import { TransactionModal } from "@/components/TransactionModal";
@@ -18,7 +18,6 @@ interface HoldingSummary {
   symbol: string;
   name: string;
   asset_type: string;
-  sector?: string;
   currency: string;
   quantity_held: number;
   avg_cost_price: number;
@@ -28,22 +27,22 @@ interface HoldingSummary {
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   realized_pnl: number;
-  xirr: number | null;
+  xirr?: number | null;
+  weight_pct: number;
 }
 
 interface PortfolioSummary {
-  total_net_worth: number;
-  total_invested: number;
-  total_current_value: number;
+  net_worth: number;
+  total_cost: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  realized_pnl: number;
   cash_balance: number;
-  total_realized_pnl: number;
-  total_unrealized_pnl: number;
-  total_fees?: number;
-  total_taxes?: number;
-  portfolio_xirr: number | null;
+  total_fees: number;
+  total_taxes: number;
+  top_holdings: HoldingSummary[];
   asset_allocation: Record<string, number>;
   sector_allocation: Record<string, number>;
-  top_holdings: HoldingSummary[];
 }
 
 interface Snapshot {
@@ -73,6 +72,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
   const [selectedAccount, setSelectedAccount] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("YTD");
   const [holdingsTimeRange, setHoldingsTimeRange] = useState<string>("Max");
@@ -86,9 +86,19 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load Accounts once on mount
+  // Load Accounts and Master Currency on mount
   useEffect(() => {
     loadAccounts();
+    apiFetch<{ master_currency: string }>("/settings")
+      .then((res) => {
+        if (res?.master_currency) {
+          setMasterCurrency(res.master_currency.trim().toUpperCase());
+        }
+      })
+      .catch(() => {
+        const local = (typeof window !== "undefined" && localStorage.getItem("greenline_master_currency")) || "EUR";
+        setMasterCurrency(local);
+      });
   }, []);
 
   // Reload Summary & Snapshots whenever selectedAccount changes
@@ -142,7 +152,7 @@ export default function DashboardPage() {
       setSelectedBenchmarks([...selectedBenchmarks, bmId]);
       if (!benchmarksDataMap[bmId]) {
         try {
-          const res = await apiFetch<BenchmarkRawData>(`/benchmarks?symbol=${encodeURIComponent(bmId)}`);
+          const res = await apiFetch<BenchmarkRawData>(`/benchmarks/${encodeURIComponent(bmId)}`);
           if (res) {
             setBenchmarksDataMap((prev) => ({ ...prev, [bmId]: res }));
           }
@@ -153,32 +163,36 @@ export default function DashboardPage() {
     }
   };
 
-  // Convert summary values to EUR
+  // Convert summary values to active master currency
   const totalPositionsValueEUR = (summary?.top_holdings || []).reduce(
-    (acc, h) => acc + convertCurrencyToEUR(h.current_value, h.currency),
+    (acc, h) => acc + convertCurrency(h.current_value, h.currency, masterCurrency),
     0
   );
   const totalInvestedEUR = (summary?.top_holdings || []).reduce(
-    (acc, h) => acc + convertCurrencyToEUR(h.total_cost, h.currency),
+    (acc, h) => acc + convertCurrency(h.total_cost, h.currency, masterCurrency),
     0
   );
-  const totalCashEUR = Math.max(0, convertCurrencyToEUR(summary?.cash_balance || 0, "INR"));
+  const totalCashEUR = Math.max(0, convertCurrency(summary?.cash_balance || 0, "INR", masterCurrency));
   const totalNetWorthEUR = totalPositionsValueEUR + totalCashEUR;
   const totalUnrealizedEUR = totalPositionsValueEUR - totalInvestedEUR;
   const totalRealizedEUR = (summary?.top_holdings || []).reduce(
-    (acc, h) => acc + convertCurrencyToEUR(h.realized_pnl, h.currency),
+    (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
     0
   );
   const totalPnLEUR = totalUnrealizedEUR + totalRealizedEUR;
   const overallPnLPct = totalInvestedEUR > 0 ? (totalPnLEUR / totalInvestedEUR) * 100 : 0;
 
-  // Convert Snapshots to EUR for chart
+  // Convert Snapshots to active master currency for chart
   const snapshotsInEUR: Snapshot[] = React.useMemo(() => {
     if (!snapshots || snapshots.length === 0) return [];
     
-    // In aggregated mode, backend /snapshots already aggregates all accounts converted to EUR
+    // In aggregated mode, backend /snapshots aggregates all accounts in EUR base, so convert EUR to masterCurrency
     if (selectedAccount === "all") {
-      return snapshots;
+      return snapshots.map((s) => ({
+        snapshot_date: s.snapshot_date,
+        net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency),
+        total_invested: convertCurrency(s.total_invested, "EUR", masterCurrency),
+      }));
     }
 
     // In single account mode, convert from that account's native currency
@@ -187,10 +201,10 @@ export default function DashboardPage() {
 
     return snapshots.map((s) => ({
       snapshot_date: s.snapshot_date,
-      net_worth: convertCurrencyToEUR(s.net_worth, repCurrency),
-      total_invested: convertCurrencyToEUR(s.total_invested, repCurrency),
+      net_worth: convertCurrency(s.net_worth, repCurrency, masterCurrency),
+      total_invested: convertCurrency(s.total_invested, repCurrency, masterCurrency),
     }));
-  }, [snapshots, selectedAccount, accounts]);
+  }, [snapshots, selectedAccount, accounts, masterCurrency]);
 
   // Filter snapshots based on selected timeframe
   const filteredSnapshots = React.useMemo(() => {
@@ -268,25 +282,26 @@ export default function DashboardPage() {
     });
   }, [selectedBenchmarks, benchmarksDataMap, filteredSnapshots]);
 
-  // Helper to render EUR formatted amounts
-  const renderFormattedEUR = (amount: number) => {
+  // Helper to render Master Currency formatted amounts
+  const renderFormattedMaster = (amount: number) => {
     if (hideBalances) return "••••••";
+    const sym = getCurrencySymbol(masterCurrency);
     const formatted = formatNum(Math.abs(amount), 2);
     const [whole, decimal] = formatted.split(".");
     return (
       <span className="tabular-nums font-extrabold text-[#0F172A]">
-        €{whole}
+        {sym}{whole}
         <span className="text-slate-400 text-lg font-bold">.{decimal || "00"}</span>
       </span>
     );
   };
 
-  // Allocation Map converted to EUR
+  // Allocation Map converted to Master Currency
   const activeAllocationMapEUR = () => {
     const alloc: Record<string, number> = {};
     if (allocationTab === "positions") {
       (summary?.top_holdings || []).forEach((h) => {
-        alloc[h.symbol] = convertCurrencyToEUR(h.current_value, h.currency);
+        alloc[h.symbol] = convertCurrency(h.current_value, h.currency, masterCurrency);
       });
       if (totalCashEUR > 0) alloc["CASH"] = totalCashEUR;
       return alloc;
@@ -294,13 +309,13 @@ export default function DashboardPage() {
 
     if (allocationTab === "sectors") {
       Object.entries(summary?.sector_allocation || {}).forEach(([k, v]) => {
-        alloc[k] = convertCurrencyToEUR(v, "INR");
+        alloc[k] = convertCurrency(v, "INR", masterCurrency);
       });
       return alloc;
     }
 
     Object.entries(summary?.asset_allocation || {}).forEach(([k, v]) => {
-      alloc[k] = convertCurrencyToEUR(v, "INR");
+      alloc[k] = convertCurrency(v, "INR", masterCurrency);
     });
     return alloc;
   };
@@ -474,25 +489,25 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
                       <span className={totalPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}>
-                        {formatMoney(totalPnLEUR, "EUR", 2, true)} Total Profit & Loss
+                        {formatMoney(totalPnLEUR, masterCurrency, 2, true)} Total Profit & Loss
                       </span>
                     </div>
                   </div>
                 ) : (
                   <div>
                     <div className="text-3xl font-extrabold tracking-tight">
-                      {renderFormattedEUR(totalNetWorthEUR)}
+                      {renderFormattedMaster(totalNetWorthEUR)}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
                       {timeframeReturn.gain >= 0 ? (
                         <span className="text-[#16A34A] flex items-center gap-0.5">
                           <ArrowUpRight className="w-3.5 h-3.5" />
-                          +{timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, "EUR", 2, true)})
+                          +{timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, masterCurrency, 2, true)})
                         </span>
                       ) : (
                         <span className="text-[#DC2626] flex items-center gap-0.5">
                           <ArrowDownRight className="w-3.5 h-3.5" />
-                          {timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, "EUR", 2, false)})
+                          {timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, masterCurrency, 2, false)})
                         </span>
                       )}
                     </div>
@@ -518,12 +533,12 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Net Worth / P&L Timeline Chart in EUR */}
+            {/* Net Worth / P&L Timeline Chart in Master Currency */}
             <div className="mt-4">
               <NetWorthChart 
                 data={filteredSnapshots} 
                 mode={chartMode}
-                currency="EUR"
+                currency={masterCurrency}
                 benchmarks={chartMode === "performance" ? normalizedBenchmarks : []}
               />
             </div>
@@ -720,13 +735,13 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* Donut Chart (Starts at top 90°, clockwise, in EUR) */}
+            {/* Donut Chart (Starts at top 90°, clockwise, in Master Currency) */}
             <div className="pt-2">
               <AllocationChart
                 allocation={activeAllocationMapEUR()}
                 centerLabel="Total Net Worth"
-                centerValue={hideBalances ? "••••••" : formatMoney(totalNetWorthEUR, "EUR", 0)}
-                currency="EUR"
+                centerValue={hideBalances ? "••••••" : formatMoney(totalNetWorthEUR, masterCurrency, 0)}
+                currency={masterCurrency}
               />
             </div>
           </div>

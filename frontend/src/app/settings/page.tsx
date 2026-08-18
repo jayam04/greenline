@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import { 
   Settings, User, Link as LinkIcon, ShieldCheck, 
   Coins, CheckCircle2, AlertCircle, LogOut, ArrowRight,
-  HelpCircle, Sliders, Database
+  HelpCircle, Sliders, Database, Check
 } from "lucide-react";
+import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
 
 export default function SettingsPage() {
   const router = useRouter();
   const [linkBrokerage, setLinkBrokerage] = useState(false);
+  const [masterCurrency, setMasterCurrency] = useState("EUR");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -23,15 +25,24 @@ export default function SettingsPage() {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch<{ link_brokerage_with_bank: boolean }>("/settings");
-      if (res && typeof res.link_brokerage_with_bank === "boolean") {
-        setLinkBrokerage(res.link_brokerage_with_bank);
-        localStorage.setItem("greenline_link_brokerage_with_bank", String(res.link_brokerage_with_bank));
+      const res = await apiFetch<{ link_brokerage_with_bank: boolean; master_currency: string }>("/settings");
+      if (res) {
+        if (typeof res.link_brokerage_with_bank === "boolean") {
+          setLinkBrokerage(res.link_brokerage_with_bank);
+          localStorage.setItem("greenline_link_brokerage_with_bank", String(res.link_brokerage_with_bank));
+        }
+        if (res.master_currency) {
+          const curr = res.master_currency.trim().toUpperCase();
+          setMasterCurrency(curr);
+          localStorage.setItem("greenline_master_currency", curr);
+        }
       }
     } catch (e) {
       console.error("Failed to load settings from server, using localStorage:", e);
-      const localVal = localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
-      setLinkBrokerage(localVal);
+      const localLink = localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
+      const localCurr = localStorage.getItem("greenline_master_currency") || "EUR";
+      setLinkBrokerage(localLink);
+      setMasterCurrency(localCurr);
     } finally {
       setLoading(false);
     }
@@ -40,18 +51,28 @@ export default function SettingsPage() {
   const handleToggleLinkBrokerage = async (newValue: boolean) => {
     setLinkBrokerage(newValue);
     localStorage.setItem("greenline_link_brokerage_with_bank", String(newValue));
+    saveSettings({ link_brokerage_with_bank: newValue, master_currency: masterCurrency });
+  };
+
+  const handleChangeMasterCurrency = async (newCurrency: string) => {
+    setMasterCurrency(newCurrency);
+    localStorage.setItem("greenline_master_currency", newCurrency);
+    saveSettings({ link_brokerage_with_bank: linkBrokerage, master_currency: newCurrency });
+  };
+
+  const saveSettings = async (payload: { link_brokerage_with_bank: boolean; master_currency: string }) => {
     setSaving(true);
     setSavedMessage("");
 
     try {
       await apiFetch("/settings", {
         method: "PUT",
-        body: JSON.stringify({ link_brokerage_with_bank: newValue }),
+        body: JSON.stringify(payload),
       });
-      setSavedMessage("Setting updated successfully!");
+      setSavedMessage("Settings saved successfully!");
       setTimeout(() => setSavedMessage(""), 3500);
     } catch (e) {
-      console.error("Failed to persist setting to server:", e);
+      console.error("Failed to persist settings to server:", e);
       setSavedMessage("Updated locally in session.");
       setTimeout(() => setSavedMessage(""), 3500);
     } finally {
@@ -64,6 +85,8 @@ export default function SettingsPage() {
     router.push("/login");
   };
 
+  const selectedCurrencyObj = SUPPORTED_CURRENCIES.find((c) => c.code === masterCurrency) || SUPPORTED_CURRENCIES[0];
+
   return (
     <div className="max-w-[1200px] mx-auto px-4 lg:px-6 py-5 space-y-6 font-sans">
       {/* Header Bar */}
@@ -74,12 +97,12 @@ export default function SettingsPage() {
             <span>Settings & Preferences</span>
           </h1>
           <p className="text-xs font-semibold text-slate-500 mt-0.5">
-            Manage application integration rules, account preferences, and display behaviors
+            Manage application integration rules, master currency selection, and display behaviors
           </p>
         </div>
 
         {savedMessage && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{savedMessage}</span>
           </div>
@@ -89,7 +112,68 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Left 2 Cols: Main Configuration Cards */}
         <div className="md:col-span-2 space-y-5">
-          {/* Card 1: Account & Cashflow Integration Rules */}
+          {/* Card 1: Master Currency Selection */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <Coins className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-[#0F172A]">
+                    Master Portfolio Currency
+                  </h2>
+                  <p className="text-[11px] font-medium text-slate-400">
+                    Base currency used for portfolio net worth, KPI summaries, and cashflow charts
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-2.5 py-1 bg-slate-100 rounded-lg text-xs font-bold text-[#0F172A]">
+                Active: {selectedCurrencyObj.symbol} {selectedCurrencyObj.code}
+              </div>
+            </div>
+
+            {/* Currency Grid Picker */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {SUPPORTED_CURRENCIES.map((curr) => {
+                const isSelected = curr.code === masterCurrency;
+                return (
+                  <button
+                    key={curr.code}
+                    type="button"
+                    onClick={() => handleChangeMasterCurrency(curr.code)}
+                    disabled={loading || saving}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                      isSelected
+                        ? "border-[#0F172A] bg-slate-50/80 shadow-xs"
+                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5 font-bold text-xs text-[#0F172A]">
+                        <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-[11px]">
+                          {curr.symbol}
+                        </span>
+                        <span>{curr.code}</span>
+                      </div>
+                      <div className="text-[10px] font-semibold text-slate-400 mt-0.5">
+                        {curr.country}
+                      </div>
+                    </div>
+
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-[#0F172A] text-white flex items-center justify-center">
+                        <Check className="w-3 h-3" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card 2: Account & Cashflow Integration Rules */}
           <div className="getquin-card p-5 space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
               <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
@@ -144,53 +228,6 @@ export default function SettingsPage() {
               </label>
             </div>
           </div>
-
-          {/* Card 2: Currency & Master Configuration */}
-          <div className="getquin-card p-5 space-y-4">
-            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
-              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
-                <Coins className="w-4 h-4" />
-              </div>
-              <div>
-                <h2 className="text-sm font-bold text-[#0F172A]">
-                  Currency & Conversion Engine
-                </h2>
-                <p className="text-[11px] font-medium text-slate-400">
-                  Global portfolio aggregation currency and supported native account currencies
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Master Portfolio Currency
-                </span>
-                <div className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span>EUR (€) - Euro</span>
-                </div>
-                <p className="text-[10px] font-semibold text-slate-400 mt-1">
-                  All KPI metrics and Sankey charts convert native balances to EUR
-                </p>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                  Multi-Currency Support
-                </span>
-                <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5 flex-wrap">
-                  <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold">EUR (€)</span>
-                  <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold">USD ($)</span>
-                  <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold">INR (₹)</span>
-                  <span className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-bold">GBP (£)</span>
-                </div>
-                <p className="text-[10px] font-semibold text-slate-400 mt-1">
-                  Automatic FX rate conversion on cashflow transactions
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Right 1 Col: User & Session Info Card */}
@@ -216,6 +253,13 @@ export default function SettingsPage() {
                 <span className="font-semibold text-slate-500">Role</span>
                 <span className="px-2 py-0.5 bg-slate-100 text-slate-700 font-extrabold text-[10px] rounded uppercase">
                   Administrator
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="font-semibold text-slate-500">Master Currency</span>
+                <span className="font-bold text-emerald-700">
+                  {selectedCurrencyObj.symbol} {selectedCurrencyObj.code}
                 </span>
               </div>
 

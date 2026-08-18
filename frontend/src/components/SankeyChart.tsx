@@ -32,9 +32,10 @@ export type SankeyDataResponse = SankeyData;
 interface SankeyChartProps {
   data: SankeyData | null;
   loading?: boolean;
+  currency?: string;
 }
 
-export function SankeyChart({ data, loading = false }: SankeyChartProps) {
+export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyChartProps) {
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredLink, setHoveredLink] = useState<{ source: string; target: string; value: number } | null>(null);
 
@@ -215,7 +216,7 @@ export function SankeyChart({ data, loading = false }: SankeyChartProps) {
           <span className="text-slate-400">➔</span>
           <span className="text-rose-300">{hoveredLink.target}</span>
           <span className="text-white bg-slate-800 px-1.5 py-0.5 rounded ml-1 font-bold">
-            {formatCurrency(hoveredLink.value, "EUR")}
+            {formatCurrency(hoveredLink.value, currency)}
           </span>
         </div>
       )}
@@ -325,7 +326,7 @@ export function SankeyChart({ data, loading = false }: SankeyChartProps) {
                   dominantBaseline="central"
                   className="text-[10px] font-semibold fill-slate-400 tabular-nums pointer-events-none"
                 >
-                  {formatCurrency(value, "EUR")}
+                  {formatCurrency(value, currency)}
                 </text>
               </g>
             );

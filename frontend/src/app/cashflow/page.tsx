@@ -158,56 +158,10 @@ export default function CashflowPage() {
       </div>
 
       {/* ======================================================== */}
-      {/* 1. SIDE-BY-SIDE: SANKEY (80%) + 4 KPI CARDS (20%)        */}
+      {/* 1. SIDE-BY-SIDE: 4 KPI CARDS (20%) + SANKEY (80%)        */}
       {/* ======================================================== */}
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-start">
-        {/* Left 4 Cols (~80% width): Sankey Flow Diagram Card */}
-        <div className="xl:col-span-4 getquin-card p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <span>Cashflow Sankey Flow Diagram</span>
-              </h2>
-              <p className="text-[11px] font-medium text-slate-400">
-                Visualizing money flow from income & past savings into classification buckets and category nodes
-              </p>
-            </div>
-
-            {/* Depth Selector (Level 1 to 5) */}
-            <div className="flex items-center gap-1 bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold">
-              <span className="text-[10px] text-slate-400 font-bold px-2 uppercase tracking-wider flex items-center gap-1">
-                <Layers className="w-3 h-3" /> Depth:
-              </span>
-              {[1, 2, 3, 4, 5].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setSankeyDepth(d)}
-                  className={`w-6 h-6 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
-                    sankeyDepth === d
-                      ? "bg-[#0F172A] text-white shadow-xs"
-                      : "text-slate-600 hover:text-black"
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Render Sankey Visualizer */}
-          <div className="w-full bg-slate-50/50 rounded-xl border border-slate-100 p-2 min-h-[420px] flex items-center justify-center">
-            {loading && !sankeyData ? (
-              <div className="text-xs font-bold text-slate-400 animate-pulse">
-                Generating flow ribbons...
-              </div>
-            ) : (
-              <SankeyChart data={sankeyData} />
-            )}
-          </div>
-        </div>
-
-        {/* Right 1 Col (~20% width): 4 Stacked KPI Cards */}
+        {/* Left 1 Col (~20% width): 4 Stacked KPI Cards */}
         <div className="xl:col-span-1 space-y-3.5 flex flex-col">
           {/* Card 1: Total Inflow */}
           <div className="getquin-card p-4">
@@ -285,6 +239,52 @@ export default function CashflowPage() {
                 <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["LUXURY"] || 0, "EUR")}</span>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Right 4 Cols (~80% width): Sankey Flow Diagram Card */}
+        <div className="xl:col-span-4 getquin-card p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Cashflow Sankey Flow Diagram</span>
+              </h2>
+              <p className="text-[11px] font-medium text-slate-400">
+                Visualizing money flow from income & past savings into classification buckets and category nodes
+              </p>
+            </div>
+
+            {/* Depth Selector (Level 1 to 5) */}
+            <div className="flex items-center gap-1 bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold">
+              <span className="text-[10px] text-slate-400 font-bold px-2 uppercase tracking-wider flex items-center gap-1">
+                <Layers className="w-3 h-3" /> Depth:
+              </span>
+              {[1, 2, 3, 4, 5].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setSankeyDepth(d)}
+                  className={`w-6 h-6 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
+                    sankeyDepth === d
+                      ? "bg-[#0F172A] text-white shadow-xs"
+                      : "text-slate-600 hover:text-black"
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Render Sankey Visualizer */}
+          <div className="w-full bg-slate-50/50 rounded-xl border border-slate-100 p-2 min-h-[420px] flex items-center justify-center">
+            {loading && !sankeyData ? (
+              <div className="text-xs font-bold text-slate-400 animate-pulse">
+                Generating flow ribbons...
+              </div>
+            ) : (
+              <SankeyChart data={sankeyData} />
+            )}
           </div>
         </div>
       </div>

@@ -342,14 +342,50 @@ export default function CategoriesPage() {
       {/* FULL-WIDTH TABULAR CATEGORY TREE                         */}
       {/* ======================================================== */}
       <div className="getquin-card p-5 space-y-4 w-full">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-            <Layers className="w-4 h-4 text-blue-600" />
-            <span>Category Taxonomy & Spend Aggregates ({flatCategories.length} Categories)</span>
-          </h2>
-          <p className="text-[11px] font-medium text-slate-400">
-            Totals include direct transactions plus all child subcategories
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
+              <Layers className="w-4 h-4 text-blue-600" />
+              <span>Category Taxonomy & Spend Aggregates ({flatCategories.length} Categories)</span>
+            </h2>
+            <p className="text-[11px] font-medium text-slate-400">
+              Totals include direct transactions plus all child subcategories
+            </p>
+          </div>
+
+          {/* Add Period Dropdown Button in Toolbar */}
+          <div className="relative">
+            <button
+              onClick={() => setIsAddColumnOpen(!isAddColumnOpen)}
+              className="btn-pill-gray text-xs cursor-pointer flex items-center gap-1.5"
+              title="Add timeline comparison column"
+            >
+              <Plus className="w-3.5 h-3.5 text-blue-600" />
+              <span>Add Period Column</span>
+            </button>
+
+            {isAddColumnOpen && (
+              <div className="absolute right-0 top-9 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 w-44 text-left normal-case space-y-0.5">
+                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                  Add Comparison Period
+                </div>
+                {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => handleAddColumn(opt.key)}
+                    className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-black rounded-lg transition-colors cursor-pointer"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).length === 0 && (
+                  <div className="px-2 py-1.5 text-[11px] text-slate-400">
+                    All periods already added
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -361,7 +397,7 @@ export default function CategoriesPage() {
                 <th className="pb-2.5 px-3 font-bold w-32">Classification</th>
 
                 {/* Dynamic Timeline Headers */}
-                {activeColumns.map((colKey) => {
+                {activeColumns.map((colKey, idx) => {
                   const opt = TIMELINE_OPTIONS.find((o) => o.key === colKey);
                   return (
                     <th key={colKey} className="pb-2.5 px-3 font-bold text-right min-w-[120px]">
@@ -381,42 +417,6 @@ export default function CategoriesPage() {
                   );
                 })}
 
-                {/* Add Column Dropdown */}
-                <th className="pb-2.5 px-3 font-bold text-right w-24 relative">
-                  <div className="inline-block relative">
-                    <button
-                      onClick={() => setIsAddColumnOpen(!isAddColumnOpen)}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md transition-all cursor-pointer"
-                      title="Add timeline comparison column"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Add Period</span>
-                    </button>
-
-                    {isAddColumnOpen && (
-                      <div className="absolute right-0 top-7 z-30 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 w-40 text-left normal-case space-y-0.5">
-                        <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                          Select Timeline
-                        </div>
-                        {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).map((opt) => (
-                          <button
-                            key={opt.key}
-                            onClick={() => handleAddColumn(opt.key)}
-                            className="w-full text-left px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-black rounded-lg transition-colors cursor-pointer"
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                        {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).length === 0 && (
-                          <div className="px-2 py-1.5 text-[11px] text-slate-400">
-                            All periods added
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </th>
-
                 <th className="pb-2.5 px-3 font-bold text-right w-24">Actions</th>
               </tr>
             </thead>
@@ -425,7 +425,7 @@ export default function CategoriesPage() {
 
               {tree.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5 + activeColumns.length} className="py-8 text-center text-slate-400 font-medium text-xs">
+                  <td colSpan={4 + activeColumns.length} className="py-8 text-center text-slate-400 font-medium text-xs">
                     No categories found. Click "Add Category" to create one.
                   </td>
                 </tr>

@@ -691,7 +691,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                 {effectiveExchangeRate && (
                   <div className="p-2 bg-blue-50/70 border border-blue-200/60 rounded-lg text-[11px] font-bold text-blue-700 flex items-center justify-between">
                     <span>Effective Exchange Rate:</span>
-                    <span className="font-mono bg-white px-2 py-0.5 rounded border border-blue-200">
+                    <span className="bg-white px-2 py-0.5 rounded border border-blue-200 font-bold">
                       {effectiveExchangeRate}
                     </span>
                   </div>
@@ -725,7 +725,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                     </div>
 
                     {convertedFeeInToCurrency > 0 && fromAccount?.currency !== toAccount?.currency && (
-                      <span className="text-[11px] font-bold text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs font-mono">
+                      <span className="text-[11px] font-bold text-slate-600 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs">
                         ≈ {formatCurrency(convertedFeeInToCurrency, toAccount?.currency || "EUR")}
                       </span>
                     )}
@@ -884,7 +884,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         <Plus className="w-3 h-3" /> Add Account Split
                       </button>
 
-                      <div className="text-[11px] font-bold font-mono text-slate-700">
+                      <div className="text-[11px] font-bold text-slate-700">
                         Total: {formatCurrency(totalPaymentCalculated, simpleCurrency)}
                       </div>
                     </div>

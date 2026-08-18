@@ -189,7 +189,7 @@ export default function CashflowPage() {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-[#0F172A] tabular-nums font-mono">
+            <div className="text-2xl font-bold text-[#0F172A] tabular-nums">
               {formatCleanMoney(summary?.total_income || 0, "EUR")}
             </div>
             <p className="text-[11px] font-semibold text-emerald-600 mt-1 flex items-center gap-1">
@@ -207,7 +207,7 @@ export default function CashflowPage() {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-[#0F172A] tabular-nums font-mono">
+            <div className="text-2xl font-bold text-[#0F172A] tabular-nums">
               {formatCleanMoney(summary?.total_expenses || 0, "EUR")}
             </div>
             <p className="text-[11px] font-semibold text-rose-600 mt-1 flex items-center gap-1">
@@ -225,7 +225,7 @@ export default function CashflowPage() {
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-[#0F172A] tabular-nums font-mono">
+            <div className="text-2xl font-bold text-[#0F172A] tabular-nums">
               {formatCleanMoney(summary?.net_savings || 0, "EUR")}
             </div>
             <p className="text-[11px] font-semibold text-slate-500 mt-1">
@@ -245,15 +245,15 @@ export default function CashflowPage() {
           <div className="mt-2 space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-semibold">
               <span className="text-emerald-700">Essential (Needs):</span>
-              <span className="font-mono font-bold text-[#0F172A]">{formatCurrency(labelTotals["ESSENTIAL"] || 0, "EUR")}</span>
+              <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["ESSENTIAL"] || 0, "EUR")}</span>
             </div>
             <div className="flex items-center justify-between text-[11px] font-semibold">
               <span className="text-amber-700">Discretionary (Wants):</span>
-              <span className="font-mono font-bold text-[#0F172A]">{formatCurrency(labelTotals["DISCRETIONARY"] || 0, "EUR")}</span>
+              <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["DISCRETIONARY"] || 0, "EUR")}</span>
             </div>
             <div className="flex items-center justify-between text-[11px] font-semibold">
               <span className="text-pink-700">Luxury:</span>
-              <span className="font-mono font-bold text-[#0F172A]">{formatCurrency(labelTotals["LUXURY"] || 0, "EUR")}</span>
+              <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["LUXURY"] || 0, "EUR")}</span>
             </div>
           </div>
         </div>
@@ -398,7 +398,7 @@ export default function CashflowPage() {
                             <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
                               <span className={`w-2 h-2 rounded-full shrink-0 ${isTransfer ? (isOut ? "bg-rose-500" : "bg-emerald-500") : "bg-blue-500"}`} />
                               <span>{p.account_name}</span>
-                              <span className={`font-mono tabular-nums ${isTransfer ? (isOut ? "text-rose-600" : "text-emerald-600") : "text-slate-500"}`}>
+                              <span className={`tabular-nums ${isTransfer ? (isOut ? "text-rose-600" : "text-emerald-600") : "text-slate-500"}`}>
                                 ({isOut ? "-" : isTransfer ? "+" : ""}{formatCurrency(Math.abs(p.amount), pCurr)})
                               </span>
                             </div>
@@ -446,7 +446,7 @@ export default function CashflowPage() {
                                   {lbl}
                                 </span>
                                 {tx.items.length > 1 && (
-                                  <span className="font-mono font-bold text-slate-500 text-[11px] tabular-nums">
+                                  <span className="font-bold text-slate-500 text-[11px] tabular-nums">
                                     {formatCurrency(itm.amount, tx.currency || "EUR")}
                                   </span>
                                 )}
@@ -457,7 +457,7 @@ export default function CashflowPage() {
                       </div>
                     </td>
 
-                    <td className="py-3 text-right font-mono font-bold tabular-nums">
+                    <td className="py-3 text-right font-bold tabular-nums">
                       <div className={isTransfer ? "text-blue-700 text-xs font-extrabold" : isIncome ? "text-emerald-600 text-xs" : "text-[#0F172A] text-xs"}>
                         {isTransfer ? "" : isIncome ? "+" : ""}{formatCurrency(tx.total_amount, tx.currency || "EUR")}
                       </div>

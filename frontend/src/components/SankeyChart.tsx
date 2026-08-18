@@ -212,7 +212,7 @@ export function SankeyChart({ data, loading = false }: SankeyChartProps) {
           <span className="text-emerald-400">{hoveredLink.source}</span>
           <span className="text-slate-400">➔</span>
           <span className="text-rose-300">{hoveredLink.target}</span>
-          <span className="font-mono text-white bg-slate-800 px-1.5 py-0.5 rounded ml-1">
+          <span className="text-white bg-slate-800 px-1.5 py-0.5 rounded ml-1 font-bold">
             {formatCurrency(hoveredLink.value, "EUR")}
           </span>
         </div>
@@ -321,7 +321,7 @@ export function SankeyChart({ data, loading = false }: SankeyChartProps) {
                   y={y + nh / 2 + 10}
                   textAnchor={isLeft ? "end" : isRight ? "start" : "middle"}
                   dominantBaseline="central"
-                  className="text-[10px] font-semibold fill-slate-400 tabular-nums pointer-events-none font-mono"
+                  className="text-[10px] font-semibold fill-slate-400 tabular-nums pointer-events-none"
                 >
                   {formatCurrency(value, "EUR")}
                 </text>

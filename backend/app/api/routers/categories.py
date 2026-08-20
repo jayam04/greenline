@@ -194,8 +194,29 @@ async def update_category(
         raise HTTPException(status_code=404, detail="Category not found")
 
     update_data = category_in.model_dump(exclude_unset=True)
-    if "parent_id" in update_data and update_data["parent_id"] == category_id:
-        raise HTTPException(status_code=400, detail="A category cannot be its own parent")
+    if "parent_id" in update_data:
+        new_parent_id = update_data["parent_id"]
+        if new_parent_id is not None:
+            if new_parent_id == category_id:
+                raise HTTPException(status_code=400, detail="A category cannot be its own parent")
+
+            # Fetch all categories to check existence and prevent cycles
+            all_cats_res = await db.execute(select(Category))
+            all_cats = all_cats_res.scalars().all()
+            cat_by_id = {c.category_id: c for c in all_cats}
+
+            if new_parent_id not in cat_by_id:
+                raise HTTPException(status_code=400, detail="Parent category does not exist")
+
+            # Traverse ancestry of candidate parent to ensure category_id is not in its lineage (no cycles)
+            curr_p = new_parent_id
+            visited = set()
+            while curr_p and curr_p not in visited:
+                if curr_p == category_id:
+                    raise HTTPException(status_code=400, detail="Cannot set a descendant category as parent (cycle detected)")
+                visited.add(curr_p)
+                parent_node = cat_by_id.get(curr_p)
+                curr_p = parent_node.parent_id if parent_node else None
 
     for field, val in update_data.items():
         setattr(category, field, val)
@@ -231,6 +252,12 @@ async def delete_category(
     category = res.scalar_one_or_none()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    # Check if category has subcategories
+    subcat_stmt = select(func.count(Category.category_id)).where(Category.parent_id == category_id)
+    subcat_res = await db.execute(subcat_stmt)
+    if (subcat_res.scalar() or 0) > 0:
+        raise HTTPException(status_code=400, detail="Cannot delete category that has subcategories. Please reassign or delete subcategories first.")
 
     # Check if category is used in cashflow items
     used_stmt = select(func.count(CashflowItem.item_id)).where(CashflowItem.category_id == category_id)

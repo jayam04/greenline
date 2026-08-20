@@ -217,7 +217,7 @@ class Category(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     parent = relationship("Category", remote_side=[category_id], back_populates="subcategories")
-    subcategories = relationship("Category", back_populates="parent", cascade="all, delete-orphan")
+    subcategories = relationship("Category", back_populates="parent")
     items = relationship("CashflowItem", back_populates="category")
 
 class CashflowTransaction(Base):

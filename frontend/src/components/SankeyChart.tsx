@@ -27,6 +27,8 @@ export interface SankeyData {
   depth: number;
 }
 
+export type SankeyDataResponse = SankeyData;
+
 interface SankeyChartProps {
   data: SankeyData | null;
   loading?: boolean;

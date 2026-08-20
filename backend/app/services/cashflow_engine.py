@@ -289,7 +289,9 @@ async def build_category_lineage_map(db: AsyncSession) -> Dict[int, Dict[str, An
     for cid, cat in cat_by_id.items():
         ancestors = []
         curr = cat
-        while curr:
+        visited = set()
+        while curr and curr.category_id not in visited:
+            visited.add(curr.category_id)
             ancestors.append(curr)
             curr = cat_by_id.get(curr.parent_id) if curr.parent_id else None
 

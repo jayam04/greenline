@@ -241,15 +241,18 @@ async def create_cashflow_transaction(
         final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
         if dest_pmt and dest_pmt.account_id in accounts:
             primary_currency = accounts[dest_pmt.account_id].currency or primary_currency
+        final_currency = tx_in.currency or primary_currency
     elif len(currencies) == 1:
         primary_currency = list(currencies)[0]
         final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else total_payments
+        final_currency = tx_in.currency or primary_currency
     else:
         primary_currency = "EUR"
         final_total = sum(
             convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
             for p in tx_in.payments
         )
+        final_currency = primary_currency
 
     # Validate balance if single currency non-transfer
     if not is_transfer and len(currencies) <= 1:
@@ -269,7 +272,7 @@ async def create_cashflow_transaction(
         transaction_date=tx_in.transaction_date,
         title=tx_in.title,
         total_amount=round(final_total, 2),
-        currency=tx_in.currency or primary_currency,
+        currency=final_currency,
         notes=tx_in.notes
     )
     db.add(tx)
@@ -338,18 +341,21 @@ async def update_cashflow_transaction(
             dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
             final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
             primary_currency = accounts[dest_pmt.account_id].currency if dest_pmt and dest_pmt.account_id in accounts else "EUR"
+            final_currency = tx_in.currency or primary_currency
         elif len(currencies) == 1:
             primary_currency = list(currencies)[0]
             final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else sum(p.amount for p in tx_in.payments)
+            final_currency = tx_in.currency or primary_currency
         else:
             primary_currency = "EUR"
             final_total = sum(
                 convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
                 for p in tx_in.payments
             )
+            final_currency = primary_currency
 
         tx.total_amount = round(final_total, 2)
-        tx.currency = tx_in.currency or primary_currency
+        tx.currency = final_currency
 
         # Delete old payments
         del_p_stmt = select(CashflowPayment).where(CashflowPayment.cashflow_id == cashflow_id)

@@ -147,6 +147,25 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
             setToAccountId(inPayment.account_id);
             setToAmount(Math.abs(inPayment.amount).toString());
           }
+
+          // Restore transfer fee if present
+          const feeItem = initialData.items.find(
+            (i) => i.category_type !== "TRANSFER" && (i.description?.toLowerCase().includes("fee") || i.category_name?.toLowerCase().includes("fee"))
+          ) || (initialData.items.length > 1 ? initialData.items[1] : null);
+
+          if (feeItem) {
+            setHasTransferFee(true);
+            const match = feeItem.description?.match(/[\d,]+(?:\.\d+)?/);
+            if (feeItem.description?.includes("Fee") && match) {
+              const rawVal = match[0].replace(/,/g, "");
+              setFeeAmount(rawVal);
+            } else {
+              setFeeAmount(feeItem.amount.toString());
+            }
+          } else {
+            setHasTransferFee(false);
+            setFeeAmount("");
+          }
         } else {
           const isIncomeTx = initialData.items.some((i) => i.category_type === "INCOME");
           setTransactionKind(isIncomeTx ? "INCOME" : "EXPENSE");
@@ -341,7 +360,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
         { account_id: Number(toAccountId), amount: parsedTo },
       ];
 
-      const transferItems = [
+      const transferItems: { category_id: number; amount: number; label: string | null; description: string }[] = [
         {
           category_id: transferCat.category_id,
           amount: parsedTo,

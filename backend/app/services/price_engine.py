@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import math
 from typing import List, Optional
@@ -6,6 +7,15 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.models import Asset, PriceHistory
+
+def _fetch_history_sync(symbol: str, start_date: Optional[datetime.date] = None) -> Optional[pd.DataFrame]:
+    """Synchronous yfinance history call to be executed in a threadpool."""
+    ticker = yf.Ticker(symbol)
+    if start_date:
+        start_str = start_date.strftime("%Y-%m-%d")
+        return ticker.history(start=start_str)
+    else:
+        return ticker.history(period="1y")
 
 async def update_prices_for_assets(
     db: AsyncSession, 
@@ -31,12 +41,7 @@ async def update_prices_for_assets(
             continue
             
         try:
-            ticker = yf.Ticker(symbol)
-            if start_date:
-                start_str = start_date.strftime("%Y-%m-%d")
-                hist = ticker.history(start=start_str)
-            else:
-                hist = ticker.history(period="1y")
+            hist = await asyncio.to_thread(_fetch_history_sync, symbol, start_date)
 
             if hist is None or hist.empty:
                 continue

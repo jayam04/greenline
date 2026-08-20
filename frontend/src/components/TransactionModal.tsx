@@ -100,6 +100,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         setTaxes(initialData.taxes.toString());
         setNotes(initialData.notes || "");
       } else {
+        setAssetId("");
+        setSelectedAsset(null);
+        setSearchQuery("");
+        setSearchResults([]);
+        setIsDropdownOpen(false);
         setTransactionType("buy");
         setTransactionDate(new Date().toISOString().split("T")[0]);
         setQuantity("");
@@ -122,9 +127,8 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
       }
     } else if (!assetId) {
       setSelectedAsset(null);
-      if (!isDropdownOpen) setSearchQuery("");
     }
-  }, [assetId, assets, isDropdownOpen]);
+  }, [assetId, assets]);
 
   const loadDropdowns = async () => {
     try {
@@ -139,10 +143,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         if (accData && accData.length > 0) {
           setAccountId(accData[0].account_id);
         }
-        if (astData && astData.length > 0) {
-          setAssetId(astData[0].asset_id);
-          setSelectedAsset(astData[0]);
-          setSearchQuery(`${astData[0].symbol} - ${astData[0].name}`);
+      } else if (initialData.asset_id && astData && astData.length > 0) {
+        const found = astData.find((a) => a.asset_id === initialData.asset_id);
+        if (found) {
+          setSelectedAsset(found);
+          setSearchQuery(`${found.symbol} - ${found.name}`);
         }
       }
     } catch (e: any) {
@@ -299,6 +304,11 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         if (isAddNew) {
           // Success notification & keep form ready for next entry
           setSuccessBanner("Transaction saved successfully! Enter next trade details below.");
+          setAssetId("");
+          setSelectedAsset(null);
+          setSearchQuery("");
+          setSearchResults([]);
+          setIsDropdownOpen(false);
           setQuantity("");
           setPricePerUnit("");
           setTotalAmount("");
@@ -412,6 +422,8 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
                     onFocus={() => setIsDropdownOpen(true)}
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
+                      setAssetId("");
+                      setSelectedAsset(null);
                       setIsDropdownOpen(true);
                     }}
                     className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg pl-3 pr-8 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"

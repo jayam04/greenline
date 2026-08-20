@@ -9,7 +9,10 @@ if db_url.startswith("sqlite+aiosqlite:///"):
     path = db_url.replace("sqlite+aiosqlite:///", "")
     dir_path = os.path.dirname(path)
     if dir_path:
-        os.makedirs(dir_path, exist_ok=True)
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+        except OSError:
+            pass
 
 engine = create_async_engine(
     db_url,

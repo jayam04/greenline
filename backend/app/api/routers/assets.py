@@ -1,14 +1,16 @@
+import asyncio
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 import yfinance as yf
-from app.db.database import get_db
+from app.db.database import get_db, AsyncSessionLocal
 from app.db.models import Asset, User
 from app.schemas.schemas import AssetCreate, AssetUpdate, AssetResponse
 from app.api.deps import get_current_user
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot
+from app.services.price_engine import fetch_asset_price_history
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -26,6 +28,28 @@ def map_quote_type_to_asset_type(quote_type: str) -> str:
         return "bond"
     return "stock"
 
+def _fetch_yf_ticker_info(symbol: str) -> Dict[str, Any]:
+    """Synchronous yfinance info lookup to be executed in a threadpool."""
+    ticker = yf.Ticker(symbol)
+    return ticker.info or {}
+
+def _search_yf_quotes(query: str, max_results: int = 8) -> List[Dict[str, Any]]:
+    """Synchronous yfinance search to be executed in a threadpool."""
+    try:
+        search = yf.Search(query, max_results=max_results)
+        return getattr(search, "quotes", []) or []
+    except Exception as e:
+        print(f"[Yahoo Search Error] {e}")
+        return []
+
+async def _bg_fetch_asset_price_history(asset_id: int, symbol: str) -> None:
+    """Safely fetch and save price history for an asset in the background using a fresh DB session."""
+    async with AsyncSessionLocal() as session:
+        try:
+            await fetch_asset_price_history(session, asset_id, symbol)
+        except Exception as pe:
+            print(f"[Price History Init Warning] {pe}")
+
 @router.get("/lookup")
 async def lookup_asset_metadata(
     symbol: str = Query(..., description="Ticker symbol e.g. AAPL or RELIANCE.NS"),
@@ -36,8 +60,7 @@ async def lookup_asset_metadata(
         raise HTTPException(status_code=400, detail="Symbol is required")
 
     try:
-        ticker = yf.Ticker(clean_symbol)
-        info = ticker.info or {}
+        info = await asyncio.to_thread(_fetch_yf_ticker_info, clean_symbol)
 
         # Extract fields from Yahoo Finance info
         name = info.get("longName") or info.get("shortName") or clean_symbol
@@ -104,46 +127,43 @@ async def search_assets(
             "in_master": True
         })
 
-    # 2. Query Yahoo Finance Search API for online results
-    try:
-        search = yf.Search(query_str, max_results=8)
-        quotes = getattr(search, "quotes", []) or []
-        for quote in quotes:
-            sym = quote.get("symbol")
-            if not sym:
-                continue
-            sym_upper = sym.upper()
-            if sym_upper in seen_symbols:
-                continue
-            seen_symbols.add(sym_upper)
+    # 2. Query Yahoo Finance Search API for online results via threadpool
+    quotes = await asyncio.to_thread(_search_yf_quotes, query_str, 8)
+    for quote in quotes:
+        sym = quote.get("symbol")
+        if not sym:
+            continue
+        sym_upper = sym.upper()
+        if sym_upper in seen_symbols:
+            continue
+        seen_symbols.add(sym_upper)
 
-            name = quote.get("longname") or quote.get("shortname") or sym_upper
-            exchange = quote.get("exchange") or quote.get("dispExchange") or "UNKNOWN"
-            q_type = quote.get("quoteType", "")
-            asset_type = map_quote_type_to_asset_type(q_type)
-            sector = quote.get("sector") or ""
-            industry = quote.get("industry") or ""
+        name = quote.get("longname") or quote.get("shortname") or sym_upper
+        exchange = quote.get("exchange") or quote.get("dispExchange") or "UNKNOWN"
+        q_type = quote.get("quoteType", "")
+        asset_type = map_quote_type_to_asset_type(q_type)
+        sector = quote.get("sector") or ""
+        industry = quote.get("industry") or ""
 
-            results.append({
-                "asset_id": None,
-                "symbol": sym_upper,
-                "isin": quote.get("isin") or None,
-                "name": name,
-                "exchange": exchange,
-                "asset_type": asset_type,
-                "sector": sector,
-                "industry": industry,
-                "currency": "USD",
-                "in_master": False
-            })
-    except Exception as e:
-        print(f"[Yahoo Search Error] {e}")
+        results.append({
+            "asset_id": None,
+            "symbol": sym_upper,
+            "isin": quote.get("isin") or None,
+            "name": name,
+            "exchange": exchange,
+            "asset_type": asset_type,
+            "sector": sector,
+            "industry": industry,
+            "currency": "USD",
+            "in_master": False
+        })
 
     return results
 
 @router.post("/get-or-create", response_model=AssetResponse)
 async def get_or_create_asset(
     payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -168,8 +188,7 @@ async def get_or_create_asset(
     isin = payload.get("isin") or None
 
     try:
-        t = yf.Ticker(symbol)
-        info = t.info or {}
+        info = await asyncio.to_thread(_fetch_yf_ticker_info, symbol)
         if info:
             name = info.get("longName") or info.get("shortName") or name
             exchange = info.get("exchange") or info.get("fullExchangeName") or exchange
@@ -198,11 +217,7 @@ async def get_or_create_asset(
     await db.refresh(new_asset)
 
     # Initial price history fetch in background so valuation and charts populate
-    try:
-        from app.services.price_engine import fetch_asset_price_history
-        await fetch_asset_price_history(db, new_asset.asset_id, symbol)
-    except Exception as pe:
-        print(f"[Price History Init Warning] {pe}")
+    background_tasks.add_task(_bg_fetch_asset_price_history, new_asset.asset_id, symbol)
 
     return new_asset
 
@@ -231,6 +246,7 @@ async def get_asset(
 @router.post("/", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_in: AssetCreate,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -242,11 +258,7 @@ async def create_asset(
     await db.commit()
     await db.refresh(asset)
 
-    try:
-        from app.services.price_engine import fetch_asset_price_history
-        await fetch_asset_price_history(db, asset.asset_id, asset.symbol)
-    except Exception:
-        pass
+    background_tasks.add_task(_bg_fetch_asset_price_history, asset.asset_id, asset.symbol)
 
     return asset
 

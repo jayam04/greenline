@@ -234,10 +234,10 @@ async def create_cashflow_transaction(
 
     currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
 
-    total_payments = sum(p.amount for p in tx_in.payments)
+    net_payments = sum(p.amount for p in tx_in.payments)
     total_items = sum(i.amount for i in tx_in.items)
 
-    is_transfer = tx_in.transaction_kind == "TRANSFER"
+    is_transfer = tx_in.transaction_kind == "TRANSFER" or (len(tx_in.payments) > 1 and abs(net_payments) < 0.001)
 
     # Determine primary currency and total amount
     if is_transfer:
@@ -251,36 +251,33 @@ async def create_cashflow_transaction(
         final_currency = tx_in.currency or primary_currency
     elif len(currencies) == 1:
         primary_currency = list(currencies)[0]
-        final_total = tx_in.total_amount if tx_in.total_amount is not None and abs(tx_in.total_amount) > 0.0001 else total_payments
+        final_total = tx_in.total_amount if tx_in.total_amount is not None and abs(tx_in.total_amount) > 0.0001 else abs(net_payments) if abs(net_payments) > 0.0001 else total_items
         final_currency = tx_in.currency or primary_currency
     else:
         primary_currency = "EUR"
         final_total = sum(
-            convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+            convert_currency_to_eur(abs(p.amount), accounts[p.account_id].currency if p.account_id in accounts else "EUR")
             for p in tx_in.payments
         )
         final_currency = primary_currency
 
-    # Validate balance if single currency non-transfer
-    if not is_transfer and len(currencies) <= 1:
-        if abs(total_payments - final_total) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Sum of payment methods ({total_payments:.2f}) does not match total ({final_total:.2f})"
-            )
-        if abs(total_items - final_total) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Sum of category line items ({total_items:.2f}) does not match total ({final_total:.2f})"
-            )
+    # Automatic transaction kind resolution
+    resolved_kind = tx_in.transaction_kind
+    if not resolved_kind or resolved_kind == "EXPENSE":
+        if is_transfer:
+            resolved_kind = "TRANSFER"
+        elif net_payments > 0.001:
+            resolved_kind = "INCOME"
+        else:
+            resolved_kind = "EXPENSE"
 
     # Create parent transaction
     tx = CashflowTransaction(
         transaction_date=tx_in.transaction_date,
         title=tx_in.title,
-        total_amount=round(final_total, 2),
+        total_amount=round(abs(final_total), 2),
         currency=final_currency,
-        transaction_kind=tx_in.transaction_kind or ("TRANSFER" if is_transfer else "EXPENSE"),
+        transaction_kind=resolved_kind,
         notes=tx_in.notes
     )
     db.add(tx)

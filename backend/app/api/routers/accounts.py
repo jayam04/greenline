@@ -45,14 +45,9 @@ async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
     )
     c_res = await db.execute(c_stmt)
     for ctx in c_res.scalars().all():
-        tkind = resolve_transaction_kind(ctx)
         for p in ctx.payments:
             if p.account_id in balances:
-                amt = float(p.amount or 0.0)
-                if tkind in ["TRANSFER", "INCOME"]:
-                    balances[p.account_id] += amt
-                else: # EXPENSE
-                    balances[p.account_id] -= amt
+                balances[p.account_id] += float(p.amount or 0.0)
 
     return {k: round(v, 2) for k, v in balances.items()}
 

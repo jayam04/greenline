@@ -139,7 +139,7 @@ async def test_investments_used_in_both_income_and_spends():
             total_amount=300.0,
             currency="EUR",
             transaction_kind="EXPENSE",
-            payments=[CashflowPaymentCreate(account_id=bank.account_id, amount=300.0)],
+            payments=[CashflowPaymentCreate(account_id=bank.account_id, amount=-300.0)],
             items=[CashflowItemCreate(category_id=stock_cat.category_id, amount=300.0, label="INVESTMENT", description="Monthly SIP")]
         )
         res_stock = await create_cashflow_transaction(tx_stock, db=session, current_user=user)

@@ -17,7 +17,7 @@ from app.api.routers import (
 
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
-from app.services.cashflow_engine import seed_default_categories
+from app.services.cashflow_engine import seed_default_categories, migrate_legacy_payment_signs
 
 async def _startup_backfill():
     async with AsyncSessionLocal() as session:
@@ -63,11 +63,12 @@ async def lifespan(app: FastAPI):
             await session.commit()
             print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER}")
 
-        # Seed categories
+        # Seed categories & migrate legacy payment signs
         try:
             await seed_default_categories(session)
+            await migrate_legacy_payment_signs(session)
         except Exception as ce:
-            print(f"[Init Categories Error] {ce}")
+            print(f"[Init Categories / Migration Error] {ce}")
             
     asyncio.create_task(_startup_backfill())
     start_scheduler()

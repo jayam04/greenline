@@ -77,8 +77,8 @@ async def test_cashflow_splits_and_sankey():
         session.add(amazon_tx)
         await session.flush()
         # Payment splits
-        session.add(CashflowPayment(cashflow_id=amazon_tx.cashflow_id, account_id=bank_acc.account_id, amount=100.0))
-        session.add(CashflowPayment(cashflow_id=amazon_tx.cashflow_id, account_id=wallet_acc.account_id, amount=10.0))
+        session.add(CashflowPayment(cashflow_id=amazon_tx.cashflow_id, account_id=bank_acc.account_id, amount=-100.0))
+        session.add(CashflowPayment(cashflow_id=amazon_tx.cashflow_id, account_id=wallet_acc.account_id, amount=-10.0))
         # Category item splits
         session.add(CashflowItem(cashflow_id=amazon_tx.cashflow_id, category_id=tech_cat.category_id, amount=80.0, label="LUXURY", description="Speakers"))
         session.add(CashflowItem(cashflow_id=amazon_tx.cashflow_id, category_id=groceries_cat.category_id, amount=30.0, description="Snacks & Tea"))

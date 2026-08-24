@@ -39,6 +39,7 @@ class Asset(Base):
     asset_type = Column(String, nullable=False) # stock, etf, mutual_fund, bond, fd, crypto, gold
     exchange = Column(String, nullable=True) # NSE, BSE, NASDAQ, NYSE, etc.
     sector = Column(String, nullable=True)
+    industry = Column(String, nullable=True)
     currency = Column(String(3), default="USD")
 
     transactions = relationship("Transaction", back_populates="asset", cascade="all, delete-orphan")

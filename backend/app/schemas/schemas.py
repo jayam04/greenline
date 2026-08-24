@@ -49,6 +49,7 @@ class AssetBase(BaseModel):
     asset_type: str # stock, etf, mutual_fund, bond, fd, crypto, gold
     exchange: Optional[str] = None
     sector: Optional[str] = None
+    industry: Optional[str] = None
     currency: str = "USD"
 
 class AssetCreate(AssetBase):
@@ -61,6 +62,7 @@ class AssetUpdate(BaseModel):
     asset_type: Optional[str] = None
     exchange: Optional[str] = None
     sector: Optional[str] = None
+    industry: Optional[str] = None
     currency: Optional[str] = None
 
 class AssetResponse(AssetBase):
@@ -161,6 +163,7 @@ class HoldingSummary(BaseModel):
     name: str
     asset_type: str
     sector: Optional[str] = None
+    industry: Optional[str] = None
     currency: str = "USD"
     quantity_held: float
     avg_cost_price: float

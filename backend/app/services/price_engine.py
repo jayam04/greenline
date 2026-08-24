@@ -1,9 +1,21 @@
+import asyncio
 import datetime
+import math
 from typing import List, Optional
 import yfinance as yf
+import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.models import Asset, PriceHistory
+
+def _fetch_history_sync(symbol: str, start_date: Optional[datetime.date] = None) -> Optional[pd.DataFrame]:
+    """Synchronous yfinance history call to be executed in a threadpool."""
+    ticker = yf.Ticker(symbol)
+    if start_date:
+        start_str = start_date.strftime("%Y-%m-%d")
+        return ticker.history(start=start_str)
+    else:
+        return ticker.history(period="1y")
 
 async def update_prices_for_assets(
     db: AsyncSession, 
@@ -24,24 +36,32 @@ async def update_prices_for_assets(
     count = 0
 
     for asset in assets:
-        symbol = asset.symbol.strip()
+        symbol = (asset.symbol or "").strip()
         if not symbol:
             continue
             
         try:
-            ticker = yf.Ticker(symbol)
-            if start_date:
-                start_str = start_date.strftime("%Y-%m-%d")
-                hist = ticker.history(start=start_str)
-            else:
-                hist = ticker.history(period="1y")
+            hist = await asyncio.to_thread(_fetch_history_sync, symbol, start_date)
 
-            if hist.empty:
+            if hist is None or hist.empty:
                 continue
 
             for date_idx, row in hist.iterrows():
-                p_date = date_idx.date()
-                c_price = float(row["Close"])
+                try:
+                    p_date = date_idx.date()
+                except Exception:
+                    continue
+
+                raw_close = row.get("Close")
+                if raw_close is None or pd.isna(raw_close):
+                    continue
+
+                try:
+                    c_price = float(raw_close)
+                    if math.isnan(c_price) or math.isinf(c_price) or c_price <= 0:
+                        continue
+                except (ValueError, TypeError):
+                    continue
 
                 # Check if price exists
                 check_stmt = select(PriceHistory).where(
@@ -66,7 +86,14 @@ async def update_prices_for_assets(
 
             await db.commit()
         except Exception as e:
+            await db.rollback()
             print(f"Error fetching price for symbol {symbol}: {e}")
             continue
 
     return count
+
+async def fetch_asset_price_history(db: AsyncSession, asset_id: int, symbol: str) -> int:
+    """
+    Helper function to initialize price history for a newly added asset.
+    """
+    return await update_prices_for_assets(db, asset_ids=[asset_id])

@@ -5,39 +5,52 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { removeAuthToken } from "@/lib/api";
 import { 
-  Search, TrendingUp, LayoutDashboard, Briefcase, Receipt, 
-  DollarSign, Building2, LogOut, Bell, Star, User, ChevronDown,
-  ArrowLeftRight, FolderTree, Settings, ShieldCheck, Layers
+  Search, TrendingUp, Briefcase, Receipt, 
+  Building2, LogOut, User, ChevronDown,
+  ArrowLeftRight, FolderTree, Settings, Layers
 } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
+
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isInvestmentsOpen, setIsInvestmentsOpen] = useState(false);
+  const [isCashflowOpen, setIsCashflowOpen] = useState(false);
+
   const profileRef = useRef<HTMLDivElement>(null);
+  const investmentsRef = useRef<HTMLDivElement>(null);
+  const cashflowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
       }
+      if (investmentsRef.current && !investmentsRef.current.contains(event.target as Node)) {
+        setIsInvestmentsOpen(false);
+      }
+      if (cashflowRef.current && !cashflowRef.current.contains(event.target as Node)) {
+        setIsCashflowOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Close menus on route change
+  useEffect(() => {
+    setIsInvestmentsOpen(false);
+    setIsCashflowOpen(false);
+    setIsProfileOpen(false);
+  }, [pathname]);
+
   if (pathname === "/login") return null;
 
-  const navItems = [
-    { name: "Net worth", href: "/", icon: TrendingUp },
-    { name: "Investments", href: "/investments", icon: Briefcase },
-    { name: "Holdings", href: "/holdings", icon: Layers },
-    { name: "Transactions", href: "/transactions", icon: Receipt },
-    { name: "Income & Spends", href: "/cashflow", icon: ArrowLeftRight },
-    { name: "Categories", href: "/categories", icon: FolderTree },
-    { name: "Realized P&L", href: "/realized", icon: DollarSign },
-    { name: "Accounts & Master", href: "/accounts", icon: Building2 },
-  ];
+  const isNetworthActive = pathname === "/";
+  const isInvestmentsActive = pathname === "/investments" || pathname === "/holdings" || pathname === "/transactions";
+  const isCashflowActive = pathname === "/cashflow" || pathname === "/categories";
+  const isAccountsActive = pathname === "/accounts";
 
   const handleLogout = () => {
     setIsProfileOpen(false);
@@ -52,7 +65,6 @@ export function Navbar() {
     if (pathname === "/transactions") return "Investments > Transaction Ledger";
     if (pathname === "/cashflow") return "Cashflow > Income, Spends & Sankey Flow";
     if (pathname === "/categories") return "Cashflow > Category Hierarchy & Labels";
-    if (pathname === "/realized") return "Investments > Realized Gains & Tax Lots";
     if (pathname === "/accounts") return "Master > Accounts & Securities Master";
     if (pathname === "/settings") return "Settings > Preferences & Configuration";
     return "Net worth > Overview";
@@ -86,24 +98,142 @@ export function Navbar() {
         {/* Right: Nav Tabs & Profile */}
         <div className="flex items-center gap-1 sm:gap-2">
           <nav className="hidden lg:flex items-center gap-1 mr-2">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
+            {/* 1. Net worth */}
+            <Link
+              href="/"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                isNetworthActive
+                  ? "text-[#0F172A] bg-slate-100 font-extrabold"
+                  : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5" />
+              <span>Net worth</span>
+            </Link>
+
+            {/* 2. Investments (with Dropdown) */}
+            <div className="relative" ref={investmentsRef}>
+              <div
+                className={`flex items-center rounded-lg transition-colors ${
+                  isInvestmentsActive
+                    ? "bg-slate-100 font-extrabold text-[#0F172A]"
+                    : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                }`}
+              >
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-                    isActive
-                      ? "text-[#0F172A] bg-slate-100 font-extrabold"
-                      : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
-                  }`}
+                  href="/investments"
+                  className="flex items-center gap-1.5 pl-3 pr-1 py-1.5 text-xs font-bold"
                 >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{item.name}</span>
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>Investments</span>
                 </Link>
-              );
-            })}
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsInvestmentsOpen(!isInvestmentsOpen);
+                    setIsCashflowOpen(false);
+                  }}
+                  className="px-1.5 py-2 hover:text-[#0F172A] cursor-pointer rounded-r-lg transition-colors"
+                  title="Investments menu"
+                >
+                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isInvestmentsOpen ? "rotate-180" : ""}`} />
+                </button>
+              </div>
+
+              {/* Investments Dropdown Menu */}
+              {isInvestmentsOpen && (
+                <div className="absolute left-0 top-10 z-50 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
+                  <Link
+                    href="/holdings"
+                    onClick={() => setIsInvestmentsOpen(false)}
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 transition-colors ${
+                      pathname === "/holdings" ? "text-blue-600 font-bold bg-blue-50/50" : "text-slate-700 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <Layers className="w-4 h-4 text-slate-400" />
+                    <div>
+                      <div className="font-bold">Holdings</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Positions & weights</div>
+                    </div>
+                  </Link>
+                  <Link
+                    href="/transactions"
+                    onClick={() => setIsInvestmentsOpen(false)}
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 transition-colors ${
+                      pathname === "/transactions" ? "text-blue-600 font-bold bg-blue-50/50" : "text-slate-700 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <Receipt className="w-4 h-4 text-slate-400" />
+                    <div>
+                      <div className="font-bold">Transactions</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Trade ledger & history</div>
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Cashflow (Renamed from Income & Spends, with Dropdown) */}
+            <div className="relative" ref={cashflowRef}>
+              <div
+                className={`flex items-center rounded-lg transition-colors ${
+                  isCashflowActive
+                    ? "bg-slate-100 font-extrabold text-[#0F172A]"
+                    : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                }`}
+              >
+                <Link
+                  href="/cashflow"
+                  className="flex items-center gap-1.5 pl-3 pr-1 py-1.5 text-xs font-bold"
+                >
+                  <ArrowLeftRight className="w-3.5 h-3.5" />
+                  <span>Cashflow</span>
+                </Link>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setIsCashflowOpen(!isCashflowOpen);
+                    setIsInvestmentsOpen(false);
+                  }}
+                  className="px-1.5 py-2 hover:text-[#0F172A] cursor-pointer rounded-r-lg transition-colors"
+                  title="Cashflow menu"
+                >
+                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isCashflowOpen ? "rotate-180" : ""}`} />
+                </button>
+              </div>
+
+              {/* Cashflow Dropdown Menu */}
+              {isCashflowOpen && (
+                <div className="absolute left-0 top-10 z-50 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
+                  <Link
+                    href="/categories"
+                    onClick={() => setIsCashflowOpen(false)}
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 transition-colors ${
+                      pathname === "/categories" ? "text-emerald-600 font-bold bg-emerald-50/50" : "text-slate-700 hover:text-[#0F172A]"
+                    }`}
+                  >
+                    <FolderTree className="w-4 h-4 text-slate-400" />
+                    <div>
+                      <div className="font-bold">Categories</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Hierarchy & labels</div>
+                    </div>
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            {/* 4. Accounts & Master */}
+            <Link
+              href="/accounts"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                isAccountsActive
+                  ? "text-[#0F172A] bg-slate-100 font-extrabold"
+                  : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Accounts & Master</span>
+            </Link>
           </nav>
 
           {/* Interactive Profile Dropdown Menu */}

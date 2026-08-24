@@ -50,6 +50,8 @@ interface Snapshot {
   snapshot_date: string;
   net_worth: number;
   total_invested: number;
+  total_current_value?: number;
+  cash_balance?: number;
 }
 
 interface Account {
@@ -154,7 +156,7 @@ export default function InvestmentsDashboardPage() {
       setSelectedBenchmarks([...selectedBenchmarks, bmId]);
       if (!benchmarksDataMap[bmId]) {
         try {
-          const res = await apiFetch<BenchmarkRawData>(`/benchmarks/${encodeURIComponent(bmId)}`);
+          const res = await apiFetch<BenchmarkRawData>(`/benchmarks?symbol=${encodeURIComponent(bmId)}`);
           if (res) {
             setBenchmarksDataMap((prev) => ({ ...prev, [bmId]: res }));
           }
@@ -184,7 +186,7 @@ export default function InvestmentsDashboardPage() {
   const totalPnLEUR = totalUnrealizedEUR + totalRealizedEUR;
   const overallPnLPct = totalInvestedEUR > 0 ? (totalPnLEUR / totalInvestedEUR) * 100 : 0;
 
-  // Convert Snapshots to active master currency for chart
+  // Convert Snapshots to active master currency for chart (Asset Valuation Only - Excluding Cash)
   const snapshotsInEUR: Snapshot[] = React.useMemo(() => {
     if (!snapshots || snapshots.length === 0) return [];
     
@@ -192,7 +194,7 @@ export default function InvestmentsDashboardPage() {
     if (selectedAccount === "all") {
       return snapshots.map((s) => ({
         snapshot_date: s.snapshot_date,
-        net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency),
+        net_worth: convertCurrency(s.total_current_value ?? s.net_worth, "EUR", masterCurrency),
         total_invested: convertCurrency(s.total_invested, "EUR", masterCurrency),
       }));
     }
@@ -203,7 +205,7 @@ export default function InvestmentsDashboardPage() {
 
     return snapshots.map((s) => ({
       snapshot_date: s.snapshot_date,
-      net_worth: convertCurrency(s.net_worth, repCurrency, masterCurrency),
+      net_worth: convertCurrency(s.total_current_value ?? s.net_worth, repCurrency, masterCurrency),
       total_invested: convertCurrency(s.total_invested, repCurrency, masterCurrency),
     }));
   }, [snapshots, selectedAccount, accounts, masterCurrency]);
@@ -384,20 +386,13 @@ export default function InvestmentsDashboardPage() {
                 <button
                   key={acc.account_id}
                   onClick={() => setSelectedAccount(acc.account_id.toString())}
-                  className={`px-2.5 py-1 font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  className={`px-3 py-1 font-semibold rounded-lg transition-colors cursor-pointer ${
                     selectedAccount === acc.account_id.toString()
                       ? "bg-[#0F172A] text-white font-bold shadow-xs"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
                   }`}
                 >
                   <span>{acc.account_name}</span>
-                  <span className={`text-[9px] font-extrabold uppercase px-1 rounded ${
-                    selectedAccount === acc.account_id.toString()
-                      ? "bg-slate-800 text-slate-200"
-                      : "bg-blue-50 text-blue-700"
-                  }`}>
-                    {acc.currency}
-                  </span>
                 </button>
               ))}
             </div>
@@ -513,7 +508,7 @@ export default function InvestmentsDashboardPage() {
                 ) : (
                   <div>
                     <div className="text-3xl font-extrabold tracking-tight">
-                      {renderFormattedMaster(totalNetWorthEUR)}
+                      {renderFormattedMaster(totalPositionsValueEUR)}
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
                       {timeframeReturn.gain >= 0 ? (
@@ -773,7 +768,7 @@ export default function InvestmentsDashboardPage() {
                   PRO
                 </span>
               </div>
-              <Link href="/realized" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <Link href="/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
                 Show more
               </Link>
             </div>

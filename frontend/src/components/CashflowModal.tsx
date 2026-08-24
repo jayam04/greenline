@@ -979,7 +979,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         required
                       >
                         {categories
-                          .filter((c) => transactionKind === "INCOME" ? c.category_type === "INCOME" : c.category_type !== "INCOME")
+                          .filter((c) => transactionKind === "INCOME" ? (c.category_type === "INCOME" || c.category_type === "INVESTMENT") : (c.category_type === "EXPENSE" || c.category_type === "INVESTMENT"))
                           .map((c) => (
                             <option key={c.category_id} value={c.category_id}>
                               {c.full_path || c.name}
@@ -1047,7 +1047,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                           >
                             <option value="">Select Category</option>
                             {categories
-                              .filter((c) => transactionKind === "INCOME" ? c.category_type === "INCOME" : c.category_type !== "INCOME")
+                              .filter((c) => transactionKind === "INCOME" ? (c.category_type === "INCOME" || c.category_type === "INVESTMENT") : (c.category_type === "EXPENSE" || c.category_type === "INVESTMENT"))
                               .map((c) => (
                                 <option key={c.category_id} value={c.category_id}>
                                   {c.full_path || c.name}
@@ -1136,7 +1136,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                       <button
                         type="button"
                         onClick={() => {
-                          const defaultCat = categories.find((c) => transactionKind === "INCOME" ? c.category_type === "INCOME" : c.category_type !== "INCOME") || categories[0];
+                          const defaultCat = categories.find((c) => transactionKind === "INCOME" ? (c.category_type === "INCOME" || c.category_type === "INVESTMENT") : (c.category_type === "EXPENSE" || c.category_type === "INVESTMENT")) || categories[0];
                           setItems((prev) => [...prev, { category_id: defaultCat?.category_id || "", amount: "", label: "", description: "" }]);
                         }}
                         className="text-[11px] font-bold text-slate-700 hover:text-black flex items-center gap-1 cursor-pointer"

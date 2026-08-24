@@ -95,8 +95,11 @@ async def list_cashflow_transactions(
             continue
 
         is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
-        is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in tx.items)
-        tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE"
+        is_inc = not is_trans and (
+            any(i.category and i.category.category_type == "INCOME" for i in tx.items) or
+            (tx.transaction_kind == "INCOME")
+        )
+        tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else (tx.transaction_kind or "EXPENSE")
 
         results.append(CashflowTransactionResponse(
             cashflow_id=tx.cashflow_id,
@@ -200,8 +203,11 @@ async def get_cashflow_transaction(
     ]
 
     is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
-    is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in tx.items)
-    tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE"
+    is_inc = not is_trans and (
+        any(i.category and i.category.category_type == "INCOME" for i in tx.items) or
+        (tx.transaction_kind == "INCOME")
+    )
+    tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else (tx.transaction_kind or "EXPENSE")
 
     return CashflowTransactionResponse(
         cashflow_id=tx.cashflow_id,
@@ -283,6 +289,7 @@ async def create_cashflow_transaction(
         title=tx_in.title,
         total_amount=round(final_total, 2),
         currency=final_currency,
+        transaction_kind=tx_in.transaction_kind or ("TRANSFER" if is_transfer else "EXPENSE"),
         notes=tx_in.notes
     )
     db.add(tx)
@@ -333,6 +340,8 @@ async def update_cashflow_transaction(
         tx.title = update_data["title"]
     if "currency" in update_data and update_data["currency"]:
         tx.currency = update_data["currency"]
+    if "transaction_kind" in update_data and update_data["transaction_kind"]:
+        tx.transaction_kind = update_data["transaction_kind"]
     if "notes" in update_data:
         tx.notes = update_data["notes"]
     if "total_amount" in update_data and update_data["total_amount"] is not None:

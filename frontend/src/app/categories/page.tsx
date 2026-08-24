@@ -232,7 +232,7 @@ export default function CategoriesPage() {
           {/* Column 2: Category Type */}
           <td className="py-2.5 px-3">
             <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md ${typeBadge}`}>
-              {node.category_type}
+              {node.category_type === "EXPENSE" ? "SPENDS" : node.category_type}
             </span>
           </td>
 

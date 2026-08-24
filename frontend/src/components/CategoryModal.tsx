@@ -210,18 +210,23 @@ export function CategoryModal({
           <div>
             <label className="block font-semibold text-slate-600 mb-1">Category Type</label>
             <div className="grid grid-cols-4 gap-1.5 p-1 bg-[#F1F5F9] rounded-xl text-xs font-bold">
-              {["EXPENSE", "INCOME", "INVESTMENT", "TRANSFER"].map((t) => (
+              {[
+                { type: "EXPENSE", label: "Spends" },
+                { type: "INCOME", label: "Income" },
+                { type: "INVESTMENT", label: "Investments" },
+                { type: "TRANSFER", label: "Transfers" },
+              ].map(({ type, label }) => (
                 <button
-                  key={t}
+                  key={type}
                   type="button"
-                  onClick={() => setCategoryType(t)}
+                  onClick={() => setCategoryType(type)}
                   className={`py-1.5 rounded-lg text-center transition-all cursor-pointer text-[11px] ${
-                    categoryType === t
+                    categoryType === type
                       ? "bg-white text-[#0F172A] shadow-xs"
                       : "text-slate-500 hover:text-black"
                   }`}
                 >
-                  {t.charAt(0) + t.slice(1).toLowerCase()}
+                  {label}
                 </button>
               ))}
             </div>

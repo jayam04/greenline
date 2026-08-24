@@ -207,7 +207,7 @@ export default function CashflowPage() {
           {/* Card 2: Total Expenses */}
           <div className="getquin-card p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Total Expenses</span>
+              <span className="text-xs font-bold text-slate-500">Total Spends</span>
               <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
                 <TrendingDown className="w-4 h-4" />
               </div>

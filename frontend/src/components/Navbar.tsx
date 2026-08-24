@@ -7,7 +7,7 @@ import { removeAuthToken } from "@/lib/api";
 import { 
   Search, TrendingUp, LayoutDashboard, Briefcase, Receipt, 
   DollarSign, Building2, LogOut, Bell, Star, User, ChevronDown,
-  ArrowLeftRight, FolderTree, Settings, ShieldCheck
+  ArrowLeftRight, FolderTree, Settings, ShieldCheck, Layers
 } from "lucide-react";
 
 export function Navbar() {
@@ -30,7 +30,8 @@ export function Navbar() {
 
   const navItems = [
     { name: "Net worth", href: "/", icon: TrendingUp },
-    { name: "Holdings", href: "/holdings", icon: Briefcase },
+    { name: "Investments", href: "/investments", icon: Briefcase },
+    { name: "Holdings", href: "/holdings", icon: Layers },
     { name: "Transactions", href: "/transactions", icon: Receipt },
     { name: "Income & Spends", href: "/cashflow", icon: ArrowLeftRight },
     { name: "Categories", href: "/categories", icon: FolderTree },
@@ -45,7 +46,8 @@ export function Navbar() {
   };
 
   const getBreadcrumb = () => {
-    if (pathname === "/") return "Net worth > Investments";
+    if (pathname === "/") return "Net worth > Overview & Accounts";
+    if (pathname === "/investments") return "Investments > Portfolio Dashboard";
     if (pathname === "/holdings") return "Investments > Positions & Holdings";
     if (pathname === "/transactions") return "Investments > Transaction Ledger";
     if (pathname === "/cashflow") return "Cashflow > Income, Spends & Sankey Flow";

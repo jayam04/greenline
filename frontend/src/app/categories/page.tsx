@@ -32,6 +32,8 @@ export default function CategoriesPage() {
   const [expandedNodes, setExpandedNodes] = useState<{ [id: number]: boolean }>({});
   const [searchQuery, setSearchQuery] = useState("");
 
+  const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
+
   // Dynamic Timeline Columns (Default: This Month & Last Month)
   const [activeColumns, setActiveColumns] = useState<TimelineKey[]>(["THIS_MONTH", "LAST_MONTH"]);
   const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
@@ -48,17 +50,24 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     loadAllColumnTotals();
-  }, [activeColumns]);
+  }, [activeColumns, masterCurrency]);
 
   const loadCategoryData = async () => {
     try {
       setLoading(true);
-      const [treeData, flatData] = await Promise.all([
+      const [treeData, flatData, settingsRes] = await Promise.all([
         apiFetch<CategoryTreeItem[]>("/categories/tree"),
         apiFetch<FlatCategory[]>("/categories"),
+        apiFetch<{ master_currency: string }>("/settings").catch(() => null),
       ]);
       setTree(treeData || []);
       setFlatCategories(flatData || []);
+      if (settingsRes?.master_currency) {
+        setMasterCurrency(settingsRes.master_currency.trim().toUpperCase());
+      } else {
+        const localCurr = (typeof window !== "undefined" && localStorage.getItem("greenline_master_currency")) || "EUR";
+        setMasterCurrency(localCurr);
+      }
 
       // Auto-expand level 1 & 2
       const initialExpanded: { [id: number]: boolean } = {};
@@ -75,7 +84,6 @@ export default function CategoriesPage() {
 
   const loadAllColumnTotals = async () => {
     for (const key of activeColumns) {
-      if (columnTotals[key]) continue; // already loaded
       loadTotalsForTimeline(key);
     }
   };
@@ -86,6 +94,7 @@ export default function CategoriesPage() {
       const queryParams = new URLSearchParams();
       if (startDate) queryParams.append("start_date", startDate);
       if (endDate) queryParams.append("end_date", endDate);
+      queryParams.append("master_currency", masterCurrency);
       const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
 
       const totals = await apiFetch<{ [categoryId: string]: number }>(`/categories/totals${qs}`);
@@ -241,7 +250,7 @@ export default function CategoriesPage() {
               <td key={colKey} className="py-2.5 px-3 text-right tabular-nums font-semibold text-xs">
                 {val > 0.001 ? (
                   <span className={node.category_type === "INCOME" ? "text-emerald-600 font-bold" : "text-[#0F172A]"}>
-                    {formatCurrency(val, "EUR")}
+                    {formatCurrency(val, masterCurrency)}
                   </span>
                 ) : (
                   <span className="text-slate-300">-</span>

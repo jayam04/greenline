@@ -118,15 +118,24 @@ async def list_cashflow_transactions(
 async def get_summary(
     start_date: Optional[datetime.date] = Query(None),
     end_date: Optional[datetime.date] = Query(None),
+    include_investments: bool = Query(True),
+    master_currency: Optional[str] = Query("EUR"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return await get_cashflow_summary(db, start_date=start_date, end_date=end_date)
+    return await get_cashflow_summary(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        include_investments=include_investments,
+        master_currency=master_currency or "EUR"
+    )
 
 @router.get("/sankey", response_model=SankeyDataResponse)
 async def get_sankey(
     depth: int = Query(2, ge=1, le=5),
     include_investments: bool = Query(True),
+    master_currency: Optional[str] = Query("EUR"),
     start_date: Optional[datetime.date] = Query(None),
     end_date: Optional[datetime.date] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -137,7 +146,8 @@ async def get_sankey(
         start_date=start_date,
         end_date=end_date,
         depth=depth,
-        include_investments=include_investments
+        include_investments=include_investments,
+        master_currency=master_currency or "EUR"
     )
 
 @router.get("/{cashflow_id}", response_model=CashflowTransactionResponse)

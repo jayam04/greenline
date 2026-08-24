@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.db.models import Category, CashflowItem, CashflowTransaction, User
 from app.schemas.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryTreeResponse
-from app.services.cashflow_engine import build_category_lineage_map, convert_currency_to_eur
+from app.services.cashflow_engine import build_category_lineage_map, convert_currency_to_eur, convert_currency
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -87,9 +87,11 @@ async def get_category_tree(
 async def get_category_totals(
     start_date: Optional[datetime.date] = Query(None),
     end_date: Optional[datetime.date] = Query(None),
+    master_currency: Optional[str] = Query("EUR"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, float]:
+    target_currency = (master_currency or "EUR").strip().upper()
     lineage_map = await build_category_lineage_map(db)
     stmt = select(CashflowTransaction).options(selectinload(CashflowTransaction.items))
     if start_date:
@@ -106,7 +108,7 @@ async def get_category_totals(
             if not meta or meta["category"].category_type == "TRANSFER":
                 continue
             raw_amt = float(item.amount or 0.0)
-            amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
+            amt = convert_currency(raw_amt, tx.currency or "EUR", target_currency)
             # Accumulate for self and all ancestors
             for anc in meta["ancestors"]:
                 k = str(anc.category_id)

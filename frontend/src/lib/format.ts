@@ -22,9 +22,31 @@ export function formatNum(val: number | null | undefined, decimals: number = 2):
   });
 }
 
+export interface CurrencyOption {
+  code: string;
+  symbol: string;
+  label: string;
+  country: string;
+}
+
+export const SUPPORTED_CURRENCIES: CurrencyOption[] = [
+  { code: "EUR", symbol: "€", label: "Euro (EUR)", country: "European Union" },
+  { code: "USD", symbol: "$", label: "US Dollar (USD)", country: "United States" },
+  { code: "INR", symbol: "₹", label: "Indian Rupee (INR)", country: "India" },
+  { code: "GBP", symbol: "£", label: "British Pound (GBP)", country: "United Kingdom" },
+  { code: "CAD", symbol: "CA$", label: "Canadian Dollar (CAD)", country: "Canada" },
+  { code: "AUD", symbol: "A$", label: "Australian Dollar (AUD)", country: "Australia" },
+  { code: "JPY", symbol: "¥", label: "Japanese Yen (JPY)", country: "Japan" },
+  { code: "CHF", symbol: "CHF", label: "Swiss Franc (CHF)", country: "Switzerland" },
+  { code: "SGD", symbol: "S$", label: "Singapore Dollar (SGD)", country: "Singapore" },
+];
+
 export function getCurrencySymbol(currency?: string): string {
   if (!currency) return "$";
   const c = currency.trim().toUpperCase();
+  const match = SUPPORTED_CURRENCIES.find((opt) => opt.code === c);
+  if (match) return match.symbol;
+
   switch (c) {
     case "EUR":
       return "€";
@@ -117,9 +139,34 @@ export const FX_RATES_TO_EUR: Record<string, number> = {
   SGD: 0.68,      // 1 SGD ≈ 0.68 EUR
 };
 
-export function convertCurrencyToEUR(amount: number, fromCurrency: string = "USD"): number {
+/**
+ * Bidirectional currency conversion helper
+ */
+export function convertCurrency(
+  amount: number,
+  fromCurrency: string = "USD",
+  toCurrency: string = "EUR"
+): number {
   if (!amount || isNaN(amount)) return 0;
-  const curr = fromCurrency.trim().toUpperCase();
-  const rate = FX_RATES_TO_EUR[curr] ?? 0.92; // default USD rate fallback
-  return amount * rate;
+  const src = (fromCurrency || "USD").trim().toUpperCase();
+  const dst = (toCurrency || "EUR").trim().toUpperCase();
+  if (src === dst) return amount;
+
+  const rateFrom = FX_RATES_TO_EUR[src] ?? 1.0;
+  const rateTo = FX_RATES_TO_EUR[dst] ?? 1.0;
+
+  const inEUR = amount * rateFrom;
+  return inEUR / rateTo;
+}
+
+export function convertCurrencyToEUR(amount: number, fromCurrency: string = "USD"): number {
+  return convertCurrency(amount, fromCurrency, "EUR");
+}
+
+export function getMasterCurrency(): string {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("greenline_master_currency");
+    if (saved) return saved.trim().toUpperCase();
+  }
+  return "EUR";
 }

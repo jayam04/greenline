@@ -25,12 +25,20 @@ FX_RATES_TO_EUR: Dict[str, float] = {
     "SGD": 0.68,
 }
 
-def convert_currency_to_eur(amount: float, from_currency: str = "EUR") -> float:
+def convert_currency(amount: float, from_currency: str = "EUR", to_currency: str = "EUR") -> float:
     if not amount:
         return 0.0
-    curr = (from_currency or "EUR").strip().upper()
-    rate = FX_RATES_TO_EUR.get(curr, 1.0)
-    return amount * rate
+    src = (from_currency or "EUR").strip().upper()
+    dst = (to_currency or "EUR").strip().upper()
+    if src == dst:
+        return amount
+    rate_from = FX_RATES_TO_EUR.get(src, 1.0)
+    rate_to = FX_RATES_TO_EUR.get(dst, 1.0)
+    in_eur = amount * rate_from
+    return in_eur / rate_to
+
+def convert_currency_to_eur(amount: float, from_currency: str = "EUR") -> float:
+    return convert_currency(amount, from_currency, "EUR")
 
 DEFAULT_CATEGORY_COLORS = {
     "INCOME": "#10B981",       # Emerald green
@@ -325,7 +333,8 @@ async def generate_sankey_data(
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
     depth: int = 2,
-    include_investments: bool = True
+    include_investments: bool = True,
+    master_currency: str = "EUR"
 ) -> SankeyDataResponse:
     """
     Generates Sankey Nodes and Links structured for depth 1 to 5:
@@ -335,6 +344,7 @@ async def generate_sankey_data(
     - Right: Category breakdown down to specified depth (1 to 5)
     """
     depth = max(1, min(5, depth))
+    target_currency = (master_currency or "EUR").strip().upper()
     lineage_map = await build_category_lineage_map(db)
 
     # 1. Fetch cashflow transactions in date range
@@ -372,7 +382,7 @@ async def generate_sankey_data(
             cat_type = meta["category"].category_type
             effective_label = item.label or meta["effective_label"]
             raw_amt = float(item.amount or 0.0)
-            amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
+            amt = convert_currency(raw_amt, tx.currency or "EUR", target_currency)
 
             # Determine category name at requested depth
             target_idx = min(depth - 1, len(ancestors) - 1)
@@ -387,6 +397,8 @@ async def generate_sankey_data(
                 src_name = target_name
                 income_flows[src_name] = income_flows.get(src_name, 0.0) + amt
             elif cat_type == "INVESTMENT":
+                if not include_investments:
+                    continue
                 total_investments += amt
                 expense_flows_by_label[LABEL_INVESTMENT][target_name] = (
                     expense_flows_by_label[LABEL_INVESTMENT].get(target_name, 0.0) + amt
@@ -408,7 +420,8 @@ async def generate_sankey_data(
         if end_date:
             div_stmt = div_stmt.where(Transaction.transaction_date <= end_date)
         div_res = await db.execute(div_stmt)
-        div_total = div_res.scalar_one_or_none() or 0.0
+        raw_div = div_res.scalar_one_or_none() or 0.0
+        div_total = convert_currency(raw_div, "USD", target_currency)
 
         if div_total > 0.01:
             total_income += div_total
@@ -422,7 +435,8 @@ async def generate_sankey_data(
         if end_date:
             rpnl_stmt = rpnl_stmt.where(Transaction.transaction_date <= end_date)
         rpnl_res = await db.execute(rpnl_stmt)
-        rpnl_total = rpnl_res.scalar_one_or_none() or 0.0
+        raw_rpnl = rpnl_res.scalar_one_or_none() or 0.0
+        rpnl_total = convert_currency(raw_rpnl, "USD", target_currency)
 
         if rpnl_total > 0.01:
             total_income += rpnl_total
@@ -520,11 +534,14 @@ async def generate_sankey_data(
 async def get_cashflow_summary(
     db: AsyncSession,
     start_date: Optional[datetime.date] = None,
-    end_date: Optional[datetime.date] = None
+    end_date: Optional[datetime.date] = None,
+    include_investments: bool = True,
+    master_currency: str = "EUR"
 ) -> CashflowSummaryResponse:
     """
     Computes summary KPI metrics and label distribution for Income & Spends dashboard.
     """
+    target_currency = (master_currency or "EUR").strip().upper()
     lineage_map = await build_category_lineage_map(db)
 
     stmt = select(CashflowTransaction).options(
@@ -558,7 +575,7 @@ async def get_cashflow_summary(
             cat_type = meta["category"].category_type
             effective_label = item.label or meta["effective_label"]
             raw_amt = float(item.amount or 0.0)
-            amt = convert_currency_to_eur(raw_amt, tx.currency or "EUR")
+            amt = convert_currency(raw_amt, tx.currency or "EUR", target_currency)
 
             if cat_type == "TRANSFER":
                 continue
@@ -566,6 +583,8 @@ async def get_cashflow_summary(
             if cat_type == "INCOME":
                 total_income += amt
             elif cat_type == "INVESTMENT":
+                if not include_investments:
+                    continue
                 total_invested += amt
                 breakdown_by_label[LABEL_INVESTMENT] += amt
             else: # EXPENSE

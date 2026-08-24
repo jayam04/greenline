@@ -258,3 +258,10 @@ class CashflowItem(Base):
     cashflow_transaction = relationship("CashflowTransaction", back_populates="items")
     category = relationship("Category", back_populates="items", lazy="selectin")
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+

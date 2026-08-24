@@ -394,18 +394,19 @@ export default function CashflowPage() {
                       <div className="flex flex-col gap-1">
                         {tx.payments.map((p, pIdx) => {
                           const pCurr = p.account_currency || tx.currency || "EUR";
-                          const isInflow = isTransfer ? p.amount > 0 : isIncome;
-                          const dotColor = isInflow ? "bg-emerald-500" : "bg-rose-500";
-                          const textColor = isTransfer 
-                            ? (p.amount < 0 ? "text-rose-600" : "text-emerald-600")
-                            : "text-slate-600";
+                          const isCredit = isTransfer ? p.amount > 0 : isIncome ? p.amount >= 0 : p.amount < 0;
+                          const dotColor = isCredit ? "bg-emerald-500" : "bg-rose-500";
+                          const textColor = isCredit 
+                            ? "text-emerald-600 dark:text-emerald-400" 
+                            : "text-rose-600 dark:text-rose-400";
+                          const signPrefix = isCredit ? "+" : "-";
 
                           return (
-                            <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                            <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                               <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
                               <span>{p.account_name}</span>
-                              <span className={`tabular-nums ${textColor}`}>
-                                ({formatCurrency(Math.abs(p.amount), pCurr)})
+                              <span className={`tabular-nums font-bold ${textColor}`}>
+                                ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
                               </span>
                             </div>
                           );
@@ -453,8 +454,10 @@ export default function CashflowPage() {
                                   {lbl}
                                 </span>
                                 {tx.items.length > 1 && (
-                                  <span className="font-bold text-slate-500 text-[11px] tabular-nums">
-                                    {formatCurrency(itm.amount, tx.currency || "EUR")}
+                                  <span className={`font-bold text-[11px] tabular-nums ${itm.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
+                                    {itm.amount < 0
+                                      ? `- ${formatCurrency(Math.abs(itm.amount), tx.currency || "EUR")} (Reimbursement)`
+                                      : formatCurrency(itm.amount, tx.currency || "EUR")}
                                   </span>
                                 )}
                               </div>

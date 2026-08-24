@@ -44,7 +44,7 @@ async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
     )
     c_res = await db.execute(c_stmt)
     for ctx in c_res.scalars().all():
-        is_trans = any(p.amount < 0 for p in ctx.payments) or any(i.category and i.category.category_type == "TRANSFER" for i in ctx.items)
+        is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in ctx.items)
         is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in ctx.items)
         for p in ctx.payments:
             if p.account_id in balances:

@@ -331,6 +331,18 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     return items.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
   }, [transactionKind, isSplitItems, totalPaymentCalculated, items]);
 
+  const grossItems = useMemo(() => {
+    return items.filter(i => (parseFloat(i.amount) || 0) > 0).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  }, [items]);
+
+  const creditItems = useMemo(() => {
+    return items.filter(i => (parseFloat(i.amount) || 0) < 0).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  }, [items]);
+
+  const hasNegativeItems = useMemo(() => {
+    return items.some(i => (parseFloat(i.amount) || 0) < 0);
+  }, [items]);
+
   const itemBalanceDiff = totalPaymentCalculated - totalItemsCalculated;
 
   if (!isOpen) return null;
@@ -434,8 +446,8 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
       return;
     }
 
-    if (totalPaymentCalculated <= 0) {
-      setError("Please enter an amount greater than 0.");
+    if (totalPaymentCalculated === 0) {
+      setError("Please enter a non-zero amount.");
       setLoading(false);
       return;
     }
@@ -1043,23 +1055,31 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                               ))}
                           </select>
 
-                          <div className="relative flex items-center w-28">
+                          <div className="relative flex items-center w-32">
                             <span className="absolute left-2 font-bold text-slate-400 pointer-events-none text-xs">
                               {simpleCurrencySymbol}
                             </span>
                             <input
                               type="number"
                               step="any"
-                              placeholder="Amount"
+                              placeholder="Amount (+/-)"
                               value={itm.amount}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setItems((prev) => prev.map((item, i) => i === idx ? { ...item, amount: val } : item));
                               }}
-                              className="w-full bg-slate-50 text-slate-900 font-bold tabular-nums rounded-lg pl-5 pr-2 py-1.5 border border-slate-200 text-xs"
+                              className={`w-full bg-slate-50 text-slate-900 font-bold tabular-nums rounded-lg pl-5 pr-2 py-1.5 border text-xs ${
+                                (parseFloat(itm.amount) || 0) < 0 ? "border-emerald-300 text-emerald-700 bg-emerald-50/40" : "border-slate-200"
+                              }`}
                               required
                             />
                           </div>
+
+                          {(parseFloat(itm.amount) || 0) < 0 && (
+                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800 shrink-0">
+                              Reimbursement
+                            </span>
+                          )}
 
                           {items.length > 1 && (
                             <button
@@ -1075,7 +1095,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         <div className="grid grid-cols-2 gap-2">
                           <input
                             type="text"
-                            placeholder="Item description (Required, e.g. Speakers)"
+                            placeholder="Item description (e.g. Dinner share, Splitwise credit)"
                             value={itm.description}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -1102,6 +1122,15 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         </div>
                       </div>
                     ))}
+
+                    {/* Breakdown Details if Reimbursements/Negative amounts exist */}
+                    {hasNegativeItems && (
+                      <div className="p-2 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                        <span>Gross Spend: <strong className="text-[#0F172A] dark:text-white">{formatCurrency(grossItems, simpleCurrency)}</strong></span>
+                        <span>Reimbursements: <strong className="text-emerald-600">{formatCurrency(creditItems, simpleCurrency)}</strong></span>
+                        <span>Net Spend: <strong className="text-blue-600">{formatCurrency(totalItemsCalculated, simpleCurrency)}</strong></span>
+                      </div>
+                    )}
 
                     <div className="flex items-center justify-between pt-1">
                       <button

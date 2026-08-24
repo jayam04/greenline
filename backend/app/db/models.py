@@ -202,3 +202,59 @@ class XIRRCache(Base):
     as_of_date = Column(Date, nullable=False)
     xirr_value = Column(Float, nullable=False)
     computed_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+# Income & Expense Cashflow Models
+class Category(Base):
+    __tablename__ = "categories"
+
+    category_id = Column(Integer, primary_key=True, index=True)
+    parent_id = Column(Integer, ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True)
+    name = Column(String, nullable=False, index=True)
+    category_type = Column(String, nullable=False, default="EXPENSE") # INCOME, EXPENSE, INVESTMENT, TRANSFER
+    default_label = Column(String, nullable=True) # ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT
+    icon = Column(String, nullable=True)
+    color = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    parent = relationship("Category", remote_side=[category_id], back_populates="subcategories")
+    subcategories = relationship("Category", back_populates="parent")
+    items = relationship("CashflowItem", back_populates="category")
+
+class CashflowTransaction(Base):
+    __tablename__ = "cashflow_transactions"
+
+    cashflow_id = Column(Integer, primary_key=True, index=True)
+    transaction_date = Column(Date, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    currency = Column(String(3), default="EUR")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    payments = relationship("CashflowPayment", back_populates="cashflow_transaction", cascade="all, delete-orphan", lazy="selectin")
+    items = relationship("CashflowItem", back_populates="cashflow_transaction", cascade="all, delete-orphan", lazy="selectin")
+
+class CashflowPayment(Base):
+    __tablename__ = "cashflow_payments"
+
+    payment_id = Column(Integer, primary_key=True, index=True)
+    cashflow_id = Column(Integer, ForeignKey("cashflow_transactions.cashflow_id", ondelete="CASCADE"), nullable=False)
+    account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
+    amount = Column(Float, nullable=False)
+
+    cashflow_transaction = relationship("CashflowTransaction", back_populates="payments")
+    account = relationship("Account", lazy="selectin")
+
+class CashflowItem(Base):
+    __tablename__ = "cashflow_items"
+
+    item_id = Column(Integer, primary_key=True, index=True)
+    cashflow_id = Column(Integer, ForeignKey("cashflow_transactions.cashflow_id", ondelete="CASCADE"), nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.category_id", ondelete="RESTRICT"), nullable=False)
+    amount = Column(Float, nullable=False)
+    label = Column(String, nullable=True) # Overrides category default_label if set (ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT)
+    description = Column(String, nullable=True)
+
+    cashflow_transaction = relationship("CashflowTransaction", back_populates="items")
+    category = relationship("Category", back_populates="items", lazy="selectin")
+

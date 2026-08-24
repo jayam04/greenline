@@ -37,6 +37,7 @@ interface PortfolioSummary {
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   realized_pnl: number;
+  portfolio_xirr?: number | null;
   cash_balance: number;
   total_fees: number;
   total_taxes: number;
@@ -152,7 +153,7 @@ export default function DashboardPage() {
       setSelectedBenchmarks([...selectedBenchmarks, bmId]);
       if (!benchmarksDataMap[bmId]) {
         try {
-          const res = await apiFetch<BenchmarkRawData>(`/benchmarks/${encodeURIComponent(bmId)}`);
+          const res = await apiFetch<BenchmarkRawData>(`/benchmarks?symbol=${encodeURIComponent(bmId)}`);
           if (res) {
             setBenchmarksDataMap((prev) => ({ ...prev, [bmId]: res }));
           }

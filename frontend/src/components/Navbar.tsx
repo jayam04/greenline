@@ -4,15 +4,18 @@ import React, { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { removeAuthToken } from "@/lib/api";
+import { useTheme } from "@/components/ThemeProvider";
 import { 
   Search, TrendingUp, Briefcase, Receipt, 
   Building2, LogOut, User, ChevronDown,
-  ArrowLeftRight, FolderTree, Settings, Layers
+  ArrowLeftRight, FolderTree, Settings, Layers,
+  Sun, Moon, Laptop
 } from "lucide-react";
 
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isInvestmentsOpen, setIsInvestmentsOpen] = useState(false);
@@ -71,7 +74,7 @@ export function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-[#FFFFFF] border-b border-[#E5E7EB] font-sans">
+    <header className="sticky top-0 z-50 bg-white dark:bg-[#0E1522] border-b border-[#E5E7EB] dark:border-[#1E293B] font-sans transition-colors">
       {/* Primary Top Bar */}
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-14 flex items-center justify-between gap-4">
         {/* Left: Brand Logo */}
@@ -86,11 +89,11 @@ export function Navbar() {
         {/* Center: Search Bar */}
         <div className="flex-1 max-w-md hidden sm:block">
           <div className="relative flex items-center w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 pointer-events-none" />
+            <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3.5 pointer-events-none" />
             <input
               type="text"
               placeholder="Search for stocks, etfs or accounts..."
-              className="w-full bg-[#F3F4F6] hover:bg-[#EAEBED] focus:bg-white text-xs font-semibold text-slate-800 placeholder-slate-400 pl-9 pr-4 py-2 rounded-lg border border-transparent focus:border-slate-300 focus:outline-none transition-all"
+              className="w-full bg-[#F3F4F6] dark:bg-[#1A2333] hover:bg-[#EAEBED] dark:hover:bg-[#202B3F] focus:bg-white dark:focus:bg-[#151D2B] text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 pl-9 pr-4 py-2 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:outline-none transition-all"
             />
           </div>
         </div>
@@ -103,8 +106,8 @@ export function Navbar() {
               href="/"
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
                 isNetworthActive
-                  ? "text-[#0F172A] bg-slate-100 font-extrabold"
-                  : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                  ? "text-[#0F172A] dark:text-white bg-slate-100 dark:bg-slate-800 font-extrabold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60"
               }`}
             >
               <TrendingUp className="w-3.5 h-3.5" />
@@ -116,8 +119,8 @@ export function Navbar() {
               <div
                 className={`flex items-center rounded-lg transition-colors ${
                   isInvestmentsActive
-                    ? "bg-slate-100 font-extrabold text-[#0F172A]"
-                    : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                    ? "bg-slate-100 dark:bg-slate-800 font-extrabold text-[#0F172A] dark:text-white"
+                    : "text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60"
                 }`}
               >
                 <Link
@@ -133,53 +136,53 @@ export function Navbar() {
                     setIsInvestmentsOpen(!isInvestmentsOpen);
                     setIsCashflowOpen(false);
                   }}
-                  className="px-1.5 py-2 hover:text-[#0F172A] cursor-pointer rounded-r-lg transition-colors"
+                  className="px-1.5 py-2 hover:text-[#0F172A] dark:hover:text-white cursor-pointer rounded-r-lg transition-colors"
                   title="Investments menu"
                 >
-                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isInvestmentsOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown className={`w-3 h-3 text-slate-400 dark:text-slate-500 transition-transform ${isInvestmentsOpen ? "rotate-180" : ""}`} />
                 </button>
               </div>
 
               {/* Investments Dropdown Menu */}
               {isInvestmentsOpen && (
-                <div className="absolute left-0 top-10 z-50 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
+                <div className="absolute left-0 top-10 z-50 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
                   <Link
                     href="/holdings"
                     onClick={() => setIsInvestmentsOpen(false)}
-                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 transition-colors ${
-                      pathname === "/holdings" ? "text-blue-600 font-bold bg-blue-50/50" : "text-slate-700 hover:text-[#0F172A]"
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
+                      pathname === "/holdings" ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
                     }`}
                   >
-                    <Layers className="w-4 h-4 text-slate-400" />
+                    <Layers className="w-4 h-4 text-slate-400 dark:text-slate-500" />
                     <div>
                       <div className="font-bold">Holdings</div>
-                      <div className="text-[10px] text-slate-400 font-normal">Positions & weights</div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Positions & weights</div>
                     </div>
                   </Link>
                   <Link
                     href="/transactions"
                     onClick={() => setIsInvestmentsOpen(false)}
-                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 transition-colors ${
-                      pathname === "/transactions" ? "text-blue-600 font-bold bg-blue-50/50" : "text-slate-700 hover:text-[#0F172A]"
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
+                      pathname === "/transactions" ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
                     }`}
                   >
-                    <Receipt className="w-4 h-4 text-slate-400" />
+                    <Receipt className="w-4 h-4 text-slate-400 dark:text-slate-500" />
                     <div>
                       <div className="font-bold">Transactions</div>
-                      <div className="text-[10px] text-slate-400 font-normal">Trade ledger & history</div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Trade ledger & history</div>
                     </div>
                   </Link>
                 </div>
               )}
             </div>
 
-            {/* 3. Cashflow (Renamed from Income & Spends, with Dropdown) */}
+            {/* 3. Cashflow (with Dropdown) */}
             <div className="relative" ref={cashflowRef}>
               <div
                 className={`flex items-center rounded-lg transition-colors ${
                   isCashflowActive
-                    ? "bg-slate-100 font-extrabold text-[#0F172A]"
-                    : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                    ? "bg-slate-100 dark:bg-slate-800 font-extrabold text-[#0F172A] dark:text-white"
+                    : "text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60"
                 }`}
               >
                 <Link
@@ -195,27 +198,27 @@ export function Navbar() {
                     setIsCashflowOpen(!isCashflowOpen);
                     setIsInvestmentsOpen(false);
                   }}
-                  className="px-1.5 py-2 hover:text-[#0F172A] cursor-pointer rounded-r-lg transition-colors"
+                  className="px-1.5 py-2 hover:text-[#0F172A] dark:hover:text-white cursor-pointer rounded-r-lg transition-colors"
                   title="Cashflow menu"
                 >
-                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isCashflowOpen ? "rotate-180" : ""}`} />
+                  <ChevronDown className={`w-3 h-3 text-slate-400 dark:text-slate-500 transition-transform ${isCashflowOpen ? "rotate-180" : ""}`} />
                 </button>
               </div>
 
               {/* Cashflow Dropdown Menu */}
               {isCashflowOpen && (
-                <div className="absolute left-0 top-10 z-50 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
+                <div className="absolute left-0 top-10 z-50 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
                   <Link
                     href="/categories"
                     onClick={() => setIsCashflowOpen(false)}
-                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 transition-colors ${
-                      pathname === "/categories" ? "text-emerald-600 font-bold bg-emerald-50/50" : "text-slate-700 hover:text-[#0F172A]"
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
+                      pathname === "/categories" ? "text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/50 dark:bg-emerald-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
                     }`}
                   >
-                    <FolderTree className="w-4 h-4 text-slate-400" />
+                    <FolderTree className="w-4 h-4 text-slate-400 dark:text-slate-500" />
                     <div>
                       <div className="font-bold">Categories</div>
-                      <div className="text-[10px] text-slate-400 font-normal">Hierarchy & labels</div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Hierarchy & labels</div>
                     </div>
                   </Link>
                 </div>
@@ -227,8 +230,8 @@ export function Navbar() {
               href="/accounts"
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
                 isAccountsActive
-                  ? "text-[#0F172A] bg-slate-100 font-extrabold"
-                  : "text-slate-500 hover:text-[#0F172A] hover:bg-slate-50"
+                  ? "text-[#0F172A] dark:text-white bg-slate-100 dark:bg-slate-800 font-extrabold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60"
               }`}
             >
               <Building2 className="w-3.5 h-3.5" />
@@ -240,21 +243,66 @@ export function Navbar() {
           <div className="relative" ref={profileRef}>
             <button
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer border border-transparent hover:border-slate-200"
+              className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
               title="User profile & settings"
             >
-              <div className="w-7 h-7 bg-slate-200 text-slate-800 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300">
+              <div className="w-7 h-7 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300 dark:border-slate-600">
                 <User className="w-4 h-4" />
               </div>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
+              <ChevronDown className="w-3 h-3 text-slate-400 dark:text-slate-500" />
             </button>
 
             {isProfileOpen && (
-              <div className="absolute right-0 top-10 z-50 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 w-52 text-xs font-semibold">
+              <div className="absolute right-0 top-10 z-50 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl py-2 w-56 text-xs font-semibold">
                 {/* User Info Header */}
-                <div className="px-4 py-2 border-b border-slate-100">
-                  <div className="font-bold text-[#0F172A] text-xs">Admin</div>
-                  <div className="text-[11px] font-medium text-slate-400">admin@greenline.local</div>
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800">
+                  <div className="font-bold text-[#0F172A] dark:text-white text-xs">Admin</div>
+                  <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500">admin@greenline.local</div>
+                </div>
+
+                {/* Theme Selector Section */}
+                <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5 px-1">
+                    Theme
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 bg-slate-100 dark:bg-[#1A2333] p-1 rounded-xl">
+                    <button
+                      onClick={() => setTheme("light")}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        theme === "light"
+                          ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                      }`}
+                      title="Light theme"
+                    >
+                      <Sun className="w-3.5 h-3.5" />
+                      <span>Light</span>
+                    </button>
+                    <button
+                      onClick={() => setTheme("dark")}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        theme === "dark"
+                          ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                      }`}
+                      title="Dark theme"
+                    >
+                      <Moon className="w-3.5 h-3.5" />
+                      <span>Dark</span>
+                    </button>
+                    <button
+                      onClick={() => setTheme("system")}
+                      className={`flex items-center justify-center gap-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        theme === "system"
+                          ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
+                      }`}
+                      title="System default"
+                    >
+                      <Laptop className="w-3.5 h-3.5" />
+                      <span>Auto</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Menu Options */}
@@ -262,19 +310,19 @@ export function Navbar() {
                   <Link
                     href="/settings"
                     onClick={() => setIsProfileOpen(false)}
-                    className="flex items-center gap-2.5 px-4 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#0F172A] transition-colors"
+                    className="flex items-center gap-2.5 px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-[#0F172A] dark:hover:text-white transition-colors"
                   >
-                    <Settings className="w-4 h-4 text-slate-500" />
+                    <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                     <span>Settings</span>
                   </Link>
                 </div>
 
-                <div className="pt-1 border-t border-slate-100">
+                <div className="pt-1 border-t border-slate-100 dark:border-slate-800">
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2.5 px-4 py-2 text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors text-left cursor-pointer"
                   >
-                    <LogOut className="w-4 h-4 text-rose-500" />
+                    <LogOut className="w-4 h-4 text-rose-500 dark:text-rose-400" />
                     <span>Log out</span>
                   </button>
                 </div>
@@ -285,7 +333,7 @@ export function Navbar() {
       </div>
 
       {/* Sub-header Breadcrumb Bar */}
-      <div className="bg-[#F8F9FA] border-t border-[#E5E7EB]/80 px-4 lg:px-6 py-1.5 text-[11px] font-semibold text-slate-500 max-w-[1600px] mx-auto flex items-center justify-between">
+      <div className="bg-[#F8F9FA] dark:bg-[#0B0F17] border-t border-[#E5E7EB]/80 dark:border-[#1E293B] px-4 lg:px-6 py-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 max-w-[1600px] mx-auto flex items-center justify-between transition-colors">
         <div className="flex items-center gap-1">
           <span>{getBreadcrumb()}</span>
         </div>

@@ -73,6 +73,7 @@ class AssetResponse(AssetBase):
 # Transaction Schemas
 class TransactionCreate(BaseModel):
     account_id: int
+    funding_account_id: Optional[int] = None
     asset_id: Optional[int] = None
     transaction_type: str # buy, sell, dividend, bonus, split, interest, fee, deposit, withdrawal
     transaction_date: datetime.date
@@ -85,6 +86,7 @@ class TransactionCreate(BaseModel):
 
 class TransactionUpdate(BaseModel):
     account_id: Optional[int] = None
+    funding_account_id: Optional[int] = None
     asset_id: Optional[int] = None
     transaction_type: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
@@ -99,6 +101,8 @@ class TransactionResponse(TransactionCreate):
     transaction_id: int
     account_name: Optional[str] = None
     account_currency: Optional[str] = "USD"
+    funding_account_name: Optional[str] = None
+    funding_account_currency: Optional[str] = None
     asset_symbol: Optional[str] = None
     asset_name: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)

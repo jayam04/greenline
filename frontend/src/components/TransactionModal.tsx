@@ -35,7 +35,14 @@ interface SearchResultItem {
 export interface TransactionItem {
   transaction_id: number;
   account_id: number;
+  funding_account_id?: number | null;
+  funding_account_name?: string | null;
+  funding_account_currency?: string | null;
+  account_name?: string | null;
+  account_currency?: string | null;
   asset_id: number | null;
+  asset_symbol?: string | null;
+  asset_name?: string | null;
   transaction_type: string;
   transaction_date: string;
   quantity: number | null;
@@ -58,6 +65,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
   const [assets, setAssets] = useState<Asset[]>([]);
   
   const [accountId, setAccountId] = useState<number | "">("");
+  const [fundingAccountId, setFundingAccountId] = useState<number | "">("");
   const [assetId, setAssetId] = useState<number | "">("");
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [transactionType, setTransactionType] = useState<string>("buy");
@@ -90,6 +98,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
       loadDropdowns();
       if (initialData) {
         setAccountId(initialData.account_id);
+        setFundingAccountId(initialData.funding_account_id ?? initialData.account_id);
         setAssetId(initialData.asset_id ?? "");
         setTransactionType(initialData.transaction_type);
         setTransactionDate(initialData.transaction_date);
@@ -113,6 +122,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         setFees("0");
         setTaxes("0");
         setNotes("");
+        setFundingAccountId("");
       }
     }
   }, [isOpen, initialData]);
@@ -286,6 +296,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
     try {
       const payload = {
         account_id: Number(accountId),
+        funding_account_id: fundingAccountId ? Number(fundingAccountId) : Number(accountId),
         asset_id: isAssetTransaction && assetId ? Number(assetId) : null,
         transaction_type: transactionType,
         transaction_date: transactionDate,
@@ -408,10 +419,14 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Account</label>
+              <label className="block font-semibold text-slate-600 mb-1">Holding Account</label>
               <select
                 value={accountId}
-                onChange={(e) => setAccountId(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setAccountId(val);
+                  if (!fundingAccountId) setFundingAccountId(val);
+                }}
                 className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none cursor-pointer"
                 required
               >
@@ -423,13 +438,29 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
               </select>
             </div>
 
-            {/* Interactive Search Combobox for Security / Asset */}
-            {["buy", "sell", "dividend"].includes(transactionType) && (
-              <div className="relative" ref={searchContainerRef}>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Security / Asset
-                </label>
-                <div className="relative flex items-center">
+            <div>
+              <label className="block font-semibold text-slate-600 mb-1">Funding / Settlement Wallet</label>
+              <select
+                value={fundingAccountId || accountId}
+                onChange={(e) => setFundingAccountId(Number(e.target.value))}
+                className="w-full bg-[#F3F4F6] text-slate-900 font-semibold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none cursor-pointer"
+              >
+                {accounts.map((acc) => (
+                  <option key={acc.account_id} value={acc.account_id}>
+                    {acc.account_name} ({acc.currency})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Interactive Search Combobox for Security / Asset */}
+          {["buy", "sell", "dividend"].includes(transactionType) && (
+            <div className="relative" ref={searchContainerRef}>
+              <label className="block font-semibold text-slate-600 mb-1">
+                Security / Asset
+              </label>
+              <div className="relative flex items-center">
                   <input
                     type="text"
                     placeholder="Search ISIN, ticker, name..."
@@ -521,7 +552,6 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
                 )}
               </div>
             )}
-          </div>
 
           {["buy", "sell", "dividend"].includes(transactionType) && (
             <div className="grid grid-cols-2 gap-3">

@@ -48,6 +48,11 @@ async def lifespan(app: FastAPI):
             await conn.execute(text("ALTER TABLE cashflow_transactions ADD COLUMN transaction_kind VARCHAR"))
         except Exception:
             pass
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE transactions ADD COLUMN funding_account_id INTEGER"))
+        except Exception:
+            pass
         
     # Seed default user if none exists & seed default categories
     async with AsyncSessionLocal() as session:

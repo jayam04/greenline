@@ -32,11 +32,12 @@ async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
         amt = float(tx.total_amount or 0.0)
         fees = float(tx.fees or 0.0)
         taxes = float(tx.taxes or 0.0)
-        if tx.account_id in balances:
+        cash_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
+        if cash_acc_id in balances:
             if ttype in ["deposit", "sell", "dividend", "interest"]:
-                balances[tx.account_id] += (amt - fees - taxes)
+                balances[cash_acc_id] += (amt - fees - taxes)
             elif ttype in ["withdrawal", "buy", "fee"]:
-                balances[tx.account_id] -= (amt + fees + taxes)
+                balances[cash_acc_id] -= (amt + fees + taxes)
 
     # 2. Cashflow payments
     c_stmt = select(CashflowTransaction).options(

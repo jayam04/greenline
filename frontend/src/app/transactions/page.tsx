@@ -12,6 +12,9 @@ import {
 interface Transaction {
   transaction_id: number;
   account_id: number;
+  funding_account_id?: number | null;
+  funding_account_name?: string | null;
+  funding_account_currency?: string | null;
   asset_id: number | null;
   account_name: string;
   account_currency?: string;
@@ -253,8 +256,10 @@ export default function TransactionsPage() {
                                 <div className="font-extrabold text-xs text-[#0F172A]">
                                   {formatMoney(tx.total_amount, curr)}
                                 </div>
-                                <div className="text-[10px] font-semibold text-slate-400 uppercase">
-                                  {curr}
+                                <div className="text-[10px] font-semibold text-slate-400">
+                                  {tx.funding_account_name && tx.funding_account_name !== tx.account_name
+                                    ? `${tx.account_name} • via ${tx.funding_account_name}`
+                                    : (tx.funding_account_name || tx.account_name || "Account")}
                                 </div>
                               </div>
 

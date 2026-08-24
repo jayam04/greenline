@@ -29,6 +29,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         )
         db.add(lot)
         
+        funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         # Cash flows (Negative for investments)
         db.add(CashFlow(
             scope_type="portfolio",
@@ -39,7 +40,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         ))
         db.add(CashFlow(
             scope_type="account",
-            scope_id=tx.account_id,
+            scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
             amount=-abs(tx.total_amount),
             flow_type="buy"
@@ -74,6 +75,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         result = await db.execute(stmt)
         open_lots: List[Lot] = list(result.scalars().all())
 
+        # If no lots found matching account_id, look across all accounts for that asset (fallback)
         if not open_lots:
             stmt_all = (
                 select(Lot)
@@ -110,6 +112,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             )
             db.add(lot_sale)
             
+        funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         # Cash flows (Positive for sales)
         net_proceeds = abs(tx.total_amount) - tx.fees - tx.taxes
         db.add(CashFlow(
@@ -121,7 +124,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         ))
         db.add(CashFlow(
             scope_type="account",
-            scope_id=tx.account_id,
+            scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
             amount=net_proceeds,
             flow_type="sell"
@@ -137,6 +140,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         await db.flush()
 
     elif t_type == "deposit":
+        funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         db.add(CashFlow(
             scope_type="portfolio",
             scope_id=None,
@@ -146,7 +150,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         ))
         db.add(CashFlow(
             scope_type="account",
-            scope_id=tx.account_id,
+            scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
             amount=abs(tx.total_amount),
             flow_type="deposit"
@@ -154,6 +158,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         await db.flush()
 
     elif t_type == "withdrawal":
+        funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         db.add(CashFlow(
             scope_type="portfolio",
             scope_id=None,
@@ -163,7 +168,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         ))
         db.add(CashFlow(
             scope_type="account",
-            scope_id=tx.account_id,
+            scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
             amount=-abs(tx.total_amount),
             flow_type="withdrawal"
@@ -171,10 +176,11 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         await db.flush()
 
     elif t_type == "dividend":
+        funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         if tx.asset_id:
             div = Dividend(
                 asset_id=tx.asset_id,
-                account_id=tx.account_id,
+                account_id=funding_acc_id,
                 pay_date=tx.transaction_date,
                 amount_per_share=tx.price_per_unit,
                 total_amount=tx.total_amount,
@@ -182,25 +188,26 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             )
             db.add(div)
             
+            net_dividend = abs(tx.total_amount) - tx.taxes
             db.add(CashFlow(
                 scope_type="portfolio",
                 scope_id=None,
                 flow_date=tx.transaction_date,
-                amount=abs(tx.total_amount),
+                amount=net_dividend,
                 flow_type="dividend"
             ))
             db.add(CashFlow(
                 scope_type="account",
-                scope_id=tx.account_id,
+                scope_id=funding_acc_id,
                 flow_date=tx.transaction_date,
-                amount=abs(tx.total_amount),
+                amount=net_dividend,
                 flow_type="dividend"
             ))
             db.add(CashFlow(
                 scope_type="asset",
                 scope_id=tx.asset_id,
                 flow_date=tx.transaction_date,
-                amount=abs(tx.total_amount),
+                amount=net_dividend,
                 flow_type="dividend"
             ))
             await db.flush()

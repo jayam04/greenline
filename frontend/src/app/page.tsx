@@ -13,7 +13,7 @@ import {
   ArrowUpRight, ArrowDownRight, Eye, EyeOff, RefreshCw, Settings, 
   Calendar, DollarSign, Check, Layers, ExternalLink, ShieldCheck, 
   BarChart2, AlertCircle, ArrowLeftRight, PiggyBank, Receipt, ChevronRight,
-  ArrowRight
+  ArrowRight, X
 } from "lucide-react";
 import Link from "next/link";
 
@@ -194,8 +194,14 @@ export default function NetWorthDashboardPage() {
   };
 
   // 1. Calculate Bank Balances & Securities Valuation in Master Currency
-  const bankAccounts = useMemo(() => accounts.filter((a) => a.account_type === "bank"), [accounts]);
-  const dematAccounts = useMemo(() => accounts.filter((a) => a.account_type !== "bank"), [accounts]);
+  const scopedAccounts = useMemo(() => {
+    return selectedAccount === "all"
+      ? accounts
+      : accounts.filter((a) => a.account_id.toString() === selectedAccount);
+  }, [accounts, selectedAccount]);
+
+  const bankAccounts = useMemo(() => scopedAccounts.filter((a) => a.account_type === "bank"), [scopedAccounts]);
+  const dematAccounts = useMemo(() => scopedAccounts.filter((a) => a.account_type !== "bank"), [scopedAccounts]);
 
   // Total Cash in Bank/Wallet accounts converted to masterCurrency
   const totalBankCashMaster = useMemo(() => {
@@ -220,7 +226,7 @@ export default function NetWorthDashboardPage() {
     }, 0);
   }, [dematAccounts, masterCurrency]);
 
-  // Global Total Net Worth
+  // Scoped Total Net Worth
   const totalNetWorthMaster = totalBankCashMaster + totalStocksValuationMaster + totalDematCashMaster;
   const totalCashMaster = totalBankCashMaster + totalDematCashMaster;
 

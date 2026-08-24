@@ -9,6 +9,7 @@ from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transactio
 from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
 from app.services.xirr_engine import calculate_xirr_for_scope
 from app.services.cashflow_engine import convert_currency
+from app.services.snapshot_engine import calculate_account_snapshots
 from app.api.routers.accounts import calculate_all_account_balances
 from app.api.deps import get_current_user
 
@@ -433,10 +434,20 @@ async def get_annual_snapshot(
         current_holdings_val += convert_currency(val, a_curr, target_currency)
         
     current_total_nw = current_cash_target + current_holdings_val
+
+    # 4. Calculate start-of-year/period net worth to derive true change in net worth
+    start_total_nw = 0.0
+    for acc in all_accs:
+        acc_curr = acc.currency or "EUR"
+        snaps = await calculate_account_snapshots(db, account_id=acc.account_id, end_date=end_date)
+        if snaps:
+            valid_start_snaps = [s for s in snaps if s["snapshot_date"] <= start_date]
+            if valid_start_snaps:
+                start_total_nw += convert_currency(valid_start_snaps[-1]["net_worth"], acc_curr, target_currency)
+
     net_savings = total_income - total_expenses
-    net_worth_delta = net_savings
-    start_nw_est = max(1.0, current_total_nw - net_worth_delta)
-    net_worth_delta_pct = (net_worth_delta / start_nw_est * 100.0) if start_nw_est > 0 else 0.0
+    net_worth_delta = current_total_nw - start_total_nw
+    net_worth_delta_pct = (net_worth_delta / start_total_nw * 100.0) if start_total_nw > 0 else 0.0
 
     return AnnualSnapshotResponse(
         year_label=year_label,

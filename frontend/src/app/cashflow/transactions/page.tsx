@@ -161,9 +161,22 @@ export default function CashflowTransactionsPage() {
         const holdingName = t.account_name || "Demat Account";
         const fundingName = t.funding_account_name || holdingName;
 
-        const paymentsList = [];
-        const signedPaymentAmt = isIncome ? t.total_amount : -t.total_amount;
+        const grossAmt = (t.quantity && t.price_per_unit) ? (t.quantity * t.price_per_unit) : t.total_amount;
+        const fees = t.fees || 0;
+        const taxes = t.taxes || 0;
 
+        let netTotal = grossAmt;
+        if (isBuy) {
+          netTotal = grossAmt + fees + taxes;
+        } else if (isSell) {
+          netTotal = Math.max(0, grossAmt - fees - taxes);
+        } else if (isDiv) {
+          netTotal = Math.max(0, grossAmt - taxes);
+        }
+
+        const signedPaymentAmt = isIncome ? netTotal : -netTotal;
+
+        const paymentsList = [];
         if (fundingName !== holdingName) {
           paymentsList.push({
             account_id: t.account_id,
@@ -187,7 +200,7 @@ export default function CashflowTransactionsPage() {
         }
 
         let catName = "Stock & ETF Purchases";
-        if (isSell) catName = "Realized Capital Gains";
+        if (isSell) catName = "Stock Sale Proceeds";
         else if (isDiv) catName = "Dividends";
         else if (isDeposit || isWithdrawal) catName = "Account Transfers & FX";
 
@@ -200,6 +213,36 @@ export default function CashflowTransactionsPage() {
           tradeDesc = `Dividend Payout`;
         }
 
+        const itemsList = [
+          {
+            category_name: catName,
+            category_type: isIncome ? "INCOME" : "INVESTMENT",
+            description: tradeDesc || t.notes || null,
+            effective_label: "INVESTMENT",
+            amount: grossAmt
+          }
+        ];
+
+        if (fees > 0) {
+          itemsList.push({
+            category_name: "Investment Fees & Charges",
+            category_type: "EXPENSE",
+            description: "Brokerage & Platform Charges",
+            effective_label: "ESSENTIAL",
+            amount: fees
+          });
+        }
+
+        if (taxes > 0) {
+          itemsList.push({
+            category_name: "Taxes & Duties",
+            category_type: "EXPENSE",
+            description: isDiv ? "Tax Withheld at Source (TDS)" : "Securities Transaction Tax & Duties",
+            effective_label: "ESSENTIAL",
+            amount: taxes
+          });
+        }
+
         rows.push({
           key: `trade-${t.transaction_id}`,
           source: "investment",
@@ -208,18 +251,10 @@ export default function CashflowTransactionsPage() {
           title: t.asset_name || t.asset_symbol || `${ttype.toUpperCase()} Transaction`,
           notes: t.notes,
           payments: paymentsList,
-          items: [
-            {
-              category_name: catName,
-              category_type: isIncome ? "INCOME" : "INVESTMENT",
-              description: tradeDesc || t.notes || null,
-              effective_label: "INVESTMENT",
-              amount: t.total_amount
-            }
-          ],
+          items: itemsList,
           isTransfer,
           isIncome,
-          totalAmount: t.total_amount,
+          totalAmount: netTotal,
           currency: t.account_currency || "USD"
         });
       });

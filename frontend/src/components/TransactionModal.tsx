@@ -258,12 +258,26 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
     }
   };
 
+  const selectedAcc = accounts.find((a) => a.account_id === accountId);
+  const accCurrency = selectedAcc?.currency || "USD";
+
   useEffect(() => {
     if (quantity && pricePerUnit && !initialData) {
-      const calcTotal = (parseFloat(quantity) * parseFloat(pricePerUnit)).toFixed(2);
-      setTotalAmount(calcTotal);
+      const q = parseFloat(quantity) || 0;
+      const p = parseFloat(pricePerUnit) || 0;
+      const f = parseFloat(fees) || 0;
+      const t = parseFloat(taxes) || 0;
+      let total = q * p;
+      if (transactionType === "buy") {
+        total = total + f + t;
+      } else if (transactionType === "sell") {
+        total = Math.max(0, total - f - t);
+      } else if (transactionType === "dividend") {
+        total = Math.max(0, total - t);
+      }
+      setTotalAmount(total.toFixed(2));
     }
-  }, [quantity, pricePerUnit, initialData]);
+  }, [quantity, pricePerUnit, fees, taxes, transactionType, initialData]);
 
   if (!isOpen) return null;
 
@@ -569,7 +583,9 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Price Per Unit</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  Price Per Unit ({accCurrency})
+                </label>
                 <input
                   type="number"
                   step="any"
@@ -585,7 +601,9 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
 
           <div className="grid grid-cols-3 gap-2.5">
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Total Amount</label>
+              <label className="block font-semibold text-slate-600 mb-1">
+                Total Amount ({accCurrency})
+              </label>
               <input
                 type="number"
                 step="any"
@@ -598,7 +616,9 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Fees</label>
+              <label className="block font-semibold text-slate-600 mb-1">
+                Fees / Charges ({accCurrency})
+              </label>
               <input
                 type="number"
                 step="any"
@@ -609,7 +629,9 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
             </div>
 
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Taxes</label>
+              <label className="block font-semibold text-slate-600 mb-1">
+                Taxes ({accCurrency})
+              </label>
               <input
                 type="number"
                 step="any"

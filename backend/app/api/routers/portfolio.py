@@ -90,6 +90,22 @@ async def get_portfolio_summary(
         cost_basis_sold_for_asset = sum(r[1] for r in rpnl_rows)
         realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0) if cost_basis_sold_for_asset > 0 else 0.0
         
+        # Fetch fees and taxes for this asset
+        tx_fees_stmt = select(func.sum(Transaction.fees), func.sum(Transaction.taxes))\
+            .where(Transaction.asset_id == aid)
+        if account_id:
+            tx_fees_stmt = tx_fees_stmt.where(Transaction.account_id == account_id)
+        tx_fees_res = await db.execute(tx_fees_stmt)
+        fees_row = tx_fees_res.first()
+        asset_fees = float(fees_row[0] or 0.0) if fees_row else 0.0
+        asset_taxes = float(fees_row[1] or 0.0) if fees_row else 0.0
+        total_asset_fees_taxes = asset_fees + asset_taxes
+
+        # Net PnL = Realized PnL + Unrealized PnL
+        net_pnl_for_asset = realized_pnl_for_asset + unrealized
+        total_basis = cost_sum + cost_basis_sold_for_asset
+        net_pnl_pct_for_asset = (net_pnl_for_asset / total_basis * 100.0) if total_basis > 0 else 0.0
+        
         # XIRR for asset
         xirr_val = await calculate_xirr_for_scope(
             db=db,
@@ -142,6 +158,11 @@ async def get_portfolio_summary(
             unrealized_pnl_pct=unrealized_pct,
             realized_pnl=realized_pnl_for_asset,
             realized_pnl_pct=realized_pnl_pct_for_asset,
+            fees_and_taxes=total_asset_fees_taxes,
+            total_fees=asset_fees,
+            total_taxes=asset_taxes,
+            net_pnl=net_pnl_for_asset,
+            net_pnl_pct=net_pnl_pct_for_asset,
             xirr=xirr_val,
             open_lots=lot_objs
         ))
@@ -206,6 +227,17 @@ async def get_portfolio_summary(
         c_ph_res = await db.execute(c_ph_stmt)
         c_latest_price = c_ph_res.scalar_one_or_none() or 0.0
 
+        # Fetch fees and taxes for this closed asset
+        c_tx_fees_stmt = select(func.sum(Transaction.fees), func.sum(Transaction.taxes))\
+            .where(Transaction.asset_id == c_aid)
+        if account_id:
+            c_tx_fees_stmt = c_tx_fees_stmt.where(Transaction.account_id == account_id)
+        c_tx_fees_res = await db.execute(c_tx_fees_stmt)
+        c_fees_row = c_tx_fees_res.first()
+        c_asset_fees = float(c_fees_row[0] or 0.0) if c_fees_row else 0.0
+        c_asset_taxes = float(c_fees_row[1] or 0.0) if c_fees_row else 0.0
+        c_total_asset_fees_taxes = c_asset_fees + c_asset_taxes
+
         closed_holdings_list.append(HoldingSummary(
             asset_id=c_asset.asset_id,
             symbol=c_asset.symbol,
@@ -222,6 +254,11 @@ async def get_portfolio_summary(
             unrealized_pnl_pct=0.0,
             realized_pnl=c_rpnl,
             realized_pnl_pct=c_rpnl_pct,
+            fees_and_taxes=c_total_asset_fees_taxes,
+            total_fees=c_asset_fees,
+            total_taxes=c_asset_taxes,
+            net_pnl=c_rpnl,
+            net_pnl_pct=c_rpnl_pct,
             xirr=c_xirr,
             open_lots=[]
         ))
@@ -259,8 +296,25 @@ async def get_portfolio_summary(
         current_valuation=total_net_worth
     )
     
-    total_fees = sum(tx.fees for tx in all_txs if tx.fees)
-    total_taxes = sum(tx.taxes for tx in all_txs if tx.taxes)
+    # Fetch accounts map for currency resolution
+    all_accounts_res = await db.execute(select(Account))
+    all_accounts = {a.account_id: a for a in all_accounts_res.scalars().all()}
+
+    total_fees = 0.0
+    total_taxes = 0.0
+    for tx in all_txs:
+        acc = all_accounts.get(tx.account_id)
+        tx_curr = acc.currency if acc else "USD"
+        if tx.fees:
+            if account_id:
+                total_fees += tx.fees
+            else:
+                total_fees += convert_currency(tx.fees, tx_curr, "EUR")
+        if tx.taxes:
+            if account_id:
+                total_taxes += tx.taxes
+            else:
+                total_taxes += convert_currency(tx.taxes, tx_curr, "EUR")
 
     # Sort top holdings by current value
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)

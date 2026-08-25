@@ -180,6 +180,11 @@ class HoldingSummary(BaseModel):
     unrealized_pnl_pct: float
     realized_pnl: float = 0.0
     realized_pnl_pct: float = 0.0
+    fees_and_taxes: float = 0.0
+    total_fees: float = 0.0
+    total_taxes: float = 0.0
+    net_pnl: float = 0.0
+    net_pnl_pct: float = 0.0
     xirr: Optional[float] = None
     open_lots: List[LotResponse] = []
 

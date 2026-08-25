@@ -86,14 +86,14 @@ async def test_fifo_lot_engine():
         assert lots[0].quantity_remaining == 0.0
         assert lots[1].quantity_remaining == 5.0
         
-        # Check realized PnL
+        # Check realized PnL (inclusive of buy & sell fees)
         lot_sales = (await session.execute(LotSale.__table__.select())).all()
         assert len(lot_sales) == 2
-        # LotSale 1: 10 units @ cost basis 1500 -> sale 2000 -> PnL +500
+        # LotSale 1: 10 units @ cost basis 1510 (1500 + 10 fee) -> net sale 1990 (2000 - 10 allocated fee) -> PnL +480
         assert lot_sales[0].quantity_sold == 10.0
-        assert lot_sales[0].cost_basis == 1500.0
-        assert lot_sales[0].realized_pnl == 500.0
-        # LotSale 2: 5 units @ cost basis 850 -> sale 1000 -> PnL +150
+        assert lot_sales[0].cost_basis == 1510.0
+        assert lot_sales[0].realized_pnl == 480.0
+        # LotSale 2: 5 units @ cost basis 855 (850 + 5 fee) -> net sale 995 (1000 - 5 allocated fee) -> PnL +140
         assert lot_sales[1].quantity_sold == 5.0
-        assert lot_sales[1].cost_basis == 850.0
-        assert lot_sales[1].realized_pnl == 150.0
+        assert lot_sales[1].cost_basis == 855.0
+        assert lot_sales[1].realized_pnl == 140.0

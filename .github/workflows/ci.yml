@@ -132,7 +132,10 @@ jobs:
           npm run build
 
       - name: Start Backend Server
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./data/investments.db
         run: |
+          mkdir -p data
           PYTHONPATH=backend python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
           timeout 30 bash -c 'until curl -s http://localhost:8000/docs > /dev/null; do sleep 1; done'
 

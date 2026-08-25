@@ -5,7 +5,7 @@ from sqlalchemy import select
 from app.db.database import Base
 from app.db.models import Account, Asset, Transaction, Lot, PriceHistory, NetworthSnapshot
 from app.services.fifo_engine import process_transaction_event
-from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
+from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots, calculate_account_snapshots
 
 @pytest.mark.anyio
 async def test_date_specific_snapshot_calculation():
@@ -159,3 +159,44 @@ async def test_historical_asset_backfill_from_past_date():
         snap = snap_res.scalar_one_or_none()
         assert snap is not None
         assert snap.total_current_value == 1000.0
+
+@pytest.mark.anyio
+async def test_funding_account_timeline_start_date():
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+    
+    async with TestSession() as session:
+        # Bank account created today (e.g. Jupiter)
+        bank = Account(account_name="Funding Bank", account_type="bank", created_at=datetime.date(2026, 8, 25))
+        demat = Account(account_name="Demat", account_type="demat", created_at=datetime.date(2026, 8, 25))
+        ast = Asset(symbol="STOCK", name="Stock", asset_type="stock")
+        session.add_all([bank, demat, ast])
+        await session.commit()
+        await session.refresh(bank)
+        await session.refresh(demat)
+        await session.refresh(ast)
+
+        # Purchase 20 days ago funded from bank
+        past_date = datetime.date(2026, 8, 5)
+        t_buy = Transaction(
+            account_id=demat.account_id,
+            funding_account_id=bank.account_id,
+            asset_id=ast.asset_id,
+            transaction_type="buy",
+            transaction_date=past_date,
+            quantity=10.0,
+            price_per_unit=100.0,
+            total_amount=1000.0
+        )
+        session.add(t_buy)
+        await session.commit()
+
+        # Compute account snapshots for bank
+        bank_snaps = await calculate_account_snapshots(session, account_id=bank.account_id, end_date=datetime.date(2026, 8, 25))
+        assert len(bank_snaps) > 0
+        assert bank_snaps[0]["snapshot_date"] == past_date
+        assert bank_snaps[0]["cash_balance"] == -1000.0
+

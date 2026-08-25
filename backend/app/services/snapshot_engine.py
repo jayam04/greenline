@@ -239,7 +239,7 @@ async def calculate_account_snapshots(
 
     # 1. Find earliest date for this account across Transaction and CashflowPayment
     if start_date is None:
-        min_tx_stmt = select(func.min(Transaction.transaction_date)).where(Transaction.account_id == account_id)
+        min_tx_stmt = select(func.min(Transaction.transaction_date)).where(or_(Transaction.account_id == account_id, Transaction.funding_account_id == account_id))
         min_tx_res = await db.execute(min_tx_stmt)
         min_tx = min_tx_res.scalar_one_or_none()
 

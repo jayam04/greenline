@@ -12,7 +12,8 @@ from app.schemas.schemas import (
     CashflowPaymentResponse, CashflowItemResponse, CashflowSummaryResponse, SankeyDataResponse
 )
 from app.services.cashflow_engine import (
-    generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur
+    generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur,
+    resolve_transaction_kind
 )
 from app.api.deps import get_current_user
 
@@ -94,12 +95,7 @@ async def list_cashflow_transactions(
         if label and not items_out:
             continue
 
-        is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
-        is_inc = not is_trans and (
-            any(i.category and i.category.category_type == "INCOME" for i in tx.items) or
-            (tx.transaction_kind == "INCOME")
-        )
-        tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else (tx.transaction_kind or "EXPENSE")
+        tx_kind = resolve_transaction_kind(tx)
 
         results.append(CashflowTransactionResponse(
             cashflow_id=tx.cashflow_id,
@@ -202,12 +198,7 @@ async def get_cashflow_transaction(
         for i in tx.items
     ]
 
-    is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
-    is_inc = not is_trans and (
-        any(i.category and i.category.category_type == "INCOME" for i in tx.items) or
-        (tx.transaction_kind == "INCOME")
-    )
-    tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else (tx.transaction_kind or "EXPENSE")
+    tx_kind = resolve_transaction_kind(tx)
 
     return CashflowTransactionResponse(
         cashflow_id=tx.cashflow_id,

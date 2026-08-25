@@ -376,7 +376,7 @@ export default function CashflowPage() {
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredTransactions.map((tx) => {
                 const isTransfer = tx.transaction_kind === "TRANSFER" || tx.items.some((i) => i.category_type === "TRANSFER");
-                const isIncome = !isTransfer && tx.items.some((i) => i.category_type === "INCOME");
+                const isIncome = !isTransfer && (tx.transaction_kind === "INCOME" || tx.items.some((i) => i.category_type === "INCOME"));
 
                 return (
                   <tr key={tx.cashflow_id} className="hover:bg-slate-50/80 transition-colors">
@@ -456,7 +456,7 @@ export default function CashflowPage() {
                                 {tx.items.length > 1 && (
                                   <span className={`font-bold text-[11px] tabular-nums ${itm.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
                                     {itm.amount < 0
-                                      ? `- ${formatCurrency(Math.abs(itm.amount), tx.currency || "EUR")} (Reimbursement)`
+                                      ? `- ${formatCurrency(Math.abs(itm.amount), tx.currency || "EUR")} (${isIncome ? "Adjustment" : "Reimbursement"})`
                                       : formatCurrency(itm.amount, tx.currency || "EUR")}
                                   </span>
                                 )}

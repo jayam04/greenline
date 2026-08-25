@@ -10,6 +10,7 @@ from app.schemas.schemas import AccountCreate, AccountUpdate, AccountResponse
 from app.api.deps import get_current_user
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot
+from app.services.cashflow_engine import resolve_transaction_kind
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -44,15 +45,11 @@ async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
     )
     c_res = await db.execute(c_stmt)
     for ctx in c_res.scalars().all():
-        is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in ctx.items)
-        is_inc = not is_trans and (
-            any(i.category and i.category.category_type == "INCOME" for i in ctx.items) or
-            (ctx.transaction_kind == "INCOME")
-        )
+        tkind = resolve_transaction_kind(ctx)
         for p in ctx.payments:
             if p.account_id in balances:
                 amt = float(p.amount or 0.0)
-                if is_trans or is_inc:
+                if tkind in ["TRANSFER", "INCOME"]:
                     balances[p.account_id] += amt
                 else: # EXPENSE
                     balances[p.account_id] -= amt

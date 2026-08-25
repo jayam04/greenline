@@ -40,6 +40,33 @@ def convert_currency(amount: float, from_currency: str = "EUR", to_currency: str
 def convert_currency_to_eur(amount: float, from_currency: str = "EUR") -> float:
     return convert_currency(amount, from_currency, "EUR")
 
+def resolve_transaction_kind(tx: Any) -> str:
+    """
+    Canonical derivation of transaction kind (TRANSFER, INCOME, EXPENSE).
+    Priority:
+    1. Explicit tx.transaction_kind == 'TRANSFER' or any item has category_type == 'TRANSFER' -> 'TRANSFER'
+    2. Explicit tx.transaction_kind == 'INCOME' or any item has category_type == 'INCOME' -> 'INCOME'
+    3. Explicit tx.transaction_kind if set -> tx.transaction_kind
+    4. Fallback -> 'EXPENSE'
+    """
+    items = getattr(tx, "items", []) or []
+
+    is_trans = getattr(tx, "transaction_kind", None) == "TRANSFER" or any(
+        (i.category and i.category.category_type == "TRANSFER") if hasattr(i, "category") else (getattr(i, "category_type", None) == "TRANSFER")
+        for i in items
+    )
+    if is_trans:
+        return "TRANSFER"
+
+    is_inc = getattr(tx, "transaction_kind", None) == "INCOME" or any(
+        (i.category and i.category.category_type == "INCOME") if hasattr(i, "category") else (getattr(i, "category_type", None) == "INCOME")
+        for i in items
+    )
+    if is_inc:
+        return "INCOME"
+
+    return getattr(tx, "transaction_kind", None) or "EXPENSE"
+
 DEFAULT_CATEGORY_COLORS = {
     "INCOME": "#10B981",       # Emerald green
     "EXPENSE": "#EF4444",      # Rose red

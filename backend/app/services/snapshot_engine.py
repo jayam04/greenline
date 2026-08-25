@@ -9,6 +9,7 @@ from app.db.models import (
     LotSale, Transaction, Asset, Account, CashflowTransaction, 
     CashflowPayment, CashflowItem
 )
+from app.services.cashflow_engine import resolve_transaction_kind
 
 FX_RATES_TO_EUR = {
     "EUR": 1.0,
@@ -144,9 +145,7 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
         .where(CashflowTransaction.transaction_date <= snapshot_date)
     cf_res = await db.execute(cf_stmt)
     for ctx, pmt in cf_res.all():
-        is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in ctx.items)
-        is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in ctx.items)
-        tkind = ctx.transaction_kind or ("TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE")
+        tkind = resolve_transaction_kind(ctx)
         amt = float(pmt.amount or 0.0)
         if tkind in ["TRANSFER", "INCOME"]:
             cash_balance += amt
@@ -307,9 +306,7 @@ async def calculate_account_snapshots(
 
     cf_events = []
     for ctx, pmt in cf_records:
-        is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in ctx.items)
-        is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in ctx.items)
-        tkind = ctx.transaction_kind or ("TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE")
+        tkind = resolve_transaction_kind(ctx)
         amt = float(pmt.amount or 0.0)
         signed_amt = amt if tkind in ["TRANSFER", "INCOME"] else -amt
         cf_events.append((ctx.transaction_date, signed_amt, tkind == "INCOME"))

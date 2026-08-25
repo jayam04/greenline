@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { formatCurrency } from "@/lib/format";
+import { useTheme } from "@/components/ThemeProvider";
 
 export interface SankeyNode {
   id: string;
@@ -36,6 +37,8 @@ interface SankeyChartProps {
 }
 
 export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyChartProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredLink, setHoveredLink] = useState<{ source: string; target: string; value: number } | null>(null);
 
@@ -311,8 +314,9 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
                   y={y + nh / 2 - 3}
                   textAnchor={isLeft ? "end" : isRight ? "start" : "middle"}
                   dominantBaseline="central"
-                  className={`text-[11px] font-bold fill-[#0F172A] pointer-events-none transition-all ${
-                    isHovered ? "fill-black font-extrabold" : ""
+                  fill={isDark ? "#F8FAFC" : "#0F172A"}
+                  className={`text-[11px] font-bold pointer-events-none transition-all ${
+                    isHovered ? "font-extrabold" : ""
                   }`}
                 >
                   {node.name}
@@ -324,7 +328,8 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
                   y={y + nh / 2 + 10}
                   textAnchor={isLeft ? "end" : isRight ? "start" : "middle"}
                   dominantBaseline="central"
-                  className="text-[10px] font-semibold fill-slate-400 tabular-nums pointer-events-none"
+                  fill={isDark ? "#94A3B8" : "#64748B"}
+                  className="text-[10px] font-semibold tabular-nums pointer-events-none"
                 >
                   {formatCurrency(value, currency)}
                 </text>

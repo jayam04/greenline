@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { 
   Building2, Plus, Trash2, Edit, X, RefreshCw, Download, 
   Upload, Search, Landmark, Briefcase, Coins, PiggyBank, 
-  ShieldCheck, AlertCircle, CheckCircle2, Layers, Sparkles
+  AlertCircle, Layers
 } from "lucide-react";
 
 interface Account {
@@ -177,26 +177,26 @@ export default function AccountsPage() {
   const getAccountIcon = (type: string) => {
     switch (type.toLowerCase()) {
       case "bank":
-        return <Landmark className="w-4 h-4 text-emerald-600" />;
+        return <Landmark className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />;
       case "crypto_exchange":
-        return <Coins className="w-4 h-4 text-amber-600" />;
+        return <Coins className="w-4 h-4 text-amber-600 dark:text-amber-400" />;
       case "pf":
       case "nps":
-        return <PiggyBank className="w-4 h-4 text-purple-600" />;
+        return <PiggyBank className="w-4 h-4 text-purple-600 dark:text-purple-400" />;
       default:
-        return <Briefcase className="w-4 h-4 text-blue-600" />;
+        return <Briefcase className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
     }
   };
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-6 font-sans">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9]">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9] dark:border-[#1E293B]">
         <div>
-          <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">
+          <h1 className="text-xl font-bold text-[#0F172A] dark:text-white tracking-tight">
             Accounts & Securities Master
           </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-0.5">
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
             Manage brokerage accounts, cash wallets, and master security entries
           </p>
         </div>
@@ -234,14 +234,14 @@ export default function AccountsPage() {
 
       {/* SECTION 1: Configured Accounts (Full Width Cards) */}
       <div className="getquin-card p-5 space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9] flex-wrap gap-2">
+        <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9] dark:border-[#1E293B] flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[#0F172A] text-white rounded-lg">
+            <div className="p-1.5 bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] rounded-lg">
               <Building2 className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-[#0F172A]">Configured Accounts</h2>
-              <p className="text-[11px] font-medium text-slate-400">
+              <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">Configured Accounts</h2>
+              <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
                 Connected investment portfolios, bank wallets, and retirement funds ({accounts.length})
               </p>
             </div>
@@ -265,26 +265,26 @@ export default function AccountsPage() {
             {accounts.map((acc) => (
               <div
                 key={acc.account_id}
-                className="bg-white rounded-xl border border-slate-200/80 p-3 hover:shadow-xs hover:border-slate-300 transition-all flex items-center justify-between gap-3 group"
+                className="bg-white dark:bg-[#121824] rounded-xl border border-slate-200/80 dark:border-slate-800 p-3 hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex items-center justify-between gap-3 group"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="p-2 bg-slate-50 border border-slate-100 rounded-lg shrink-0">
+                  <div className="p-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 rounded-lg shrink-0">
                     {getAccountIcon(acc.account_type)}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <h3 className="text-xs font-bold text-[#0F172A] truncate">
+                      <h3 className="text-xs font-bold text-[#0F172A] dark:text-white truncate">
                         {acc.account_name}
                       </h3>
-                      <span className="px-1.5 py-0.2 text-[9px] font-extrabold uppercase bg-slate-100 text-slate-700 rounded shrink-0">
+                      <span className="px-1.5 py-0.2 text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded shrink-0">
                         {acc.currency || "USD"}
                       </span>
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-blue-50 text-blue-700 rounded shrink-0">
+                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 rounded shrink-0">
                         {acc.account_type.replace(/_/g, " ")}
                       </span>
                     </div>
                     {acc.broker_name && (
-                      <p className="text-[11px] font-medium text-slate-400 truncate mt-0.5">
+                      <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate mt-0.5">
                         {acc.broker_name}
                       </p>
                     )}
@@ -297,14 +297,14 @@ export default function AccountsPage() {
                       setEditingAccount(acc);
                       setIsAccountModalOpen(true);
                     }}
-                    className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
                     title="Edit account"
                   >
                     <Edit className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => handleDeleteAccount(acc.account_id)}
-                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-md transition-colors cursor-pointer"
                     title="Delete account"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -314,10 +314,10 @@ export default function AccountsPage() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-10 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-            <Building2 className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-600">No Accounts Configured Yet</p>
-            <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+          <div className="text-center py-10 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/20">
+            <Building2 className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No Accounts Configured Yet</p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 max-w-sm mx-auto">
               Add your investment brokerage accounts, bank wallets, or mutual fund accounts to start tracking your net worth.
             </p>
           </div>
@@ -326,14 +326,14 @@ export default function AccountsPage() {
 
       {/* SECTION 2: Security Master Entries (Full Width with Search Bar) */}
       <div className="getquin-card p-5 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-[#F1F5F9] gap-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-[#F1F5F9] dark:border-[#1E293B] gap-3">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[#0F172A] text-white rounded-lg">
+            <div className="p-1.5 bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] rounded-lg">
               <Layers className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-[#0F172A]">Security Master Entries</h2>
-              <p className="text-[11px] font-medium text-slate-400">
+              <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">Security Master Entries</h2>
+              <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
                 Centralized registry of stocks, ETFs, crypto, and market securities ({filteredAssets.length} of {assets.length})
               </p>
             </div>
@@ -342,18 +342,18 @@ export default function AccountsPage() {
           <div className="flex items-center gap-2.5 flex-1 max-w-lg justify-end">
             {/* Search Box */}
             <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search by ticker, company name, ISIN, sector..."
                 value={assetSearchQuery}
                 onChange={(e) => setAssetSearchQuery(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-xs font-semibold text-slate-800 placeholder-slate-400 pl-8 pr-7 py-1.5 rounded-lg border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F3F4F6] dark:bg-[#1A2333] text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 pl-8 pr-7 py-1.5 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
               {assetSearchQuery && (
                 <button
                   onClick={() => setAssetSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -379,18 +379,18 @@ export default function AccountsPage() {
             {filteredAssets.map((ast) => (
               <div
                 key={ast.asset_id}
-                className="bg-white rounded-xl border border-slate-200/80 p-3.5 hover:shadow-xs hover:border-slate-300 transition-all flex flex-col justify-between group"
+                className="bg-white dark:bg-[#121824] rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between group"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-extrabold text-[#0F172A] text-xs uppercase">
+                      <span className="font-extrabold text-[#0F172A] dark:text-white text-xs uppercase">
                         {ast.symbol}
                       </span>
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-slate-100 text-slate-700 rounded">
+                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">
                         {ast.exchange || "GLOBAL"}
                       </span>
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-blue-50 text-blue-700 rounded">
+                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 rounded">
                         {ast.asset_type}
                       </span>
                     </div>
@@ -401,14 +401,14 @@ export default function AccountsPage() {
                           setEditingAsset(ast);
                           setIsAssetModalOpen(true);
                         }}
-                        className="p-1 text-slate-400 hover:text-[#0F172A] hover:bg-slate-100 rounded cursor-pointer"
+                        className="p-1 text-slate-400 dark:text-slate-500 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer"
                         title="Edit security"
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDeleteAsset(ast.asset_id)}
-                        className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                        className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded cursor-pointer"
                         title="Delete security"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -416,17 +416,17 @@ export default function AccountsPage() {
                     </div>
                   </div>
 
-                  <h4 className="text-xs font-semibold text-slate-800 line-clamp-1">
+                  <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 line-clamp-1">
                     {ast.name}
                   </h4>
 
-                  <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
+                  <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
                     <span className="line-clamp-1 font-medium">
                       {ast.sector ? `${ast.sector}` : "General"}
                       {ast.industry ? ` • ${ast.industry}` : ""}
                     </span>
                     {ast.isin && (
-                      <span className="font-mono text-[10px] text-slate-400 shrink-0 ml-2">
+                      <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 shrink-0 ml-2">
                         {ast.isin}
                       </span>
                     )}
@@ -436,12 +436,12 @@ export default function AccountsPage() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-10 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-            <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-600">
+          <div className="text-center py-10 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/20">
+            <Search className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+            <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
               {assetSearchQuery ? `No securities matching "${assetSearchQuery}"` : "No Securities in Master"}
             </p>
-            <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 max-w-sm mx-auto">
               Add your stocks, ETFs, or mutual funds to the security master to record transactions.
             </p>
           </div>
@@ -495,13 +495,24 @@ interface AccountModalProps {
   onSuccess: () => void;
 }
 
-function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalProps) {
+export function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalProps) {
   const [name, setName] = useState(initialData?.account_name || "");
   const [broker, setBroker] = useState(initialData?.broker_name || "");
   const [type, setType] = useState(initialData?.account_type || "demat");
   const [currency, setCurrency] = useState(initialData?.currency || "USD");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Dismiss on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -542,31 +553,36 @@ function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalP
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
-      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md shadow-2xl p-6 relative">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white dark:bg-[#121824] rounded-2xl border border-slate-200 dark:border-slate-800 w-full max-w-md shadow-2xl p-6 relative">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+          className="absolute top-4 right-4 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
 
         <div className="flex items-center gap-3 mb-5">
-          <div className="p-2.5 bg-[#0F172A] text-white rounded-xl">
+          <div className="p-2.5 bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] rounded-xl">
             <Building2 className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#0F172A]">
+            <h2 className="text-base font-bold text-[#0F172A] dark:text-white">
               {initialData ? "Edit Account" : "Add New Account"}
             </h2>
-            <p className="text-xs font-medium text-slate-400">
+            <p className="text-xs font-medium text-slate-400 dark:text-slate-500">
               Configure brokerage, bank, or crypto investment accounts
             </p>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+          <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-rose-700 dark:text-rose-400 text-xs font-semibold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -574,7 +590,7 @@ function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalP
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="block text-slate-700 font-bold mb-1.5">
+            <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
               Account Name <span className="text-rose-500">*</span>
             </label>
             <input
@@ -582,14 +598,14 @@ function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalP
               placeholder="e.g. Zerodha Primary, Charles Schwab, Main Bank"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+              className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Broker / Platform
               </label>
               <input
@@ -597,18 +613,18 @@ function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalP
                 placeholder="e.g. Zerodha, Schwab"
                 value={broker}
                 onChange={(e) => setBroker(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Account Type
               </label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               >
                 <option value="demat">Demat / Stocks</option>
                 <option value="mutual_fund">Mutual Funds</option>
@@ -621,27 +637,27 @@ function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalP
           </div>
 
           <div>
-            <label className="block text-slate-700 font-bold mb-1.5">
+            <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
               Base Currency
             </label>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
-              className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+              className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
             >
               <option value="USD">USD ($ - US Dollar)</option>
               <option value="EUR">EUR (€ - Euro)</option>
               <option value="INR">INR (₹ - Indian Rupee)</option>
               <option value="GBP">GBP (£ - British Pound)</option>
-              <option value="CAD">CAD ($ - Canadian Dollar)</option>
-              <option value="AUD">AUD ($ - Australian Dollar)</option>
+              <option value="CAD">CAD (CA$ - Canadian Dollar)</option>
+              <option value="AUD">AUD (A$ - Australian Dollar)</option>
               <option value="JPY">JPY (¥ - Japanese Yen)</option>
-              <option value="CHF">CHF (Fr - Swiss Franc)</option>
-              <option value="SGD">SGD ($ - Singapore Dollar)</option>
+              <option value="CHF">CHF (CHF - Swiss Franc)</option>
+              <option value="SGD">SGD (S$ - Singapore Dollar)</option>
             </select>
           </div>
 
-          <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+          <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}
@@ -673,7 +689,7 @@ interface AssetModalProps {
   onSuccess: () => void;
 }
 
-function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps) {
+export function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps) {
   const [symbol, setSymbol] = useState(initialData?.symbol || "");
   const [name, setName] = useState(initialData?.name || "");
   const [assetType, setAssetType] = useState(initialData?.asset_type || "stock");
@@ -687,6 +703,17 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
   const [lookupError, setLookupError] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Dismiss on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const handleLookup = async () => {
     const cleanSym = symbol.trim().toUpperCase();
@@ -757,31 +784,36 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
-      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-lg shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white dark:bg-[#121824] rounded-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+          className="absolute top-4 right-4 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
 
         <div className="flex items-center gap-3 mb-5">
-          <div className="p-2.5 bg-[#0F172A] text-white rounded-xl">
+          <div className="p-2.5 bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] rounded-xl">
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#0F172A]">
+            <h2 className="text-base font-bold text-[#0F172A] dark:text-white">
               {initialData ? "Edit Security" : "Add Security to Master"}
             </h2>
-            <p className="text-xs font-medium text-slate-400">
+            <p className="text-xs font-medium text-slate-400 dark:text-slate-500">
               Register stock, ETF, or asset details in the security master
             </p>
           </div>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-semibold flex items-center gap-2">
+          <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-rose-700 dark:text-rose-400 text-xs font-semibold flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -790,7 +822,7 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {/* Symbol & Auto Fetch */}
           <div>
-            <label className="block text-slate-700 font-bold mb-1.5">
+            <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
               Ticker / Symbol <span className="text-rose-500">*</span>
             </label>
             <div className="flex items-center gap-2">
@@ -799,7 +831,7 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
                 placeholder="e.g. AAPL, MSFT, RELIANCE.NS, BTC-USD"
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value)}
-                className="flex-1 bg-[#F8F9FA] text-slate-900 font-extrabold uppercase rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="flex-1 bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-extrabold uppercase rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
                 required
               />
               <button
@@ -809,17 +841,17 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
                 className="btn-pill-gray text-xs shrink-0 cursor-pointer flex items-center gap-1.5 py-2.5"
                 title="Fetch metadata automatically from Yahoo Finance"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${lookingUp ? "animate-spin text-blue-600" : ""}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${lookingUp ? "animate-spin text-blue-600 dark:text-blue-400" : ""}`} />
                 <span>{lookingUp ? "Fetching..." : "Fetch Info"}</span>
               </button>
             </div>
             {lookupError && (
-              <p className="text-[11px] font-bold text-rose-600 mt-1">{lookupError}</p>
+              <p className="text-[11px] font-bold text-rose-600 dark:text-rose-400 mt-1">{lookupError}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-slate-700 font-bold mb-1.5">
+            <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
               Security Full Name <span className="text-rose-500">*</span>
             </label>
             <input
@@ -827,20 +859,20 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
               placeholder="e.g. Apple Inc., Microsoft Corporation"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+              className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Asset Type
               </label>
               <select
                 value={assetType}
                 onChange={(e) => setAssetType(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all uppercase"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all uppercase"
               >
                 <option value="stock">Stock</option>
                 <option value="etf">ETF</option>
@@ -852,7 +884,7 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
             </div>
 
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Exchange
               </label>
               <input
@@ -860,32 +892,35 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
                 placeholder="NASDAQ, NYSE, NSE, BSE"
                 value={exchange}
                 onChange={(e) => setExchange(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold uppercase rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold uppercase rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Trading Currency
               </label>
               <select
                 value={currency}
                 onChange={(e) => setCurrency(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               >
                 <option value="USD">USD ($)</option>
                 <option value="EUR">EUR (€)</option>
                 <option value="INR">INR (₹)</option>
                 <option value="GBP">GBP (£)</option>
-                <option value="CAD">CAD ($)</option>
-                <option value="AUD">AUD ($)</option>
+                <option value="CAD">CAD (CA$)</option>
+                <option value="AUD">AUD (A$)</option>
+                <option value="JPY">JPY (¥)</option>
+                <option value="CHF">CHF (CHF)</option>
+                <option value="SGD">SGD (S$)</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 ISIN (Optional)
               </label>
               <input
@@ -893,14 +928,14 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
                 placeholder="e.g. US0378331005"
                 value={isin}
                 onChange={(e) => setIsin(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold uppercase rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold uppercase rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Sector (Optional)
               </label>
               <input
@@ -908,12 +943,12 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
                 placeholder="e.g. Technology, Healthcare"
                 value={sector}
                 onChange={(e) => setSector(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
             </div>
 
             <div>
-              <label className="block text-slate-700 font-bold mb-1.5">
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
                 Industry (Optional)
               </label>
               <input
@@ -921,12 +956,12 @@ function AssetModal({ isOpen, initialData, onClose, onSuccess }: AssetModalProps
                 placeholder="e.g. Consumer Electronics"
                 value={industry}
                 onChange={(e) => setIndustry(e.target.value)}
-                className="w-full bg-[#F8F9FA] text-slate-900 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 focus:bg-white focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3.5 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
             </div>
           </div>
 
-          <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+          <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
               onClick={onClose}

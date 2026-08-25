@@ -4,6 +4,8 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 
 export type Theme = "light" | "dark" | "system";
 
+export const THEME_STORAGE_KEY = "greenline_theme";
+
 interface ThemeContextType {
   theme: Theme;
   resolvedTheme: "light" | "dark";
@@ -13,19 +15,20 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("greenline_theme") as Theme | null;
-      if (saved && (saved === "light" || saved === "dark" || saved === "system")) {
-        setThemeState(saved);
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+        if (saved && (saved === "light" || saved === "dark" || saved === "system")) {
+          return saved;
+        }
+      } catch (e) {
+        console.error(e);
       }
-    } catch (e) {
-      console.error(e);
     }
-  }, []);
+    return "system";
+  });
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     const root = document.documentElement;

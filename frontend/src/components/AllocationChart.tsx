@@ -9,6 +9,7 @@ import {
   Tooltip,
 } from "recharts";
 import { formatMoney, getCurrencySymbol } from "@/lib/format";
+import { useTheme } from "@/components/ThemeProvider";
 
 interface AllocationChartProps {
   allocation: Record<string, number>;
@@ -36,9 +37,12 @@ export function AllocationChart({
   centerValue,
   currency = "USD"
 }: AllocationChartProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
   if (!allocation || Object.keys(allocation).length === 0) {
     return (
-      <div className="h-56 flex items-center justify-center text-slate-400 font-medium text-xs">
+      <div className="h-56 flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium text-xs">
         No allocation data available.
       </div>
     );
@@ -70,7 +74,7 @@ export function AllocationChart({
               outerRadius={95}
               paddingAngle={2}
               dataKey="value"
-              stroke="#FFFFFF"
+              stroke={isDark ? "#121824" : "#FFFFFF"}
               strokeWidth={2}
             >
               {chartData.map((_, index) => (
@@ -80,7 +84,7 @@ export function AllocationChart({
             <Tooltip
               contentStyle={{
                 backgroundColor: "#0F172A",
-                border: "none",
+                border: isDark ? "1px solid #1E293B" : "none",
                 borderRadius: "0.5rem",
                 color: "#FFFFFF",
                 fontSize: "12px",
@@ -94,8 +98,8 @@ export function AllocationChart({
 
         {/* Center Donut Text */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-4">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{centerLabel}</span>
-          <span className="text-sm font-extrabold text-[#0F172A] tabular-nums mt-0.5">
+          <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{centerLabel}</span>
+          <span className="text-sm font-extrabold text-[#0F172A] dark:text-white tabular-nums mt-0.5">
             {centerValue || formatMoney(total, currency, 0)}
           </span>
         </div>

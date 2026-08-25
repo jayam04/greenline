@@ -14,6 +14,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { formatMoney, getCurrencySymbol } from "@/lib/format";
+import { useTheme } from "@/components/ThemeProvider";
 
 export interface BenchmarkSeries {
   id: string;
@@ -38,9 +39,19 @@ interface NetWorthChartProps {
 export function NetWorthChart({ 
   data, 
   mode = "value", 
-  currency = "EUR",
+  currency = "EUR", 
   benchmarks = []
 }: NetWorthChartProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
+  const gridStroke = isDark ? "#1E293B" : "#F1F5F9";
+  const axisLineStroke = isDark ? "#334155" : "#E2E8F0";
+  const tickTextStroke = isDark ? "#64748B" : "#94A3B8";
+  const refLineStroke = isDark ? "#475569" : "#CBD5E1";
+  const tooltipBg = "#0F172A";
+  const tooltipBorder = isDark ? "1px solid #1E293B" : "none";
+
   if (!data || data.length === 0) {
     return (
       <div className="h-60 flex items-center justify-center text-slate-400 font-medium text-xs">
@@ -116,23 +127,24 @@ export function NetWorthChart({
   });
 
   // In Performance Mode (P&L %)
+  // In Performance Mode (P&L %)
   if (mode === "performance") {
     return (
       <div className="h-60 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={mergedChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-            <ReferenceLine y={0} stroke="#CBD5E1" strokeDasharray="2 2" />
+            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+            <ReferenceLine y={0} stroke={refLineStroke} strokeDasharray="2 2" />
             <XAxis 
               dataKey="date" 
-              stroke="#94A3B8" 
+              stroke={tickTextStroke} 
               fontSize={10} 
               fontWeight={600} 
               tickLine={false} 
-              axisLine={{ stroke: "#E2E8F0" }}
+              axisLine={{ stroke: axisLineStroke }}
             />
             <YAxis
-              stroke="#94A3B8"
+              stroke={tickTextStroke}
               fontSize={10}
               fontWeight={600}
               tickLine={false}
@@ -142,10 +154,10 @@ export function NetWorthChart({
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: "#0F172A",
-                border: "none",
+                backgroundColor: tooltipBg,
+                border: tooltipBorder,
                 borderRadius: "0.5rem",
-                boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+                boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.2)",
                 color: "#FFFFFF",
                 fontSize: "12px",
                 fontWeight: "600",
@@ -203,17 +215,17 @@ export function NetWorthChart({
               <stop offset="95%" stopColor="#2563EB" stopOpacity={0.0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
           <XAxis 
             dataKey="date" 
-            stroke="#94A3B8" 
+            stroke={tickTextStroke} 
             fontSize={10} 
             fontWeight={600} 
             tickLine={false} 
-            axisLine={{ stroke: "#E2E8F0" }}
+            axisLine={{ stroke: axisLineStroke }}
           />
           <YAxis
-            stroke="#94A3B8"
+            stroke={tickTextStroke}
             fontSize={10}
             fontWeight={600}
             tickLine={false}
@@ -223,10 +235,10 @@ export function NetWorthChart({
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#0F172A",
-              border: "none",
+              backgroundColor: tooltipBg,
+              border: tooltipBorder,
               borderRadius: "0.5rem",
-              boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+              boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.2)",
               color: "#FFFFFF",
               fontSize: "12px",
               fontWeight: "600",

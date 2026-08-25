@@ -118,6 +118,16 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     }
   }, [isOpen, initialData]);
 
+  // Dismiss on Escape key
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   const loadDropdowns = async () => {
     try {
       const [accs, cats] = await Promise.all([
@@ -509,25 +519,30 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
-      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-xl shadow-xl p-6 relative max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="bg-white dark:bg-[#121824] rounded-2xl border border-slate-200 dark:border-slate-800 w-full max-w-xl shadow-xl p-6 relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+          className="absolute top-5 right-5 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
 
         {/* Modal Header */}
         <div className="flex items-center gap-2.5 mb-3">
-          <div className="p-2 bg-[#0F172A] text-white rounded-xl">
+          <div className="p-2 bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] rounded-xl">
             {initialData ? <Edit className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#0F172A]">
+            <h2 className="text-base font-bold text-[#0F172A] dark:text-white">
               {initialData ? "Edit Transaction" : "Record Spend, Income or Transfer"}
             </h2>
-            <p className="text-[11px] font-medium text-slate-400">
+            <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
               Track multi-currency expenses, salary deposits, or internal FX conversions
             </p>
           </div>

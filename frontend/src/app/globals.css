@@ -1,19 +1,33 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: var(--font-general-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 :root {
-  --background: #F8F9FA;
-  --foreground: #111827;
+  --background: #F3F4F6;
+  --foreground: #0F172A;
   --card-bg: #FFFFFF;
   --card-border: #E5E7EB;
   --primary-black: #0F172A;
   --accent-green: #16A34A;
   --accent-red: #DC2626;
-  --slate-subtle: #F3F4F6;
-  --text-muted: #6B7280;
+  --slate-subtle: #F8F9FA;
+  --text-muted: #64748B;
+}
+
+.dark {
+  --background: #0B0F17;
+  --foreground: #F8FAFC;
+  --card-bg: #121824;
+  --card-border: #1E293B;
+  --primary-black: #FFFFFF;
+  --accent-green: #22C55E;
+  --accent-red: #EF4444;
+  --slate-subtle: #1A2333;
+  --text-muted: #94A3B8;
 }
 
 html, body {
@@ -42,6 +56,15 @@ html, body {
   background-color: #1E293B;
 }
 
+.dark .btn-pill-black {
+  background-color: #FFFFFF;
+  color: #0F172A;
+}
+
+.dark .btn-pill-black:hover {
+  background-color: #E2E8F0;
+}
+
 .btn-pill-black:active {
   transform: scale(0.98);
 }
@@ -64,12 +87,26 @@ html, body {
   color: #111827;
 }
 
+.dark .btn-pill-gray {
+  background-color: #1A2333;
+  color: #CBD5E1;
+}
+
+.dark .btn-pill-gray:hover {
+  background-color: #243046;
+  color: #FFFFFF;
+}
+
 /* Card Surface Styling */
 .getquin-card {
-  background-color: #FFFFFF;
-  border: 1px solid #E5E7EB;
+  background-color: var(--card-bg);
+  border: 1px solid var(--card-border);
   border-radius: 1rem;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+}
+
+.dark .getquin-card {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
 }
 
 /* Micro-interaction press effect */

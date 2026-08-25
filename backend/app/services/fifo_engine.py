@@ -83,20 +83,6 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         )
         result = await db.execute(stmt)
         open_lots: List[Lot] = list(result.scalars().all())
-
-        # If no lots found matching account_id, look across all accounts for that asset (fallback)
-        if not open_lots:
-            stmt_all = (
-                select(Lot)
-                .where(
-                    Lot.asset_id == tx.asset_id,
-                    Lot.quantity_remaining > 0
-                )
-                .order_by(asc(Lot.buy_date), asc(Lot.lot_id))
-            )
-            result_all = await db.execute(stmt_all)
-            open_lots = list(result_all.scalars().all())
-        
         for lot in open_lots:
             if sale_qty_remaining <= 0:
                 break

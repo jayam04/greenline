@@ -310,7 +310,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
     try {
       const payload = {
         account_id: Number(accountId),
-        funding_account_id: fundingAccountId ? Number(fundingAccountId) : Number(accountId),
+        funding_account_id: fundingAccountId ? Number(fundingAccountId) : null,
         asset_id: isAssetTransaction && assetId ? Number(assetId) : null,
         transaction_type: transactionType,
         transaction_date: transactionDate,

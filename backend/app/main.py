@@ -17,7 +17,8 @@ from app.api.routers import (
 
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
-from app.services.cashflow_engine import seed_default_categories, migrate_legacy_payment_signs
+from app.services.cashflow_engine import seed_default_categories
+from app.db.migrations import run_db_migrations
 
 async def _startup_backfill():
     async with AsyncSessionLocal() as session:
@@ -34,26 +35,13 @@ async def _startup_backfill():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup actions: create DB tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Ensure industry column exists if table was created previously
+    # Run deterministic versioned schema and data migrations
+    async with AsyncSessionLocal() as session:
         try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE assets ADD COLUMN industry VARCHAR"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE cashflow_transactions ADD COLUMN transaction_kind VARCHAR"))
-        except Exception:
-            pass
-        try:
-            from sqlalchemy import text
-            await conn.execute(text("ALTER TABLE transactions ADD COLUMN funding_account_id INTEGER"))
-        except Exception:
-            pass
-        
+            await run_db_migrations(session)
+        except Exception as me:
+            print(f"[DB Migration Error] {me}")
+
     # Seed default user if none exists & seed default categories
     async with AsyncSessionLocal() as session:
         stmt = select(User)
@@ -68,12 +56,11 @@ async def lifespan(app: FastAPI):
             await session.commit()
             print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER}")
 
-        # Seed categories & migrate legacy payment signs
+        # Seed categories
         try:
             await seed_default_categories(session)
-            await migrate_legacy_payment_signs(session)
         except Exception as ce:
-            print(f"[Init Categories / Migration Error] {ce}")
+            print(f"[Init Categories Error] {ce}")
             
     asyncio.create_task(_startup_backfill())
     start_scheduler()

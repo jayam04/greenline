@@ -7,7 +7,7 @@ import {
   ArrowDownLeft, ArrowUpRight, ArrowLeftRight, TrendingUp, 
   TrendingDown, Sparkles 
 } from "lucide-react";
-import { formatCurrency, getCurrencySymbol } from "@/lib/format";
+import { formatCurrency, getCurrencySymbol, convertCurrency } from "@/lib/format";
 
 interface Account {
   account_id: number;
@@ -265,13 +265,16 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     }
   };
 
-  // Calculations
+  // Calculations (Multi-currency converted to modal transaction currency)
   const netAccountMovement = useMemo(() => {
     return accountMovements.reduce((sum, p) => {
       const val = parseFloat(p.amount) || 0;
-      return sum + (p.direction === "INFLOW" ? val : -val);
+      const acc = accounts.find(a => a.account_id === p.account_id);
+      const fromCurr = acc?.currency || currency;
+      const valInTxCurr = convertCurrency(val, fromCurr, currency);
+      return sum + (p.direction === "INFLOW" ? valInTxCurr : -valInTxCurr);
     }, 0);
-  }, [accountMovements]);
+  }, [accountMovements, accounts, currency]);
 
   const totalCategoryAllocation = useMemo(() => {
     return categoryItems.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
@@ -285,11 +288,12 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
   const balanceDiff = useMemo(() => {
     if (isPureTransfer) {
       const outflow = accountMovements.find(p => p.direction === "OUTFLOW");
-      const transferAmt = parseFloat(outflow?.amount || "0") || 0;
+      const acc = accounts.find(a => a.account_id === outflow?.account_id);
+      const transferAmt = convertCurrency(parseFloat(outflow?.amount || "0") || 0, acc?.currency || currency, currency);
       return transferAmt - totalCategoryAllocation;
     }
     return Math.abs(netAccountMovement) - totalCategoryAllocation;
-  }, [isPureTransfer, accountMovements, netAccountMovement, totalCategoryAllocation]);
+  }, [isPureTransfer, accountMovements, accounts, currency, netAccountMovement, totalCategoryAllocation]);
 
   const isBalanced = Math.abs(balanceDiff) < 0.01 && (totalCategoryAllocation > 0 || isPureTransfer);
 
@@ -575,7 +579,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                   {/* Amount */}
                   <div className="relative flex items-center w-28 shrink-0">
                     <span className="absolute left-2.5 text-slate-400 font-bold text-xs pointer-events-none">
-                      {currencySymbol}
+                      {getCurrencySymbol(accounts.find((a) => a.account_id === movement.account_id)?.currency || currency)}
                     </span>
                     <input
                       type="number"

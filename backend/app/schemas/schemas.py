@@ -163,6 +163,16 @@ class CorporateActionResponse(CorporateActionCreate):
 
 # Portfolio Summary & Holdings Schemas
 class HoldingSummary(BaseModel):
+    """
+    HoldingSummary presents both open position valuation and realized P&L across asset lifecycle.
+    - realized_pnl: Net realized profit/loss after trade fees & taxes allocated to sold lots.
+    - unrealized_pnl: Current market value minus open lots cost basis (including acquisition fees/taxes).
+    - net_pnl: Total net P&L after all trade costs (realized_pnl + unrealized_pnl).
+    - fees_and_taxes: Total transaction fees + taxes paid across asset transactions (informational).
+    - unrealized_pnl_pct: (unrealized_pnl / total_cost * 100) for open positions.
+    - realized_pnl_pct: (realized_pnl / cost_basis_sold * 100) for realized positions.
+    - net_pnl_pct: (net_pnl / (total_cost + cost_basis_sold) * 100) across total committed capital.
+    """
     asset_id: int
     symbol: str
     name: str
@@ -315,7 +325,7 @@ class CashflowTransactionCreate(BaseModel):
     title: str
     total_amount: Optional[float] = None
     currency: Optional[str] = None
-    transaction_kind: Optional[str] = "EXPENSE" # EXPENSE, INCOME, TRANSFER
+    transaction_kind: Optional[str] = None # EXPENSE, INCOME, TRANSFER
     notes: Optional[str] = None
     payments: List[CashflowPaymentCreate]
     items: List[CashflowItemCreate]

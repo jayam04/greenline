@@ -2,7 +2,7 @@ import datetime
 import math
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, asc
+from sqlalchemy import select, func, desc, asc, or_
 from sqlalchemy.orm import selectinload
 from app.db.models import (
     NetworthSnapshot, NetworthByAssetClass, Lot, PriceHistory, 
@@ -122,9 +122,12 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
 
     for tx in all_txs:
         ttype = (tx.transaction_type or "").lower()
+        qty = float(tx.quantity or 0.0)
+        ppu = float(tx.price_per_unit or 0.0)
         amt = float(tx.total_amount or 0.0)
         fees = float(tx.fees or 0.0)
         taxes = float(tx.taxes or 0.0)
+
         if ttype == "deposit":
             cash_balance += amt
             total_invested += amt
@@ -132,11 +135,16 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
             cash_balance -= amt
             total_invested -= amt
         elif ttype == "buy":
-            cash_balance -= (amt + fees + taxes)
+            trade_cash = (qty * ppu + fees + taxes) if (qty > 0 and ppu > 0) else amt
+            cash_balance -= trade_cash
         elif ttype == "sell":
-            cash_balance += (amt - fees - taxes)
+            trade_cash = (qty * ppu - fees - taxes) if (qty > 0 and ppu > 0) else amt
+            cash_balance += max(0.0, trade_cash)
         elif ttype in ["dividend", "interest"]:
-            cash_balance += (amt - fees - taxes)
+            trade_cash = (amt - taxes) if ttype == "dividend" else amt
+            cash_balance += max(0.0, trade_cash)
+        elif ttype == "fee":
+            cash_balance -= amt
 
     # Add cashflow payments as of snapshot_date
     cf_stmt = select(CashflowTransaction, CashflowPayment)\
@@ -288,7 +296,7 @@ async def calculate_account_snapshots(
             prices_map[aid].append((pdate, cprice))
 
     # 4. Fetch all investment transactions for this account
-    tx_stmt = select(Transaction).where(Transaction.account_id == account_id).order_by(asc(Transaction.transaction_date))
+    tx_stmt = select(Transaction).where(or_(Transaction.account_id == account_id, Transaction.funding_account_id == account_id)).order_by(asc(Transaction.transaction_date))
     tx_res = await db.execute(tx_stmt)
     all_txs: List[Transaction] = tx_res.scalars().all()
 
@@ -342,10 +350,16 @@ async def calculate_account_snapshots(
 
         for tx in all_txs:
             if tx.transaction_date <= curr_date:
+                cash_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
+                if cash_acc_id != account_id:
+                    continue
                 ttype = (tx.transaction_type or "").lower()
+                qty = float(tx.quantity or 0.0)
+                ppu = float(tx.price_per_unit or 0.0)
                 amt = float(tx.total_amount or 0.0)
                 fees = float(tx.fees or 0.0)
                 taxes = float(tx.taxes or 0.0)
+
                 if ttype == "deposit":
                     cash_balance += amt
                     total_invested += amt
@@ -353,11 +367,16 @@ async def calculate_account_snapshots(
                     cash_balance -= amt
                     total_invested -= amt
                 elif ttype == "buy":
-                    cash_balance -= (amt + fees + taxes)
+                    trade_cash = (qty * ppu + fees + taxes) if (qty > 0 and ppu > 0) else amt
+                    cash_balance -= trade_cash
                 elif ttype == "sell":
-                    cash_balance += (amt - fees - taxes)
+                    trade_cash = (qty * ppu - fees - taxes) if (qty > 0 and ppu > 0) else amt
+                    cash_balance += max(0.0, trade_cash)
                 elif ttype in ["dividend", "interest"]:
-                    cash_balance += (amt - fees - taxes)
+                    trade_cash = (amt - taxes) if ttype == "dividend" else amt
+                    cash_balance += max(0.0, trade_cash)
+                elif ttype == "fee":
+                    cash_balance -= amt
 
         for cf_date, signed_amt, is_inc in cf_events:
             if cf_date <= curr_date:

@@ -2,7 +2,7 @@ import datetime
 from typing import List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, or_
 from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem
@@ -10,7 +10,7 @@ from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotRes
 from app.services.xirr_engine import calculate_xirr_for_scope
 from app.services.cashflow_engine import convert_currency
 from app.services.snapshot_engine import calculate_account_snapshots
-from app.api.routers.accounts import calculate_all_account_balances
+from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -281,7 +281,7 @@ async def get_portfolio_summary(
     total_realized_pnl = sum(tot_rpnl_res.scalars().all())
     
     # 5. Fetch Cash Balance using centralized funding-account & cashflow aware engine
-    balances = await calculate_all_account_balances(db)
+    balances = await calculate_all_account_cash_balances(db)
     if account_id:
         cash_balance = balances.get(account_id, 0.0)
     else:
@@ -473,7 +473,7 @@ async def get_annual_snapshot(
             total_income += amt
 
     # 3. Calculate current net worth & estimated delta
-    all_balances = await calculate_all_account_balances(db)
+    all_balances = await calculate_all_account_cash_balances(db)
     acc_map_res = await db.execute(select(Account))
     all_accs = acc_map_res.scalars().all()
     

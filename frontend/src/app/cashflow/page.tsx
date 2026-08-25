@@ -394,7 +394,7 @@ export default function CashflowPage() {
                       <div className="flex flex-col gap-1">
                         {tx.payments.map((p, pIdx) => {
                           const pCurr = p.account_currency || tx.currency || "EUR";
-                          const isCredit = isTransfer ? p.amount > 0 : isIncome ? p.amount >= 0 : p.amount < 0;
+                          const isCredit = p.amount > 0;
                           const dotColor = isCredit ? "bg-emerald-500" : "bg-rose-500";
                           const textColor = isCredit 
                             ? "text-emerald-600 dark:text-emerald-400" 

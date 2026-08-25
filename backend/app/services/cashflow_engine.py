@@ -355,6 +355,32 @@ async def seed_default_categories(db: AsyncSession):
         await db.commit()
         print("[Seed] Successfully migrated categories to 3-root hierarchy.")
 
+async def migrate_legacy_payment_signs(db: AsyncSession):
+    """
+    Ensures all payments follow the unified signed convention:
+    - Inflow / Deposit / Income: payment.amount > 0
+    - Outflow / Spend / Expense: payment.amount < 0
+    """
+    stmt = (
+        select(CashflowPayment, CashflowTransaction)
+        .join(CashflowTransaction, CashflowPayment.cashflow_id == CashflowTransaction.cashflow_id)
+        .options(selectinload(CashflowTransaction.items).selectinload(CashflowItem.category))
+    )
+    res = await db.execute(stmt)
+    migrated_count = 0
+    for pmt, ctx in res.all():
+        is_trans = any(i.category and i.category.category_type == "TRANSFER" for i in ctx.items)
+        is_inc = not is_trans and (
+            any(i.category and i.category.category_type == "INCOME" for i in ctx.items) or
+            ctx.transaction_kind == "INCOME"
+        )
+        if not is_trans and not is_inc and pmt.amount > 0:
+            pmt.amount = -abs(pmt.amount)
+            migrated_count += 1
+    if migrated_count > 0:
+        await db.commit()
+        print(f"[Migration] Migrated {migrated_count} legacy expense payments to negative outflow signs.")
+
 async def build_category_lineage_map(db: AsyncSession) -> Dict[int, Dict[str, Any]]:
     """
     Loads all categories and computes ancestors, level (1..5), full path, and effective label.

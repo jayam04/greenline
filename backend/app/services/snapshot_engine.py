@@ -147,12 +147,9 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     for ctx, pmt in cf_res.all():
         tkind = resolve_transaction_kind(ctx)
         amt = float(pmt.amount or 0.0)
-        if tkind in ["TRANSFER", "INCOME"]:
-            cash_balance += amt
-            if tkind == "INCOME":
-                total_invested += max(0.0, amt)
-        else:
-            cash_balance -= amt
+        cash_balance += amt
+        if amt > 0 and tkind == "INCOME":
+            total_invested += amt
 
     if cash_balance > 0:
         allocation_by_class["cash"] = cash_balance
@@ -307,9 +304,9 @@ async def calculate_account_snapshots(
     cf_events = []
     for ctx, pmt in cf_records:
         tkind = resolve_transaction_kind(ctx)
-        amt = float(pmt.amount or 0.0)
-        signed_amt = amt if tkind in ["TRANSFER", "INCOME"] else -amt
-        cf_events.append((ctx.transaction_date, signed_amt, tkind == "INCOME"))
+        signed_amt = float(pmt.amount or 0.0)
+        is_income = signed_amt > 0 and tkind == "INCOME"
+        cf_events.append((ctx.transaction_date, signed_amt, is_income))
 
     # 6. Iterate day by day from start_date to end_date
     snapshots_list = []

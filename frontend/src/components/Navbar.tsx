@@ -67,6 +67,7 @@ export function Navbar() {
     if (pathname === "/holdings") return "Investments > Positions & Holdings";
     if (pathname === "/transactions") return "Investments > Transaction Ledger";
     if (pathname === "/cashflow") return "Cashflow > Income, Spends & Sankey Flow";
+    if (pathname === "/cashflow/transactions") return "Cashflow > Transactions & Cash Ledger";
     if (pathname === "/categories") return "Cashflow > Category Hierarchy & Labels";
     if (pathname === "/accounts") return "Master > Accounts & Securities Master";
     if (pathname === "/settings") return "Settings > Preferences & Configuration";
@@ -208,6 +209,19 @@ export function Navbar() {
               {/* Cashflow Dropdown Menu */}
               {isCashflowOpen && (
                 <div className="absolute left-0 top-10 z-50 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
+                  <Link
+                    href="/cashflow/transactions"
+                    onClick={() => setIsCashflowOpen(false)}
+                    className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
+                      pathname === "/cashflow/transactions" ? "text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50/50 dark:bg-emerald-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
+                    }`}
+                  >
+                    <Receipt className="w-4 h-4 text-slate-400 dark:text-slate-500" />
+                    <div>
+                      <div className="font-bold">Transactions</div>
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Cashflow & trade ledger</div>
+                    </div>
+                  </Link>
                   <Link
                     href="/categories"
                     onClick={() => setIsCashflowOpen(false)}

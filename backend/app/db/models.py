@@ -25,7 +25,7 @@ class Account(Base):
     currency = Column(String(3), default="USD")
     created_at = Column(Date, default=datetime.date.today)
 
-    transactions = relationship("Transaction", back_populates="account", cascade="all, delete-orphan")
+    transactions = relationship("Transaction", back_populates="account", foreign_keys="[Transaction.account_id]", cascade="all, delete-orphan")
     lots = relationship("Lot", back_populates="account", cascade="all, delete-orphan")
     dividends = relationship("Dividend", back_populates="account", cascade="all, delete-orphan")
 
@@ -53,6 +53,7 @@ class Transaction(Base):
     
     transaction_id = Column(Integer, primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
+    funding_account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=True) # Null for cash-only entries
     transaction_type = Column(String, nullable=False) # buy, sell, dividend, bonus, split, interest, fee, deposit, withdrawal
     transaction_date = Column(Date, nullable=False, index=True)
@@ -63,7 +64,8 @@ class Transaction(Base):
     taxes = Column(Float, default=0.0)
     notes = Column(Text, nullable=True)
 
-    account = relationship("Account", back_populates="transactions")
+    account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])
+    funding_account = relationship("Account", foreign_keys=[funding_account_id])
     asset = relationship("Asset", back_populates="transactions")
     buy_lots = relationship("Lot", back_populates="buy_transaction", foreign_keys="Lot.buy_transaction_id", cascade="all, delete-orphan")
     sell_lot_sales = relationship("LotSale", back_populates="sell_transaction", foreign_keys="LotSale.sell_transaction_id", cascade="all, delete-orphan")

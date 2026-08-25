@@ -13,7 +13,7 @@ from app.schemas.schemas import (
 )
 from app.services.cashflow_engine import (
     generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur,
-    resolve_transaction_kind
+    convert_currency, resolve_transaction_kind
 )
 from app.api.deps import get_current_user
 
@@ -226,61 +226,96 @@ async def create_cashflow_transaction(
     if not tx_in.items:
         raise HTTPException(status_code=400, detail="At least one category line item is required")
 
-    # Fetch accounts to verify currencies
+    # 1. Fetch accounts to verify currencies
     acc_ids = [p.account_id for p in tx_in.payments]
     acc_stmt = select(Account).where(Account.account_id.in_(acc_ids))
     acc_res = await db.execute(acc_stmt)
     accounts = {a.account_id: a for a in acc_res.scalars().all()}
 
+    # 2. Fetch categories to verify categorical intent
+    cat_ids = [i.category_id for i in tx_in.items]
+    cat_stmt = select(Category).where(Category.category_id.in_(cat_ids))
+    cat_res = await db.execute(cat_stmt)
+    categories_map = {c.category_id: c for c in cat_res.scalars().all()}
+
+    # 3. Determine primary currency
     currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
-
-    total_payments = sum(p.amount for p in tx_in.payments)
-    total_items = sum(i.amount for i in tx_in.items)
-
-    is_transfer = tx_in.transaction_kind == "TRANSFER"
-
-    # Determine primary currency and total amount
-    if is_transfer:
-        # For transfers, primary currency is the destination (or source) currency
-        primary_currency = list(currencies)[0] if currencies else "EUR"
-        # Find positive payment (destination) or max absolute payment
-        dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
-        final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
-        if dest_pmt and dest_pmt.account_id in accounts:
-            primary_currency = accounts[dest_pmt.account_id].currency or primary_currency
-        final_currency = tx_in.currency or primary_currency
-    elif len(currencies) == 1:
+    if len(currencies) > 1:
+        primary_currency = "EUR"
+    elif tx_in.currency:
+        primary_currency = tx_in.currency
+    elif currencies:
         primary_currency = list(currencies)[0]
-        final_total = tx_in.total_amount if tx_in.total_amount is not None and abs(tx_in.total_amount) > 0.0001 else total_payments
-        final_currency = tx_in.currency or primary_currency
     else:
         primary_currency = "EUR"
-        final_total = sum(
-            convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
-            for p in tx_in.payments
-        )
-        final_currency = primary_currency
 
-    # Validate balance if single currency non-transfer
-    if not is_transfer and len(currencies) <= 1:
-        if abs(total_payments - final_total) > 0.01:
+    has_transfer_cat = any(categories_map.get(i.category_id) and categories_map[i.category_id].category_type == "TRANSFER" for i in tx_in.items)
+    has_income_cat = any(categories_map.get(i.category_id) and categories_map[i.category_id].category_type == "INCOME" for i in tx_in.items)
+    has_expense_cat = any(categories_map.get(i.category_id) and categories_map[i.category_id].category_type in ["EXPENSE", "SPEND"] for i in tx_in.items)
+
+    has_outflow = any(p.amount < 0 for p in tx_in.payments)
+    has_inflow = any(p.amount > 0 for p in tx_in.payments)
+    is_multi_payment = len(tx_in.payments) > 1
+
+    net_payments_tx_curr = sum(
+        convert_currency(p.amount, accounts[p.account_id].currency if p.account_id in accounts else primary_currency, primary_currency)
+        for p in tx_in.payments
+    )
+    total_items_tx_curr = sum(
+        i.amount for i in tx_in.items
+    )
+
+    is_transfer = (
+        tx_in.transaction_kind == "TRANSFER" or
+        has_transfer_cat or
+        (tx_in.transaction_kind is None and not has_expense_cat and not has_income_cat and is_multi_payment and has_outflow and has_inflow and abs(net_payments_tx_curr) < 0.05)
+    )
+
+    # 4. Multi-Currency Server-Side Balancing Validation
+    if is_transfer:
+        outflow_eur = sum(
+            convert_currency_to_eur(abs(p.amount), accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+            for p in tx_in.payments if p.amount < 0
+        )
+        inflow_eur = sum(
+            convert_currency_to_eur(abs(p.amount), accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+            for p in tx_in.payments if p.amount > 0
+        )
+        if outflow_eur > 0 and inflow_eur > 0:
+            diff_pct = abs(outflow_eur - inflow_eur) / max(outflow_eur, inflow_eur)
+            if diff_pct > 0.05:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Transfer outflow ({outflow_eur:.2f} EUR) and inflow ({inflow_eur:.2f} EUR) differ by more than 5% FX tolerance."
+                )
+        dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
+        final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
+        resolved_kind = "TRANSFER"
+    else:
+        diff = abs(abs(net_payments_tx_curr) - total_items_tx_curr)
+        if diff > 0.05:
             raise HTTPException(
                 status_code=400,
-                detail=f"Sum of payment methods ({total_payments:.2f}) does not match total ({final_total:.2f})"
+                detail=f"Net account payments ({abs(net_payments_tx_curr):.2f} {primary_currency}) do not match category allocations ({total_items_tx_curr:.2f} {primary_currency})."
             )
-        if abs(total_items - final_total) > 0.01:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Sum of category line items ({total_items:.2f}) does not match total ({final_total:.2f})"
-            )
+
+        final_total = max(abs(net_payments_tx_curr), total_items_tx_curr)
+        if tx_in.transaction_kind == "INCOME" or has_income_cat:
+            resolved_kind = "INCOME"
+        elif tx_in.transaction_kind == "EXPENSE" or has_expense_cat:
+            resolved_kind = "EXPENSE"
+        elif net_payments_tx_curr > 0.001:
+            resolved_kind = "INCOME"
+        else:
+            resolved_kind = "EXPENSE"
 
     # Create parent transaction
     tx = CashflowTransaction(
         transaction_date=tx_in.transaction_date,
         title=tx_in.title,
-        total_amount=round(final_total, 2),
-        currency=final_currency,
-        transaction_kind=tx_in.transaction_kind or ("TRANSFER" if is_transfer else "EXPENSE"),
+        total_amount=round(abs(final_total), 2),
+        currency=primary_currency,
+        transaction_kind=resolved_kind,
         notes=tx_in.notes
     )
     db.add(tx)
@@ -338,34 +373,89 @@ async def update_cashflow_transaction(
     if "total_amount" in update_data and update_data["total_amount"] is not None:
         tx.total_amount = update_data["total_amount"]
 
-    # If payments provided, replace all
-    if tx_in.payments is not None:
+    # If payments or items provided, replace and validate
+    if tx_in.payments is not None and tx_in.items is not None:
         acc_ids = [p.account_id for p in tx_in.payments]
         acc_stmt = select(Account).where(Account.account_id.in_(acc_ids))
         acc_res = await db.execute(acc_stmt)
         accounts = {a.account_id: a for a in acc_res.scalars().all()}
-        currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
 
-        is_transfer = tx_in.transaction_kind == "TRANSFER"
+        cat_ids = [i.category_id for i in tx_in.items]
+        cat_stmt = select(Category).where(Category.category_id.in_(cat_ids))
+        cat_res = await db.execute(cat_stmt)
+        categories_map = {c.category_id: c for c in cat_res.scalars().all()}
+
+        currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
+        if len(currencies) > 1:
+            primary_currency = "EUR"
+        elif tx_in.currency:
+            primary_currency = tx_in.currency
+        elif currencies:
+            primary_currency = list(currencies)[0]
+        else:
+            primary_currency = tx.currency or "EUR"
+        has_transfer_cat = any(categories_map.get(i.category_id) and categories_map[i.category_id].category_type == "TRANSFER" for i in tx_in.items)
+        has_income_cat = any(categories_map.get(i.category_id) and categories_map[i.category_id].category_type == "INCOME" for i in tx_in.items)
+        has_expense_cat = any(categories_map.get(i.category_id) and categories_map[i.category_id].category_type in ["EXPENSE", "SPEND"] for i in tx_in.items)
+
+        has_outflow = any(p.amount < 0 for p in tx_in.payments)
+        has_inflow = any(p.amount > 0 for p in tx_in.payments)
+        is_multi_payment = len(tx_in.payments) > 1
+
+        net_payments_tx_curr = sum(
+            convert_currency(p.amount, accounts[p.account_id].currency if p.account_id in accounts else primary_currency, primary_currency)
+            for p in tx_in.payments
+        )
+        total_items_tx_curr = sum(
+            i.amount for i in tx_in.items
+        )
+
+        is_transfer = (
+            tx_in.transaction_kind == "TRANSFER" or
+            has_transfer_cat or
+            (tx_in.transaction_kind is None and not has_expense_cat and not has_income_cat and is_multi_payment and has_outflow and has_inflow and abs(net_payments_tx_curr) < 0.05)
+        )
+
         if is_transfer:
+            outflow_eur = sum(
+                convert_currency_to_eur(abs(p.amount), accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+                for p in tx_in.payments if p.amount < 0
+            )
+            inflow_eur = sum(
+                convert_currency_to_eur(abs(p.amount), accounts[p.account_id].currency if p.account_id in accounts else "EUR")
+                for p in tx_in.payments if p.amount > 0
+            )
+            if outflow_eur > 0 and inflow_eur > 0:
+                diff_pct = abs(outflow_eur - inflow_eur) / max(outflow_eur, inflow_eur)
+                if diff_pct > 0.05:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Transfer outflow ({outflow_eur:.2f} EUR) and inflow ({inflow_eur:.2f} EUR) differ by more than 5% FX tolerance."
+                    )
             dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
             final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
-            primary_currency = accounts[dest_pmt.account_id].currency if dest_pmt and dest_pmt.account_id in accounts else "EUR"
-            final_currency = tx_in.currency or primary_currency
-        elif len(currencies) == 1:
-            primary_currency = list(currencies)[0]
-            final_total = tx_in.total_amount if tx_in.total_amount is not None and abs(tx_in.total_amount) > 0.0001 else sum(p.amount for p in tx_in.payments)
-            final_currency = tx_in.currency or primary_currency
+            resolved_kind = "TRANSFER"
         else:
-            primary_currency = "EUR"
-            final_total = sum(
-                convert_currency_to_eur(p.amount, accounts[p.account_id].currency if p.account_id in accounts else "EUR")
-                for p in tx_in.payments
-            )
-            final_currency = primary_currency
+            diff = abs(abs(net_payments_tx_curr) - total_items_tx_curr)
+            if diff > 0.05:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Net account payments ({abs(net_payments_tx_curr):.2f} {primary_currency}) do not match category allocations ({total_items_tx_curr:.2f} {primary_currency})."
+                )
+
+            final_total = max(abs(net_payments_tx_curr), total_items_tx_curr)
+            if tx_in.transaction_kind == "INCOME" or has_income_cat:
+                resolved_kind = "INCOME"
+            elif tx_in.transaction_kind == "EXPENSE" or has_expense_cat:
+                resolved_kind = "EXPENSE"
+            elif net_payments_tx_curr > 0.001:
+                resolved_kind = "INCOME"
+            else:
+                resolved_kind = "EXPENSE"
 
         tx.total_amount = round(final_total, 2)
-        tx.currency = final_currency
+        tx.currency = primary_currency
+        tx.transaction_kind = resolved_kind
 
         # Delete old payments
         del_p_stmt = select(CashflowPayment).where(CashflowPayment.cashflow_id == cashflow_id)
@@ -376,8 +466,6 @@ async def update_cashflow_transaction(
         for p in tx_in.payments:
             db.add(CashflowPayment(cashflow_id=tx.cashflow_id, account_id=p.account_id, amount=p.amount))
 
-    # If items provided, replace all
-    if tx_in.items is not None:
         # Delete old items
         del_i_stmt = select(CashflowItem).where(CashflowItem.cashflow_id == cashflow_id)
         i_res = await db.execute(del_i_stmt)

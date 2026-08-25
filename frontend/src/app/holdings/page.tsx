@@ -34,6 +34,11 @@ interface Holding {
   unrealized_pnl_pct: number;
   realized_pnl: number;
   realized_pnl_pct: number;
+  fees_and_taxes?: number;
+  total_fees?: number;
+  total_taxes?: number;
+  net_pnl?: number;
+  net_pnl_pct?: number;
   xirr: number | null;
   open_lots: Lot[];
 }
@@ -52,7 +57,15 @@ interface PortfolioSummary {
   closed_holdings?: Holding[];
 }
 
-type SortField = "current_value" | "unrealized_pnl" | "realized_pnl" | "xirr" | "symbol" | "total_cost" | "avg_cost_price" | "latest_price" | "quantity_held";
+type SortField =
+  | "current_value"
+  | "unrealized_pnl"
+  | "realized_pnl"
+  | "net_pnl"
+  | "xirr"
+  | "symbol"
+  | "total_cost"
+  | "quantity_held";
 
 export default function HoldingsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -123,9 +136,9 @@ export default function HoldingsPage() {
     0
   );
   
-  const rawFeesTaxes = (summary?.total_fees || 0) + (summary?.total_taxes || 0);
-  const totalFeesAndTaxesEUR = convertCurrency(rawFeesTaxes, "USD", masterCurrency);
-  const totalNetPnLEUR = totalRealizedEUR + totalUnrealizedEUR - totalFeesAndTaxesEUR;
+  const totalFeesAndTaxesEUR = (summary?.total_fees || 0) + (summary?.total_taxes || 0);
+  const totalFeesAndTaxesMaster = convertCurrency(totalFeesAndTaxesEUR, "EUR", masterCurrency);
+  const totalNetPnLEUR = totalRealizedEUR + totalUnrealizedEUR;
 
   // Sorted holdings
   const sortedHoldings = [...holdings].sort((a, b) => {
@@ -137,14 +150,8 @@ export default function HoldingsPage() {
       case "quantity_held":
         comparison = a.quantity_held - b.quantity_held;
         break;
-      case "avg_cost_price":
-        comparison = a.avg_cost_price - b.avg_cost_price;
-        break;
       case "total_cost":
         comparison = a.total_cost - b.total_cost;
-        break;
-      case "latest_price":
-        comparison = a.latest_price - b.latest_price;
         break;
       case "current_value":
         comparison = a.current_value - b.current_value;
@@ -155,6 +162,12 @@ export default function HoldingsPage() {
       case "realized_pnl":
         comparison = a.realized_pnl - b.realized_pnl;
         break;
+      case "net_pnl": {
+        const netA = a.net_pnl !== undefined ? a.net_pnl : (a.realized_pnl + a.unrealized_pnl);
+        const netB = b.net_pnl !== undefined ? b.net_pnl : (b.realized_pnl + b.unrealized_pnl);
+        comparison = netA - netB;
+        break;
+      }
       case "xirr": {
         const valA = a.xirr !== null && a.xirr !== undefined ? a.xirr : -999999;
         const valB = b.xirr !== null && b.xirr !== undefined ? b.xirr : -999999;
@@ -267,7 +280,7 @@ export default function HoldingsPage() {
             </span>
           </div>
           <div className="text-xl font-extrabold text-slate-700 tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalFeesAndTaxesEUR, masterCurrency)}
+            {formatCleanMoney(totalFeesAndTaxesMaster, masterCurrency)}
           </div>
         </div>
 
@@ -323,18 +336,7 @@ export default function HoldingsPage() {
                   </div>
                 </th>
 
-                {/* Avg Cost Column */}
-                <th 
-                  onClick={() => handleSort("avg_cost_price")}
-                  className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Avg Cost</span>
-                    {renderSortIcon("avg_cost_price")}
-                  </div>
-                </th>
-
-                {/* Total Cost Column */}
+                {/* Total Cost Column (Merged with Avg Cost) */}
                 <th 
                   onClick={() => handleSort("total_cost")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
@@ -345,18 +347,7 @@ export default function HoldingsPage() {
                   </div>
                 </th>
 
-                {/* Current Price Column */}
-                <th 
-                  onClick={() => handleSort("latest_price")}
-                  className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
-                >
-                  <div className="flex items-center justify-end gap-1">
-                    <span>Current Price</span>
-                    {renderSortIcon("latest_price")}
-                  </div>
-                </th>
-
-                {/* Current Value Column */}
+                {/* Current Value Column (Merged with Current Price) */}
                 <th 
                   onClick={() => handleSort("current_value")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
@@ -389,6 +380,17 @@ export default function HoldingsPage() {
                   </div>
                 </th>
 
+                {/* Net P&L Column (NEW) */}
+                <th 
+                  onClick={() => handleSort("net_pnl")}
+                  className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    <span>Net P&L</span>
+                    {renderSortIcon("net_pnl")}
+                  </div>
+                </th>
+
                 {/* XIRR Column */}
                 <th 
                   onClick={() => handleSort("xirr")}
@@ -411,6 +413,9 @@ export default function HoldingsPage() {
                   const hasRealized = Math.abs(h.realized_pnl) > 0.0001;
                   const hasXirr = h.xirr !== null && h.xirr !== undefined;
                   const isPositiveXirr = hasXirr && h.xirr! >= 0;
+                  const netVal = h.net_pnl !== undefined ? h.net_pnl : (h.realized_pnl + h.unrealized_pnl);
+                  const isPositiveNet = netVal >= 0;
+                  const netPct = h.net_pnl_pct !== undefined ? h.net_pnl_pct : (h.total_cost > 0 ? (netVal / h.total_cost) * 100 : 0);
 
                   return (
                     <React.Fragment key={h.asset_id}>
@@ -442,10 +447,18 @@ export default function HoldingsPage() {
                           </span>
                         </td>
                         <td className="py-3 px-3 text-right font-bold">{formatQty(h.quantity_held)}</td>
-                        <td className="py-3 px-3 text-right">{formatCleanMoney(h.avg_cost_price, h.currency)}</td>
-                        <td className="py-3 px-3 text-right font-semibold text-slate-700">{formatCleanMoney(h.total_cost, h.currency)}</td>
-                        <td className="py-3 px-3 text-right">{formatCleanMoney(h.latest_price, h.currency)}</td>
-                        <td className="py-3 px-3 text-right font-extrabold text-[#0F172A]">{formatCleanMoney(h.current_value, h.currency)}</td>
+
+                        {/* Merged Total Cost Column (Main: Total Cost, Sub: Avg Cost) */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="font-semibold text-slate-800">{formatCleanMoney(h.total_cost, h.currency)}</div>
+                          <div className="text-[11px] font-medium text-slate-400 mt-0.5">{formatCleanMoney(h.avg_cost_price, h.currency)}/u</div>
+                        </td>
+
+                        {/* Merged Current Value Column (Main: Current Value, Sub: Current Price) */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="font-extrabold text-[#0F172A]">{formatCleanMoney(h.current_value, h.currency)}</div>
+                          <div className="text-[11px] font-medium text-slate-400 mt-0.5">{formatCleanMoney(h.latest_price, h.currency)}</div>
+                        </td>
 
                         {/* 2-Line Unrealized P&L: Line 1 Amount, Line 2 % with Arrow */}
                         <td className="py-3 px-3 text-right">
@@ -473,6 +486,17 @@ export default function HoldingsPage() {
                           )}
                         </td>
 
+                        {/* Net P&L Column (NEW) */}
+                        <td className="py-3 px-3 text-right">
+                          <div className={`font-bold text-xs ${isPositiveNet ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                            {formatCleanMoney(netVal, h.currency)}
+                          </div>
+                          <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveNet ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                            {isPositiveNet ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                            <span>{formatNum(Math.abs(netPct), 2)}%</span>
+                          </div>
+                        </td>
+
                         {/* XIRR Column with Sign-free Arrow */}
                         <td className="py-3 px-3 text-right">
                           {hasXirr ? (
@@ -495,7 +519,7 @@ export default function HoldingsPage() {
 
                       {isExpanded && (
                         <tr className="bg-slate-50/70">
-                          <td colSpan={11} className="p-3">
+                          <td colSpan={10} className="p-3">
                             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
                               <h4 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider mb-2.5 flex items-center gap-2">
                                 <Layers className="w-3.5 h-3.5 text-blue-600" />
@@ -536,7 +560,7 @@ export default function HoldingsPage() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={11} className="py-12 text-center text-slate-400 font-medium">
+                  <td colSpan={10} className="py-12 text-center text-slate-400 font-medium">
                     {loading ? "Loading positions..." : "No active holdings logged."}
                   </td>
                 </tr>
@@ -568,6 +592,7 @@ export default function HoldingsPage() {
                   <th className="py-2.5 px-3 text-right">Cost Basis</th>
                   <th className="py-2.5 px-3 text-right">Last Price</th>
                   <th className="py-2.5 px-3 text-right">Realized P&L</th>
+                  <th className="py-2.5 px-3 text-right">Net P&L</th>
                   <th className="py-2.5 px-3 text-right">XIRR</th>
                 </tr>
               </thead>
@@ -577,6 +602,9 @@ export default function HoldingsPage() {
                   const isPositiveRealized = c.realized_pnl >= 0;
                   const hasXirr = c.xirr !== null && c.xirr !== undefined;
                   const isPositiveXirr = hasXirr && c.xirr! >= 0;
+                  const netVal = c.net_pnl !== undefined ? c.net_pnl : c.realized_pnl;
+                  const isPositiveNet = netVal >= 0;
+                  const netPct = c.net_pnl_pct !== undefined ? c.net_pnl_pct : c.realized_pnl_pct;
 
                   return (
                     <tr key={c.asset_id} className="hover:bg-slate-50/80 transition-colors">
@@ -611,6 +639,17 @@ export default function HoldingsPage() {
                         <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveRealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
                           {isPositiveRealized ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                           <span>{formatNum(Math.abs(c.realized_pnl_pct || 0), 2)}%</span>
+                        </div>
+                      </td>
+
+                      {/* Net P&L */}
+                      <td className="py-3 px-3 text-right">
+                        <div className={`font-bold text-xs ${isPositiveNet ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                          {formatCleanMoney(netVal, c.currency)}
+                        </div>
+                        <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveNet ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                          {isPositiveNet ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                          <span>{formatNum(Math.abs(netPct || 0), 2)}%</span>
                         </div>
                       </td>
 

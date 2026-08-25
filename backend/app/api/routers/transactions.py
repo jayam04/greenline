@@ -2,6 +2,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from sqlalchemy.orm import aliased
 from app.db.database import get_db
 from app.db.models import Transaction, Account, Asset, User, PriceHistory
 from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse
@@ -11,16 +12,21 @@ from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
+FundingAccount = aliased(Account)
+
 def _build_transaction_response(
     tx: Transaction,
     acc_name: Optional[str],
     acc_curr: Optional[str],
     symbol: Optional[str],
-    asset_name: Optional[str]
+    asset_name: Optional[str],
+    funding_acc_name: Optional[str] = None,
+    funding_acc_curr: Optional[str] = None
 ) -> TransactionResponse:
     return TransactionResponse(
         transaction_id=tx.transaction_id,
         account_id=tx.account_id,
+        funding_account_id=tx.funding_account_id,
         asset_id=tx.asset_id,
         transaction_type=tx.transaction_type,
         transaction_date=tx.transaction_date,
@@ -32,6 +38,8 @@ def _build_transaction_response(
         notes=tx.notes,
         account_name=acc_name,
         account_currency=acc_curr or "USD",
+        funding_account_name=funding_acc_name or acc_name,
+        funding_account_currency=funding_acc_curr or acc_curr or "USD",
         asset_symbol=symbol,
         asset_name=asset_name
     )
@@ -59,15 +67,24 @@ async def _ensure_price_history_for_tx(db: AsyncSession, tx: Transaction):
 @router.get("", response_model=List[TransactionResponse])
 @router.get("/", response_model=List[TransactionResponse])
 async def list_transactions(
-    account_id: Optional[int] = Query(None),
-    asset_id: Optional[int] = Query(None),
+    account_id: Optional[int] = None,
+    asset_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Transaction, Account.account_name, Account.currency, Asset.symbol, Asset.name)\
+    stmt = select(
+        Transaction, 
+        Account.account_name, 
+        Account.currency, 
+        Asset.symbol, 
+        Asset.name,
+        FundingAccount.account_name,
+        FundingAccount.currency
+    )\
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
+        .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)
         
     if account_id:
@@ -81,8 +98,8 @@ async def list_transactions(
     rows = res.all()
     
     out = []
-    for tx, acc_name, acc_curr, symbol, asset_name in rows:
-        out.append(_build_transaction_response(tx, acc_name, acc_curr, symbol, asset_name))
+    for tx, acc_name, acc_curr, symbol, asset_name, f_acc_name, f_acc_curr in rows:
+        out.append(_build_transaction_response(tx, acc_name, acc_curr, symbol, asset_name, f_acc_name, f_acc_curr))
         
     return out
 
@@ -92,8 +109,17 @@ async def get_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Transaction, Account.account_name, Account.currency, Asset.symbol, Asset.name)\
+    stmt = select(
+        Transaction, 
+        Account.account_name, 
+        Account.currency, 
+        Asset.symbol, 
+        Asset.name,
+        FundingAccount.account_name,
+        FundingAccount.currency
+    )\
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
+        .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
         .where(Transaction.transaction_id == transaction_id)
         
@@ -102,7 +128,7 @@ async def get_transaction(
     if not row:
         raise HTTPException(status_code=404, detail="Transaction not found")
         
-    return _build_transaction_response(row[0], row[1], row[2], row[3], row[4])
+    return _build_transaction_response(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
 
 @router.post("", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=TransactionResponse, status_code=status.HTTP_201_CREATED)
@@ -126,14 +152,23 @@ async def create_transaction(
     await recalculate_past_snapshots(db, start_date=tx.transaction_date)
     
     # Format response
-    stmt = select(Transaction, Account.account_name, Account.currency, Asset.symbol, Asset.name)\
+    stmt = select(
+        Transaction, 
+        Account.account_name, 
+        Account.currency, 
+        Asset.symbol, 
+        Asset.name,
+        FundingAccount.account_name,
+        FundingAccount.currency
+    )\
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
+        .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
         .where(Transaction.transaction_id == tx.transaction_id)
     res = await db.execute(stmt)
     row = res.first()
     
-    return _build_transaction_response(row[0], row[1], row[2], row[3], row[4])
+    return _build_transaction_response(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
 
 @router.put("/{transaction_id}", response_model=TransactionResponse)
 async def update_transaction(
@@ -162,14 +197,23 @@ async def update_transaction(
     await recalculate_all_lots(db)
     await recalculate_past_snapshots(db, start_date=tx.transaction_date)
 
-    stmt_resp = select(Transaction, Account.account_name, Account.currency, Asset.symbol, Asset.name)\
+    stmt_resp = select(
+        Transaction, 
+        Account.account_name, 
+        Account.currency, 
+        Asset.symbol, 
+        Asset.name,
+        FundingAccount.account_name,
+        FundingAccount.currency
+    )\
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
+        .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
         .where(Transaction.transaction_id == tx.transaction_id)
     res_resp = await db.execute(stmt_resp)
     row = res_resp.first()
 
-    return _build_transaction_response(row[0], row[1], row[2], row[3], row[4])
+    return _build_transaction_response(row[0], row[1], row[2], row[3], row[4], row[5], row[6])
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(

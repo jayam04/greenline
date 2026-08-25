@@ -68,7 +68,7 @@ async def test_splitwise_dinner_expense_and_balances():
             total_amount=500.0,
             currency="INR",
             transaction_kind="EXPENSE",
-            payments=[CashflowPaymentCreate(account_id=bank.account_id, amount=500.0)],
+            payments=[CashflowPaymentCreate(account_id=bank.account_id, amount=-500.0)],
             items=[
                 CashflowItemCreate(category_id=dining_cat.category_id, amount=1000.0, label="DISCRETIONARY", description="Dinner bill"),
                 CashflowItemCreate(category_id=dining_cat.category_id, amount=-500.0, label="DISCRETIONARY", description="Friend reimbursement")
@@ -129,8 +129,8 @@ async def test_splitwise_multi_account_settlement():
             currency="INR",
             transaction_kind="EXPENSE",
             payments=[
-                CashflowPaymentCreate(account_id=wallet.account_id, amount=1000.0),
-                CashflowPaymentCreate(account_id=upi.account_id, amount=-500.0),
+                CashflowPaymentCreate(account_id=wallet.account_id, amount=-1000.0),
+                CashflowPaymentCreate(account_id=upi.account_id, amount=500.0),
             ],
             items=[
                 CashflowItemCreate(category_id=dining_cat.category_id, amount=1000.0, label="DISCRETIONARY", description="Lunch bill"),

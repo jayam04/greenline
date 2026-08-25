@@ -67,14 +67,14 @@ async def test_date_specific_snapshot_calculation():
         # Generate snapshot for Day 5 (day of buy)
         snap_d5 = await generate_daily_snapshot(session, datetime.date(2025, 1, 5))
         assert snap_d5.cash_balance == 8490.0  # 10000 - 1500 - 10
-        assert snap_d5.total_current_value == 1500.0  # 10 * 150 (cost per unit fallback)
-        assert snap_d5.net_worth == 9990.0  # 8490 cash + 1500 stock
+        assert snap_d5.total_current_value == 1510.0  # 10 * 151.0 (cost per unit fallback inclusive of fees)
+        assert snap_d5.net_worth == 10000.0  # 8490 cash + 1510 stock
 
         # Generate snapshot for Day 10 (price updated to $180)
         snap_d10 = await generate_daily_snapshot(session, datetime.date(2025, 1, 10))
         assert snap_d10.cash_balance == 8490.0
         assert snap_d10.total_current_value == 1800.0  # 10 * 180
-        assert snap_d10.total_unrealized_pnl == 300.0  # 1800 - 1500
+        assert snap_d10.total_unrealized_pnl == 290.0  # 1800 - 1510
         assert snap_d10.net_worth == 10290.0  # 8490 + 1800
 
 @pytest.mark.anyio

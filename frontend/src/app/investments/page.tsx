@@ -41,6 +41,7 @@ interface PortfolioSummary {
   total_fees: number;
   total_taxes: number;
   top_holdings: HoldingSummary[];
+  closed_holdings?: HoldingSummary[];
   asset_allocation: Record<string, number>;
   sector_allocation: Record<string, number>;
   portfolio_xirr?: number | null;
@@ -176,10 +177,28 @@ export default function InvestmentsDashboardPage() {
     (acc, h) => acc + convertCurrency(h.total_cost, h.currency, masterCurrency),
     0
   );
-  const totalCashEUR = Math.max(0, convertCurrency(summary?.cash_balance || 0, "INR", masterCurrency));
+  const allHoldings = React.useMemo(() => {
+    return [...(summary?.top_holdings || []), ...(summary?.closed_holdings || [])];
+  }, [summary]);
+
+  const totalCashEUR = React.useMemo(() => {
+    if (selectedAccount !== "all") {
+      const a = accounts.find((acc) => acc.account_id.toString() === selectedAccount);
+      const repCurrency = a?.currency || "USD";
+      return Math.max(0, convertCurrency(summary?.cash_balance || 0, repCurrency, masterCurrency));
+    }
+    return Math.max(
+      0,
+      accounts.reduce((acc, a) => {
+        const bal = (a as any).current_balance ?? 0;
+        return acc + convertCurrency(bal, a.currency, masterCurrency);
+      }, 0)
+    );
+  }, [selectedAccount, accounts, summary?.cash_balance, masterCurrency]);
+
   const totalNetWorthEUR = totalPositionsValueEUR + totalCashEUR;
   const totalUnrealizedEUR = totalPositionsValueEUR - totalInvestedEUR;
-  const totalRealizedEUR = (summary?.top_holdings || []).reduce(
+  const totalRealizedEUR = allHoldings.reduce(
     (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
     0
   );

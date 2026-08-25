@@ -17,10 +17,12 @@ router = APIRouter(prefix="/portfolio", tags=["portfolio"])
 
 @router.get("/summary", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
-    account_id: Optional[int] = Query(None),
+    account_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not isinstance(account_id, int):
+        account_id = None
     # 1. Fetch active open lots
     lot_stmt = select(Lot).where(Lot.quantity_remaining > 0)
     if account_id:
@@ -38,7 +40,7 @@ async def get_portfolio_summary(
     
     # Pre-fetch latest prices for these assets
     asset_prices: Dict[int, float] = {}
-    asset_price_dates: Dict[int, str] = {}
+    asset_price_dates: Dict[int, Optional[datetime.date]] = {}
     for aid in asset_ids:
         ph_stmt = select(PriceHistory)\
             .where(PriceHistory.asset_id == aid)\
@@ -48,10 +50,10 @@ async def get_portfolio_summary(
         ph = ph_res.scalar_one_or_none()
         if ph:
             asset_prices[aid] = ph.close_price
-            asset_price_dates[aid] = ph.price_date.isoformat()
+            asset_price_dates[aid] = ph.price_date
         else:
             asset_prices[aid] = 0.0
-            asset_price_dates[aid] = ""
+            asset_price_dates[aid] = None
 
     # Pre-fetch assets metadata
     assets_map: Dict[int, Asset] = {}
@@ -59,6 +61,24 @@ async def get_portfolio_summary(
         ast_stmt = select(Asset).where(Asset.asset_id.in_(asset_ids))
         ast_res = await db.execute(ast_stmt)
         assets_map = {a.asset_id: a for a in ast_res.scalars().all()}
+
+    # Pre-fetch fees and taxes grouped by asset
+    fees_stmt = (
+        select(
+            Transaction.asset_id,
+            func.sum(Transaction.fees),
+            func.sum(Transaction.taxes)
+        )
+        .where(Transaction.asset_id.isnot(None))
+    )
+    if account_id:
+        fees_stmt = fees_stmt.where(Transaction.account_id == account_id)
+    fees_stmt = fees_stmt.group_by(Transaction.asset_id)
+    fees_res = await db.execute(fees_stmt)
+    fees_map: Dict[int, tuple] = {
+        row[0]: (float(row[1] or 0.0), float(row[2] or 0.0))
+        for row in fees_res.all()
+    }
 
     # Calculate Holdings
     holdings_list: List[HoldingSummary] = []
@@ -89,6 +109,17 @@ async def get_portfolio_summary(
         realized_pnl_for_asset = sum(r[0] for r in rpnl_rows)
         cost_basis_sold_for_asset = sum(r[1] for r in rpnl_rows)
         realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0) if cost_basis_sold_for_asset > 0 else 0.0
+        
+        # Fetch fees and taxes for this asset from pre-fetched map
+        fees_entry = fees_map.get(aid, (0.0, 0.0))
+        asset_fees = fees_entry[0]
+        asset_taxes = fees_entry[1]
+        total_asset_fees_taxes = asset_fees + asset_taxes
+
+        # Net PnL = Realized PnL + Unrealized PnL
+        net_pnl_for_asset = realized_pnl_for_asset + unrealized
+        total_basis = cost_sum + cost_basis_sold_for_asset
+        net_pnl_pct_for_asset = (net_pnl_for_asset / total_basis * 100.0) if total_basis > 0 else 0.0
         
         # XIRR for asset
         xirr_val = await calculate_xirr_for_scope(
@@ -136,12 +167,17 @@ async def get_portfolio_summary(
             avg_cost_price=avg_cost,
             total_cost=cost_sum,
             latest_price=latest_price,
-            latest_price_date=asset_price_dates.get(aid, ""),
+            latest_price_date=asset_price_dates.get(aid, None),
             current_value=curr_val,
             unrealized_pnl=unrealized,
             unrealized_pnl_pct=unrealized_pct,
             realized_pnl=realized_pnl_for_asset,
             realized_pnl_pct=realized_pnl_pct_for_asset,
+            fees_and_taxes=total_asset_fees_taxes,
+            total_fees=asset_fees,
+            total_taxes=asset_taxes,
+            net_pnl=net_pnl_for_asset,
+            net_pnl_pct=net_pnl_pct_for_asset,
             xirr=xirr_val,
             open_lots=lot_objs
         ))
@@ -206,6 +242,12 @@ async def get_portfolio_summary(
         c_ph_res = await db.execute(c_ph_stmt)
         c_latest_price = c_ph_res.scalar_one_or_none() or 0.0
 
+        # Fetch fees and taxes for this closed asset from pre-fetched map
+        c_fees_entry = fees_map.get(c_aid, (0.0, 0.0))
+        c_asset_fees = c_fees_entry[0]
+        c_asset_taxes = c_fees_entry[1]
+        c_total_asset_fees_taxes = c_asset_fees + c_asset_taxes
+
         closed_holdings_list.append(HoldingSummary(
             asset_id=c_asset.asset_id,
             symbol=c_asset.symbol,
@@ -222,6 +264,11 @@ async def get_portfolio_summary(
             unrealized_pnl_pct=0.0,
             realized_pnl=c_rpnl,
             realized_pnl_pct=c_rpnl_pct,
+            fees_and_taxes=c_total_asset_fees_taxes,
+            total_fees=c_asset_fees,
+            total_taxes=c_asset_taxes,
+            net_pnl=c_rpnl,
+            net_pnl_pct=c_rpnl_pct,
             xirr=c_xirr,
             open_lots=[]
         ))
@@ -233,20 +280,12 @@ async def get_portfolio_summary(
     tot_rpnl_res = await db.execute(tot_rpnl_stmt)
     total_realized_pnl = sum(tot_rpnl_res.scalars().all())
     
-    # 5. Fetch Cash Balance from transactions
-    tx_stmt = select(Transaction)
+    # 5. Fetch Cash Balance using centralized funding-account & cashflow aware engine
+    balances = await calculate_all_account_balances(db)
     if account_id:
-        tx_stmt = tx_stmt.where(Transaction.account_id == account_id)
-    tx_res = await db.execute(tx_stmt)
-    all_txs = tx_res.scalars().all()
-    
-    cash_balance = 0.0
-    for tx in all_txs:
-        ttype = tx.transaction_type.lower()
-        if ttype in ["deposit", "sell", "dividend", "interest"]:
-            cash_balance += (tx.total_amount - tx.fees - tx.taxes)
-        elif ttype in ["withdrawal", "buy", "fee"]:
-            cash_balance -= (tx.total_amount + tx.fees + tx.taxes)
+        cash_balance = balances.get(account_id, 0.0)
+    else:
+        cash_balance = sum(balances.values())
             
     total_net_worth = total_current_value + max(0.0, cash_balance)
     total_unrealized_pnl = total_current_value - total_invested
@@ -259,8 +298,31 @@ async def get_portfolio_summary(
         current_valuation=total_net_worth
     )
     
-    total_fees = sum(tx.fees for tx in all_txs if tx.fees)
-    total_taxes = sum(tx.taxes for tx in all_txs if tx.taxes)
+    # Fetch transactions for total fees and taxes
+    tx_stmt = select(Transaction)
+    if account_id:
+        tx_stmt = tx_stmt.where(Transaction.account_id == account_id)
+    tx_res = await db.execute(tx_stmt)
+    all_txs = tx_res.scalars().all()
+    # Fetch accounts map for currency resolution
+    all_accounts_res = await db.execute(select(Account))
+    all_accounts = {a.account_id: a for a in all_accounts_res.scalars().all()}
+
+    total_fees = 0.0
+    total_taxes = 0.0
+    for tx in all_txs:
+        acc = all_accounts.get(tx.account_id)
+        tx_curr = acc.currency if acc else "USD"
+        if tx.fees:
+            if account_id:
+                total_fees += tx.fees
+            else:
+                total_fees += convert_currency(tx.fees, tx_curr, "EUR")
+        if tx.taxes:
+            if account_id:
+                total_taxes += tx.taxes
+            else:
+                total_taxes += convert_currency(tx.taxes, tx_curr, "EUR")
 
     # Sort top holdings by current value
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)
@@ -284,7 +346,7 @@ async def get_portfolio_summary(
 
 @router.get("/holdings", response_model=List[HoldingSummary])
 async def get_holdings(
-    account_id: Optional[int] = Query(None),
+    account_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -293,7 +355,7 @@ async def get_holdings(
 
 @router.get("/closed-holdings", response_model=List[HoldingSummary])
 async def get_closed_holdings(
-    account_id: Optional[int] = Query(None),
+    account_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

@@ -207,7 +207,7 @@ export default function CashflowPage() {
           {/* Card 2: Total Expenses */}
           <div className="getquin-card p-4">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Total Expenses</span>
+              <span className="text-xs font-bold text-slate-500">Total Spends</span>
               <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
                 <TrendingDown className="w-4 h-4" />
               </div>
@@ -376,7 +376,7 @@ export default function CashflowPage() {
             <tbody className="divide-y divide-slate-100 font-medium">
               {filteredTransactions.map((tx) => {
                 const isTransfer = tx.transaction_kind === "TRANSFER" || tx.items.some((i) => i.category_type === "TRANSFER");
-                const isIncome = !isTransfer && tx.items.some((i) => i.category_type === "INCOME");
+                const isIncome = !isTransfer && (tx.transaction_kind === "INCOME" || tx.items.some((i) => i.category_type === "INCOME"));
 
                 return (
                   <tr key={tx.cashflow_id} className="hover:bg-slate-50/80 transition-colors">
@@ -394,18 +394,19 @@ export default function CashflowPage() {
                       <div className="flex flex-col gap-1">
                         {tx.payments.map((p, pIdx) => {
                           const pCurr = p.account_currency || tx.currency || "EUR";
-                          const isInflow = isTransfer ? p.amount > 0 : isIncome;
-                          const dotColor = isInflow ? "bg-emerald-500" : "bg-rose-500";
-                          const textColor = isTransfer 
-                            ? (p.amount < 0 ? "text-rose-600" : "text-emerald-600")
-                            : "text-slate-600";
+                          const isCredit = isTransfer ? p.amount > 0 : isIncome ? p.amount >= 0 : p.amount < 0;
+                          const dotColor = isCredit ? "bg-emerald-500" : "bg-rose-500";
+                          const textColor = isCredit 
+                            ? "text-emerald-600 dark:text-emerald-400" 
+                            : "text-rose-600 dark:text-rose-400";
+                          const signPrefix = isCredit ? "+" : "-";
 
                           return (
-                            <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
+                            <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                               <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
                               <span>{p.account_name}</span>
-                              <span className={`tabular-nums ${textColor}`}>
-                                ({formatCurrency(Math.abs(p.amount), pCurr)})
+                              <span className={`tabular-nums font-bold ${textColor}`}>
+                                ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
                               </span>
                             </div>
                           );
@@ -453,8 +454,10 @@ export default function CashflowPage() {
                                   {lbl}
                                 </span>
                                 {tx.items.length > 1 && (
-                                  <span className="font-bold text-slate-500 text-[11px] tabular-nums">
-                                    {formatCurrency(itm.amount, tx.currency || "EUR")}
+                                  <span className={`font-bold text-[11px] tabular-nums ${itm.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
+                                    {itm.amount < 0
+                                      ? `- ${formatCurrency(Math.abs(itm.amount), tx.currency || "EUR")} (${isIncome ? "Adjustment" : "Reimbursement"})`
+                                      : formatCurrency(itm.amount, tx.currency || "EUR")}
                                   </span>
                                 )}
                               </div>

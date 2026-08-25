@@ -67,6 +67,30 @@ const CLASSIFICATION_LABELS = [
   { key: "INVESTMENT", label: "Investment / Savings" },
 ];
 
+export function isCategoryAllowedForKind(c: Category, kind: "EXPENSE" | "INCOME" | "TRANSFER"): boolean {
+  if (kind === "TRANSFER") return c.category_type === "TRANSFER";
+  if (kind === "INCOME") {
+    if (c.category_type === "INCOME") return true;
+    if (c.category_type === "INVESTMENT") {
+      const name = (c.name || "").toLowerCase();
+      // Hide purchase/outflow specific investment categories in income mode
+      const isSpendOnly = name.includes("purchase") || name.includes("sip") || name.includes("allocation");
+      return !isSpendOnly;
+    }
+    return false;
+  } else {
+    // EXPENSE
+    if (c.category_type === "EXPENSE") return true;
+    if (c.category_type === "INVESTMENT") {
+      const name = (c.name || "").toLowerCase();
+      // Hide income-specific investment categories in expense mode
+      const isIncomeOnly = name.includes("dividend") || name.includes("rental") || name.includes("staking") || name.includes("gain");
+      return !isIncomeOnly;
+    }
+    return false;
+  }
+}
+
 export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: CashflowModalProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -177,7 +201,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
             setFeeAmount("");
           }
         } else {
-          const isIncomeTx = initialData.items.some((i) => i.category_type === "INCOME");
+          const isIncomeTx = initialData.transaction_kind === "INCOME" || initialData.items.some((i) => i.category_type === "INCOME");
           setTransactionKind(isIncomeTx ? "INCOME" : "EXPENSE");
 
           const hasMultiplePayments = initialData.payments.length > 1;
@@ -225,7 +249,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
         }
 
         if (loadedCategories.length > 0) {
-          const defaultExpCat = loadedCategories.find((c) => c.category_type === "EXPENSE") || loadedCategories[0];
+          const defaultExpCat = loadedCategories.find((c) => isCategoryAllowedForKind(c, "EXPENSE")) || loadedCategories[0];
           setSimpleCategoryId(defaultExpCat.category_id);
           setSimpleLabel(defaultExpCat.effective_label || "DISCRETIONARY");
           setItems([{ category_id: defaultExpCat.category_id, amount: "", label: "", description: "" }]);
@@ -242,7 +266,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     setError("");
 
     if (newKind === "INCOME") {
-      const incomeCat = categories.find((c) => c.category_type === "INCOME");
+      const incomeCat = categories.find((c) => isCategoryAllowedForKind(c, "INCOME"));
       if (incomeCat) {
         setSimpleCategoryId(incomeCat.category_id);
         setSimpleLabel(incomeCat.effective_label || "ESSENTIAL");
@@ -253,7 +277,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
         })));
       }
     } else if (newKind === "EXPENSE") {
-      const expCat = categories.find((c) => c.category_type === "EXPENSE");
+      const expCat = categories.find((c) => isCategoryAllowedForKind(c, "EXPENSE"));
       if (expCat) {
         setSimpleCategoryId(expCat.category_id);
         setSimpleLabel(expCat.effective_label || "DISCRETIONARY");
@@ -330,6 +354,18 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
     }
     return items.reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
   }, [transactionKind, isSplitItems, totalPaymentCalculated, items]);
+
+  const grossItems = useMemo(() => {
+    return items.filter(i => (parseFloat(i.amount) || 0) > 0).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  }, [items]);
+
+  const creditItems = useMemo(() => {
+    return items.filter(i => (parseFloat(i.amount) || 0) < 0).reduce((sum, i) => sum + (parseFloat(i.amount) || 0), 0);
+  }, [items]);
+
+  const hasNegativeItems = useMemo(() => {
+    return items.some(i => (parseFloat(i.amount) || 0) < 0);
+  }, [items]);
 
   const itemBalanceDiff = totalPaymentCalculated - totalItemsCalculated;
 
@@ -434,8 +470,8 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
       return;
     }
 
-    if (totalPaymentCalculated <= 0) {
-      setError("Please enter an amount greater than 0.");
+    if (totalPaymentCalculated === 0) {
+      setError("Please enter a non-zero amount.");
       setLoading(false);
       return;
     }
@@ -967,7 +1003,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         required
                       >
                         {categories
-                          .filter((c) => transactionKind === "INCOME" ? c.category_type === "INCOME" : c.category_type !== "INCOME")
+                          .filter((c) => isCategoryAllowedForKind(c, transactionKind))
                           .map((c) => (
                             <option key={c.category_id} value={c.category_id}>
                               {c.full_path || c.name}
@@ -1035,7 +1071,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                           >
                             <option value="">Select Category</option>
                             {categories
-                              .filter((c) => transactionKind === "INCOME" ? c.category_type === "INCOME" : c.category_type !== "INCOME")
+                              .filter((c) => isCategoryAllowedForKind(c, transactionKind))
                               .map((c) => (
                                 <option key={c.category_id} value={c.category_id}>
                                   {c.full_path || c.name}
@@ -1043,23 +1079,31 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                               ))}
                           </select>
 
-                          <div className="relative flex items-center w-28">
+                          <div className="relative flex items-center w-32">
                             <span className="absolute left-2 font-bold text-slate-400 pointer-events-none text-xs">
                               {simpleCurrencySymbol}
                             </span>
                             <input
                               type="number"
                               step="any"
-                              placeholder="Amount"
+                              placeholder="Amount (+/-)"
                               value={itm.amount}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setItems((prev) => prev.map((item, i) => i === idx ? { ...item, amount: val } : item));
                               }}
-                              className="w-full bg-slate-50 text-slate-900 font-bold tabular-nums rounded-lg pl-5 pr-2 py-1.5 border border-slate-200 text-xs"
+                              className={`w-full bg-slate-50 text-slate-900 font-bold tabular-nums rounded-lg pl-5 pr-2 py-1.5 border text-xs ${
+                                (parseFloat(itm.amount) || 0) < 0 ? "border-emerald-300 text-emerald-700 bg-emerald-50/40" : "border-slate-200"
+                              }`}
                               required
                             />
                           </div>
+
+                          {(parseFloat(itm.amount) || 0) < 0 && (
+                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800 shrink-0">
+                              {transactionKind === "INCOME" ? "Adjustment" : "Reimbursement"}
+                            </span>
+                          )}
 
                           {items.length > 1 && (
                             <button
@@ -1075,7 +1119,7 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                         <div className="grid grid-cols-2 gap-2">
                           <input
                             type="text"
-                            placeholder="Item description (Required, e.g. Speakers)"
+                            placeholder="Item description (e.g. Dinner share, Splitwise credit)"
                             value={itm.description}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -1103,11 +1147,20 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
                       </div>
                     ))}
 
+                    {/* Breakdown Details if Reimbursements/Negative amounts exist */}
+                    {hasNegativeItems && (
+                      <div className="p-2 bg-slate-100 dark:bg-slate-800/80 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                        <span>Gross: <strong className="text-[#0F172A] dark:text-white">{formatCurrency(grossItems, simpleCurrency)}</strong></span>
+                        <span>{transactionKind === "INCOME" ? "Adjustments / Deductions" : "Reimbursements"}: <strong className="text-emerald-600">{formatCurrency(creditItems, simpleCurrency)}</strong></span>
+                        <span>Net: <strong className="text-blue-600">{formatCurrency(totalItemsCalculated, simpleCurrency)}</strong></span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between pt-1">
                       <button
                         type="button"
                         onClick={() => {
-                          const defaultCat = categories.find((c) => transactionKind === "INCOME" ? c.category_type === "INCOME" : c.category_type !== "INCOME") || categories[0];
+                          const defaultCat = categories.find((c) => isCategoryAllowedForKind(c, transactionKind)) || categories[0];
                           setItems((prev) => [...prev, { category_id: defaultCat?.category_id || "", amount: "", label: "", description: "" }]);
                         }}
                         className="text-[11px] font-bold text-slate-700 hover:text-black flex items-center gap-1 cursor-pointer"

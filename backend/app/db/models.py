@@ -228,6 +228,7 @@ class CashflowTransaction(Base):
     title = Column(String, nullable=False)
     total_amount = Column(Float, nullable=False)
     currency = Column(String(3), default="EUR")
+    transaction_kind = Column(String, nullable=True, default=None)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

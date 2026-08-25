@@ -12,7 +12,8 @@ from app.schemas.schemas import (
     CashflowPaymentResponse, CashflowItemResponse, CashflowSummaryResponse, SankeyDataResponse
 )
 from app.services.cashflow_engine import (
-    generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur
+    generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur,
+    resolve_transaction_kind
 )
 from app.api.deps import get_current_user
 
@@ -94,9 +95,7 @@ async def list_cashflow_transactions(
         if label and not items_out:
             continue
 
-        is_trans = any(p.amount < 0 for p in tx.payments) or any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
-        is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in tx.items)
-        tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE"
+        tx_kind = resolve_transaction_kind(tx)
 
         results.append(CashflowTransactionResponse(
             cashflow_id=tx.cashflow_id,
@@ -199,9 +198,7 @@ async def get_cashflow_transaction(
         for i in tx.items
     ]
 
-    is_trans = any(p.amount < 0 for p in tx.payments) or any(i.category and i.category.category_type == "TRANSFER" for i in tx.items)
-    is_inc = not is_trans and any(i.category and i.category.category_type == "INCOME" for i in tx.items)
-    tx_kind = "TRANSFER" if is_trans else "INCOME" if is_inc else "EXPENSE"
+    tx_kind = resolve_transaction_kind(tx)
 
     return CashflowTransactionResponse(
         cashflow_id=tx.cashflow_id,
@@ -254,7 +251,7 @@ async def create_cashflow_transaction(
         final_currency = tx_in.currency or primary_currency
     elif len(currencies) == 1:
         primary_currency = list(currencies)[0]
-        final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else total_payments
+        final_total = tx_in.total_amount if tx_in.total_amount is not None and abs(tx_in.total_amount) > 0.0001 else total_payments
         final_currency = tx_in.currency or primary_currency
     else:
         primary_currency = "EUR"
@@ -283,6 +280,7 @@ async def create_cashflow_transaction(
         title=tx_in.title,
         total_amount=round(final_total, 2),
         currency=final_currency,
+        transaction_kind=tx_in.transaction_kind or ("TRANSFER" if is_transfer else "EXPENSE"),
         notes=tx_in.notes
     )
     db.add(tx)
@@ -333,6 +331,8 @@ async def update_cashflow_transaction(
         tx.title = update_data["title"]
     if "currency" in update_data and update_data["currency"]:
         tx.currency = update_data["currency"]
+    if "transaction_kind" in update_data and update_data["transaction_kind"]:
+        tx.transaction_kind = update_data["transaction_kind"]
     if "notes" in update_data:
         tx.notes = update_data["notes"]
     if "total_amount" in update_data and update_data["total_amount"] is not None:
@@ -346,7 +346,7 @@ async def update_cashflow_transaction(
         accounts = {a.account_id: a for a in acc_res.scalars().all()}
         currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
 
-        is_transfer = (tx_in.transaction_kind == "TRANSFER") or any(p.amount < 0 for p in tx_in.payments)
+        is_transfer = tx_in.transaction_kind == "TRANSFER"
         if is_transfer:
             dest_pmt = next((p for p in tx_in.payments if p.amount > 0), None)
             final_total = dest_pmt.amount if dest_pmt else max(abs(p.amount) for p in tx_in.payments)
@@ -354,7 +354,7 @@ async def update_cashflow_transaction(
             final_currency = tx_in.currency or primary_currency
         elif len(currencies) == 1:
             primary_currency = list(currencies)[0]
-            final_total = tx_in.total_amount if tx_in.total_amount and tx_in.total_amount > 0 else sum(p.amount for p in tx_in.payments)
+            final_total = tx_in.total_amount if tx_in.total_amount is not None and abs(tx_in.total_amount) > 0.0001 else sum(p.amount for p in tx_in.payments)
             final_currency = tx_in.currency or primary_currency
         else:
             primary_currency = "EUR"

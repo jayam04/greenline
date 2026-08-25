@@ -1,7 +1,7 @@
 import datetime
 from typing import Dict, List, Optional, Any, Tuple, Set
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, desc
+from sqlalchemy import select, func, or_, desc, asc, update, delete
 from sqlalchemy.orm import selectinload
 
 from app.db.models import Category, CashflowTransaction, CashflowPayment, CashflowItem, Account, Transaction, LotSale
@@ -39,6 +39,33 @@ def convert_currency(amount: float, from_currency: str = "EUR", to_currency: str
 
 def convert_currency_to_eur(amount: float, from_currency: str = "EUR") -> float:
     return convert_currency(amount, from_currency, "EUR")
+
+def resolve_transaction_kind(tx: Any) -> str:
+    """
+    Canonical derivation of transaction kind (TRANSFER, INCOME, EXPENSE).
+    Priority:
+    1. Explicit tx.transaction_kind == 'TRANSFER' or any item has category_type == 'TRANSFER' -> 'TRANSFER'
+    2. Explicit tx.transaction_kind == 'INCOME' or any item has category_type == 'INCOME' -> 'INCOME'
+    3. Explicit tx.transaction_kind if set -> tx.transaction_kind
+    4. Fallback -> 'EXPENSE'
+    """
+    items = getattr(tx, "items", []) or []
+
+    is_trans = getattr(tx, "transaction_kind", None) == "TRANSFER" or any(
+        (i.category and i.category.category_type == "TRANSFER") if hasattr(i, "category") else (getattr(i, "category_type", None) == "TRANSFER")
+        for i in items
+    )
+    if is_trans:
+        return "TRANSFER"
+
+    is_inc = getattr(tx, "transaction_kind", None) == "INCOME" or any(
+        (i.category and i.category.category_type == "INCOME") if hasattr(i, "category") else (getattr(i, "category_type", None) == "INCOME")
+        for i in items
+    )
+    if is_inc:
+        return "INCOME"
+
+    return getattr(tx, "transaction_kind", None) or "EXPENSE"
 
 DEFAULT_CATEGORY_COLORS = {
     "INCOME": "#10B981",       # Emerald green
@@ -82,18 +109,6 @@ DEFAULT_CATEGORIES_TREE = [
                 ]
             },
             {
-                "name": "Investments & Passive",
-                "default_label": LABEL_INVESTMENT,
-                "icon": "DollarSign",
-                "color": "#6EE7B7",
-                "children": [
-                    {"name": "Dividends", "default_label": LABEL_INVESTMENT},
-                    {"name": "Interest & Staking", "default_label": LABEL_INVESTMENT},
-                    {"name": "Realized Capital Gains", "default_label": LABEL_INVESTMENT},
-                    {"name": "Rental Income", "default_label": LABEL_INVESTMENT},
-                ]
-            },
-            {
                 "name": "Other Income",
                 "default_label": LABEL_DISCRETIONARY,
                 "icon": "Gift",
@@ -101,13 +116,33 @@ DEFAULT_CATEGORIES_TREE = [
                 "children": [
                     {"name": "Gifts & Grants", "default_label": LABEL_DISCRETIONARY},
                     {"name": "Tax Refunds", "default_label": LABEL_DISCRETIONARY},
+                    {"name": "Cashbacks & Rewards", "default_label": LABEL_DISCRETIONARY},
                 ]
             }
         ]
     },
-    # 2. Expenses Tree
+    # 2. Investments Tree (Decoupled root category)
     {
-        "name": "Expenses",
+        "name": "Investments",
+        "category_type": "INVESTMENT",
+        "default_label": LABEL_INVESTMENT,
+        "icon": "PiggyBank",
+        "color": "#3B82F6",
+        "children": [
+            {"name": "Stock & ETF Purchases", "default_label": LABEL_INVESTMENT},
+            {"name": "Mutual Funds & SIPs", "default_label": LABEL_INVESTMENT},
+            {"name": "Crypto Allocation", "default_label": LABEL_INVESTMENT},
+            {"name": "Dividends", "default_label": LABEL_INVESTMENT},
+            {"name": "Interest & Staking", "default_label": LABEL_INVESTMENT},
+            {"name": "Realized Capital Gains", "default_label": LABEL_INVESTMENT},
+            {"name": "Rental Income", "default_label": LABEL_INVESTMENT},
+            {"name": "Emergency Fund Reserve", "default_label": LABEL_INVESTMENT},
+            {"name": "Pension & Retirement (NPS / 401k)", "default_label": LABEL_INVESTMENT},
+        ]
+    },
+    # 3. Spends Tree (Renamed from Expenses)
+    {
+        "name": "Spends",
         "category_type": "EXPENSE",
         "default_label": LABEL_DISCRETIONARY,
         "icon": "Receipt",
@@ -213,20 +248,6 @@ DEFAULT_CATEGORIES_TREE = [
             }
         ]
     },
-    # 3. Investments & Savings Tree
-    {
-        "name": "Investments & Savings",
-        "category_type": "INVESTMENT",
-        "default_label": LABEL_INVESTMENT,
-        "icon": "PiggyBank",
-        "color": "#3B82F6",
-        "children": [
-            {"name": "Stock & ETF Purchases", "default_label": LABEL_INVESTMENT},
-            {"name": "Crypto Allocation", "default_label": LABEL_INVESTMENT},
-            {"name": "Emergency Fund Reserve", "default_label": LABEL_INVESTMENT},
-            {"name": "Pension & Retirement (NPS / 401k)", "default_label": LABEL_INVESTMENT},
-        ]
-    },
     # 4. Account Transfers & FX Tree
     {
         "name": "Account Transfers",
@@ -243,7 +264,10 @@ DEFAULT_CATEGORIES_TREE = [
 
 async def seed_default_categories(db: AsyncSession):
     """
-    Seeds the standard 5-level category hierarchy if the categories table is empty.
+    Seeds or migrates the category hierarchy:
+    1. Ensures 3 main root trees: Income, Investments, Spends.
+    2. Decouples Investments & Passive from Income and reparents subcategories under root Investments.
+    3. Renames Expenses to Spends.
     """
     stmt = select(func.count(Category.category_id))
     res = await db.execute(stmt)
@@ -267,21 +291,69 @@ async def seed_default_categories(db: AsyncSession):
 
         for child in node_dict.get("children", []):
             await _insert_node(child, cat.category_id, c_type, c_label)
+        return cat
 
     if count == 0:
         for root_node in DEFAULT_CATEGORIES_TREE:
             await _insert_node(root_node, None, root_node["category_type"], root_node.get("default_label"))
         await db.commit()
-        print("[Seed] Successfully seeded default 5-level category hierarchy.")
+        print("[Seed] Successfully seeded default 3-root category hierarchy.")
     else:
-        # Check if Transfer category exists, if not add it
+        # Migration: Ensure root Investments exists and reparent any nested investment subcategories
+        # 1. Rename Expenses -> Spends if found
+        exp_stmt = select(Category).where(Category.name == "Expenses", Category.parent_id == None)
+        exp_res = await db.execute(exp_stmt)
+        exp_cat = exp_res.scalar_one_or_none()
+        if exp_cat:
+            exp_cat.name = "Spends"
+
+        # 2. Find or create root Investments
+        inv_root_stmt = select(Category).where(Category.name.in_(["Investments", "Investments & Savings"]), Category.parent_id == None)
+        inv_root_res = await db.execute(inv_root_stmt)
+        inv_root = inv_root_res.scalars().first()
+        if not inv_root:
+            inv_root = Category(
+                name="Investments",
+                parent_id=None,
+                category_type="INVESTMENT",
+                default_label=LABEL_INVESTMENT,
+                icon="PiggyBank",
+                color="#3B82F6",
+            )
+            db.add(inv_root)
+            await db.flush()
+            await db.refresh(inv_root)
+        else:
+            inv_root.name = "Investments"
+            inv_root.category_type = "INVESTMENT"
+            inv_root.parent_id = None
+
+        # 3. Check for Investments & Passive under Income and reparent its children
+        inv_passive_stmt = select(Category).where(Category.name == "Investments & Passive")
+        inv_passive_res = await db.execute(inv_passive_stmt)
+        inv_passive = inv_passive_res.scalar_one_or_none()
+        if inv_passive:
+            # Reparent all children of Investments & Passive to inv_root
+            await db.execute(
+                update(Category)
+                .where(Category.parent_id == inv_passive.category_id)
+                .values(parent_id=inv_root.category_id, category_type="INVESTMENT", default_label=LABEL_INVESTMENT)
+            )
+            # Delete empty Investments & Passive node
+            await db.execute(
+                delete(Category)
+                .where(Category.category_id == inv_passive.category_id)
+            )
+
+        # 4. Check if Transfer category exists, if not add it
         trans_stmt = select(Category).where(Category.name == "Account Transfers")
         trans_res = await db.execute(trans_stmt)
         if not trans_res.scalar_one_or_none():
             transfer_tree = DEFAULT_CATEGORIES_TREE[3]
             await _insert_node(transfer_tree, None, transfer_tree["category_type"], transfer_tree.get("default_label"))
-            await db.commit()
-            print("[Seed] Successfully added Account Transfers category.")
+
+        await db.commit()
+        print("[Seed] Successfully migrated categories to 3-root hierarchy.")
 
 async def build_category_lineage_map(db: AsyncSession) -> Dict[int, Dict[str, Any]]:
     """
@@ -391,7 +463,7 @@ async def generate_sankey_data(
             if cat_type == "TRANSFER":
                 continue
 
-            if cat_type == "INCOME":
+            if cat_type == "INCOME" or (cat_type == "INVESTMENT" and tx.transaction_kind == "INCOME"):
                 total_income += amt
                 # For income, represent source at depth
                 src_name = target_name
@@ -580,7 +652,7 @@ async def get_cashflow_summary(
             if cat_type == "TRANSFER":
                 continue
 
-            if cat_type == "INCOME":
+            if cat_type == "INCOME" or (cat_type == "INVESTMENT" and tx.transaction_kind == "INCOME"):
                 total_income += amt
             elif cat_type == "INVESTMENT":
                 if not include_investments:

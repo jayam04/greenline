@@ -2,15 +2,12 @@ import datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select
 
 from app.db.database import Base
-from app.db.models import User, Account, Asset, Transaction, PriceHistory, CashflowTransaction, CashflowPayment
+from app.db.models import User, Account, Asset, PriceHistory, CashflowTransaction, CashflowPayment
 from app.schemas.schemas import TransactionCreate
 from app.api.routers.transactions import create_transaction
 from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances, list_accounts
-from app.api.routers.portfolio import get_portfolio_summary
-from app.services.fifo_engine import recalculate_all_lots
 
 @pytest.mark.anyio
 async def test_precize_wallet_zero_and_demat_valuation():

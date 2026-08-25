@@ -435,7 +435,7 @@ export default function CategoriesPage() {
               {tree.length === 0 && !loading && (
                 <tr>
                   <td colSpan={4 + activeColumns.length} className="py-8 text-center text-slate-400 font-medium text-xs">
-                    No categories found. Click "Add Category" to create one.
+                    No categories found. Click &quot;Add Category&quot; to create one.
                   </td>
                 </tr>
               )}

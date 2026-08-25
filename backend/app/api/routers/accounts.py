@@ -1,16 +1,16 @@
-from typing import List, Dict, Set, Tuple, Optional
+from typing import List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import Account, User, Transaction, CashflowTransaction, CashflowPayment, CashflowItem, Lot, PriceHistory
+from app.db.models import Account, User, Transaction, CashflowTransaction, CashflowItem, Lot, PriceHistory
 from app.schemas.schemas import AccountCreate, AccountUpdate, AccountResponse
 from app.api.deps import get_current_user
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot
-from app.services.cashflow_engine import resolve_transaction_kind, compute_transaction_cash_movement
+from app.services.cashflow_engine import compute_transaction_cash_movement
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 

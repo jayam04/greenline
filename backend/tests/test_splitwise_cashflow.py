@@ -6,7 +6,7 @@ from app.db.database import Base
 from app.db.models import Account, CashflowTransaction, CashflowPayment, CashflowItem, User
 from app.schemas.schemas import CashflowTransactionCreate, CashflowPaymentCreate, CashflowItemCreate
 from app.services.cashflow_engine import seed_default_categories, build_category_lineage_map, get_cashflow_summary
-from app.api.routers.cashflow import create_cashflow_transaction, list_cashflow_transactions
+from app.api.routers.cashflow import create_cashflow_transaction
 from app.api.routers.accounts import calculate_all_account_balances
 
 @pytest.mark.anyio

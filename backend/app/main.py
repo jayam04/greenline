@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func
 from app.config import settings
-from app.db.database import engine, Base, AsyncSessionLocal
+from app.db.database import AsyncSessionLocal
 from app.db.models import User, Transaction
 from app.services.auth_service import get_password_hash
 from app.scheduler import start_scheduler

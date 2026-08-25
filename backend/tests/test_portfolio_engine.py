@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.db.database import Base
 from app.db.models import Account, Asset, Transaction, Lot, LotSale
 from app.services.fifo_engine import process_transaction_event
-from app.services.xirr_engine import calculate_xirr_for_scope
 
 @pytest.mark.anyio
 async def test_fifo_lot_engine():

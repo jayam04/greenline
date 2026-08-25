@@ -3,7 +3,7 @@ import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.db.database import Base
-from app.db.models import Account, Category, CashflowTransaction, CashflowPayment, CashflowItem
+from app.db.models import Account, CashflowTransaction, CashflowPayment, CashflowItem
 from app.services.cashflow_engine import seed_default_categories, build_category_lineage_map, generate_sankey_data, get_cashflow_summary
 
 @pytest.mark.anyio

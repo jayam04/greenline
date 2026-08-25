@@ -1,9 +1,7 @@
-from typing import List, Dict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc
 import yfinance as yf
-import datetime
 from app.db.database import get_db
 from app.db.models import Benchmark, User
 from app.schemas.schemas import BenchmarkResponse, BenchmarkDataPoint

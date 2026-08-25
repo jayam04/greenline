@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 from app.db.database import Base
-from app.db.models import Account, Asset, Transaction, Lot, LotSale, PriceHistory, User
+from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, User
 from app.schemas.schemas import TransactionCreate
 from app.api.routers.transactions import create_transaction
 from app.api.routers.portfolio import get_portfolio_summary

@@ -4,7 +4,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import select
 from app.db.database import Base, get_db
-from app.db.models import User, Account, Category, CashflowTransaction, CashflowPayment, CashflowItem
+from app.db.models import User, Account, Category
 from app.api.deps import get_current_user
 from app.services.cashflow_engine import build_category_lineage_map
 from app.main import app

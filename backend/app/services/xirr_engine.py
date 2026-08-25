@@ -1,8 +1,8 @@
 import datetime
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc
-from app.db.models import CashFlow, XIRRCache
+from app.db.models import CashFlow
 import pyxirr
 
 async def calculate_xirr_for_scope(

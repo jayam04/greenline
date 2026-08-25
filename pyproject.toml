@@ -1,0 +1,25 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length allowed up to line-length setting
+    "E402",  # module level import not at top (needed for certain route configs)
+    "W291",  # trailing whitespace
+    "W293",  # blank line contains whitespace
+    "E711",  # comparison to None should be 'if cond is None:' (SQLAlchemy queries require == None)
+    "E712",  # comparison to True should be 'if cond is True:' (SQLAlchemy queries require == True)
+    "E741",  # ambiguous variable name (e.g. l for lot)
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = [
+    "backend/tests",
+]
+pythonpath = [
+    "backend"
+]

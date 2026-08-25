@@ -9,7 +9,7 @@ from app.db.models import (
     LotSale, Transaction, Asset, Account, CashflowTransaction, 
     CashflowPayment, CashflowItem
 )
-from app.services.cashflow_engine import resolve_transaction_kind
+from app.services.cashflow_engine import resolve_transaction_kind, compute_transaction_cash_movement
 
 FX_RATES_TO_EUR = {
     "EUR": 1.0,
@@ -60,45 +60,52 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
             })
             asset_ids.add(lot.asset_id)
 
-    # 2. Fetch closing price for each asset on or closest before snapshot_date
+    # 2. Fetch closing price for each asset on or closest before snapshot_date via single batch subquery JOIN
     price_map: Dict[int, float] = {}
-    for aid in asset_ids:
-        ph_stmt = (
-            select(PriceHistory.close_price)
+    if asset_ids:
+        latest_date_subq = (
+            select(PriceHistory.asset_id, func.max(PriceHistory.price_date).label("max_date"))
             .where(
-                PriceHistory.asset_id == aid,
+                PriceHistory.asset_id.in_(asset_ids),
                 PriceHistory.price_date <= snapshot_date
             )
-            .order_by(desc(PriceHistory.price_date))
-            .limit(1)
+            .group_by(PriceHistory.asset_id)
+            .subquery()
+        )
+        ph_stmt = (
+            select(PriceHistory.asset_id, PriceHistory.close_price)
+            .join(
+                latest_date_subq,
+                (PriceHistory.asset_id == latest_date_subq.c.asset_id) &
+                (PriceHistory.price_date == latest_date_subq.c.max_date)
+            )
         )
         ph_res = await db.execute(ph_stmt)
-        price = ph_res.scalar_one_or_none()
-        if price is not None and not math.isnan(price) and not math.isinf(price) and price > 0:
-            price_map[aid] = price
-        else:
-            lot_cost = next((item["lot"].cost_per_unit for item in open_lots_as_of_date if item["lot"].asset_id == aid), 0.0)
-            price_map[aid] = lot_cost
+        for aid, close_px in ph_res.all():
+            if close_px is not None and not math.isnan(close_px) and not math.isinf(close_px) and close_px > 0:
+                price_map[aid] = float(close_px)
 
-    # 3. Sum current value and cost of open lots
+    # 3. Sum current value and cost of open lots (normalized to EUR)
     total_current_value = 0.0
     total_cost_of_open_lots = 0.0
     allocation_by_class: Dict[str, float] = {}
+
+    assets_stmt = select(Asset).where(Asset.asset_id.in_(asset_ids)) if asset_ids else select(Asset).where(False)
+    assets_res = await db.execute(assets_stmt)
+    assets_map = {a.asset_id: a for a in assets_res.scalars().all()}
 
     for item in open_lots_as_of_date:
         lot: Lot = item["lot"]
         rem_qty: float = item["remaining_quantity"]
         p = price_map.get(lot.asset_id, lot.cost_per_unit)
+        asset = assets_map.get(lot.asset_id)
+        aclass = asset.asset_type if asset else "other"
+
         val = rem_qty * p
         cost = rem_qty * lot.cost_per_unit
 
         total_current_value += val
         total_cost_of_open_lots += cost
-
-        asset_stmt = select(Asset).where(Asset.asset_id == lot.asset_id)
-        asset_res = await db.execute(asset_stmt)
-        asset = asset_res.scalar_one_or_none()
-        aclass = asset.asset_type if asset else "other"
         allocation_by_class[aclass] = allocation_by_class.get(aclass, 0.0) + val
 
     total_unrealized_pnl = total_current_value - total_cost_of_open_lots
@@ -113,6 +120,11 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     total_realized_pnl = realized_res.scalar_one_or_none() or 0.0
 
     # 5. Cash balance and total invested as of snapshot_date
+    acc_stmt = select(Account)
+    acc_res = await db.execute(acc_stmt)
+    accounts_map = {a.account_id: a for a in acc_res.scalars().all()}
+    valid_acc_ids = set(accounts_map.keys())
+
     tx_stmt = select(Transaction).where(Transaction.transaction_date <= snapshot_date)
     tx_res = await db.execute(tx_stmt)
     all_txs: List[Transaction] = tx_res.scalars().all()
@@ -121,30 +133,17 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     total_invested = 0.0
 
     for tx in all_txs:
+        cash_acc_id, delta = compute_transaction_cash_movement(tx, valid_acc_ids)
+        cash_balance += delta
+
         ttype = (tx.transaction_type or "").lower()
-        qty = float(tx.quantity or 0.0)
-        ppu = float(tx.price_per_unit or 0.0)
         amt = float(tx.total_amount or 0.0)
         fees = float(tx.fees or 0.0)
         taxes = float(tx.taxes or 0.0)
-
         if ttype == "deposit":
-            cash_balance += amt
-            total_invested += amt
+            total_invested += (amt - fees - taxes)
         elif ttype == "withdrawal":
-            cash_balance -= amt
-            total_invested -= amt
-        elif ttype == "buy":
-            trade_cash = (qty * ppu + fees + taxes) if (qty > 0 and ppu > 0) else amt
-            cash_balance -= trade_cash
-        elif ttype == "sell":
-            trade_cash = (qty * ppu - fees - taxes) if (qty > 0 and ppu > 0) else amt
-            cash_balance += max(0.0, trade_cash)
-        elif ttype in ["dividend", "interest"]:
-            trade_cash = (amt - taxes) if ttype == "dividend" else amt
-            cash_balance += max(0.0, trade_cash)
-        elif ttype == "fee":
-            cash_balance -= amt
+            total_invested -= (amt + fees + taxes)
 
     # Add cashflow payments as of snapshot_date
     cf_stmt = select(CashflowTransaction, CashflowPayment)\
@@ -350,33 +349,17 @@ async def calculate_account_snapshots(
 
         for tx in all_txs:
             if tx.transaction_date <= curr_date:
-                cash_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
-                if cash_acc_id != account_id:
-                    continue
-                ttype = (tx.transaction_type or "").lower()
-                qty = float(tx.quantity or 0.0)
-                ppu = float(tx.price_per_unit or 0.0)
-                amt = float(tx.total_amount or 0.0)
-                fees = float(tx.fees or 0.0)
-                taxes = float(tx.taxes or 0.0)
-
-                if ttype == "deposit":
-                    cash_balance += amt
-                    total_invested += amt
-                elif ttype == "withdrawal":
-                    cash_balance -= amt
-                    total_invested -= amt
-                elif ttype == "buy":
-                    trade_cash = (qty * ppu + fees + taxes) if (qty > 0 and ppu > 0) else amt
-                    cash_balance -= trade_cash
-                elif ttype == "sell":
-                    trade_cash = (qty * ppu - fees - taxes) if (qty > 0 and ppu > 0) else amt
-                    cash_balance += max(0.0, trade_cash)
-                elif ttype in ["dividend", "interest"]:
-                    trade_cash = (amt - taxes) if ttype == "dividend" else amt
-                    cash_balance += max(0.0, trade_cash)
-                elif ttype == "fee":
-                    cash_balance -= amt
+                cash_acc_id, cash_change = compute_transaction_cash_movement(tx)
+                if cash_acc_id == account_id:
+                    cash_balance += cash_change
+                    ttype = (tx.transaction_type or "").lower()
+                    amt = float(tx.total_amount or 0.0)
+                    fees = float(tx.fees or 0.0)
+                    taxes = float(tx.taxes or 0.0)
+                    if ttype == "deposit":
+                        total_invested += (amt - fees - taxes)
+                    elif ttype == "withdrawal":
+                        total_invested -= (amt + fees + taxes)
 
         for cf_date, signed_amt, is_inc in cf_events:
             if cf_date <= curr_date:

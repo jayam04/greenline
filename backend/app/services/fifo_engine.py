@@ -174,7 +174,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         if tx.asset_id:
             div = Dividend(
                 asset_id=tx.asset_id,
-                account_id=funding_acc_id,
+                account_id=tx.account_id,
                 pay_date=tx.transaction_date,
                 amount_per_share=tx.price_per_unit,
                 total_amount=tx.total_amount,

@@ -1,10 +1,10 @@
 import datetime
 from typing import Dict, List, Optional, Any, Tuple, Set
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, desc, asc, update, delete
+from sqlalchemy import select, func, update, delete
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Category, CashflowTransaction, CashflowPayment, CashflowItem, Account, Transaction, LotSale
+from app.db.models import Category, CashflowTransaction, CashflowPayment, CashflowItem, Transaction, LotSale
 from app.schemas.schemas import SankeyNode, SankeyLink, SankeyDataResponse, CashflowSummaryResponse
 
 # Standard Classification Labels

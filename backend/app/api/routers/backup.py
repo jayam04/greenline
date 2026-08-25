@@ -1,9 +1,9 @@
 import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete
 import json
 from app.db.database import get_db
 from app.db.models import (

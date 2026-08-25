@@ -3,10 +3,10 @@ import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.db.database import Base
-from app.db.models import Account, Category, CashflowTransaction, CashflowPayment, CashflowItem, User
+from app.db.models import Account, CashflowTransaction, CashflowPayment, CashflowItem, User
 from app.schemas.schemas import CashflowTransactionCreate, CashflowPaymentCreate, CashflowItemCreate
 from app.services.cashflow_engine import seed_default_categories, build_category_lineage_map, get_cashflow_summary, migrate_legacy_payment_signs
-from app.api.routers.cashflow import create_cashflow_transaction, list_cashflow_transactions
+from app.api.routers.cashflow import create_cashflow_transaction
 from app.api.routers.accounts import calculate_all_account_balances
 
 @pytest.mark.anyio

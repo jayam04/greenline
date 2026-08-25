@@ -1,7 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import text
-from app.db.database import Base
 from app.db.migrations import run_db_migrations, get_applied_migrations
 
 @pytest.mark.anyio

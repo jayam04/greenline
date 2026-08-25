@@ -3,7 +3,7 @@ import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.db.database import Base
-from app.db.models import Account, Asset, Transaction, Lot, Dividend, User
+from app.db.models import Account, Asset, User
 from app.schemas.schemas import TransactionCreate
 from app.api.routers.transactions import create_transaction, list_transactions
 from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances

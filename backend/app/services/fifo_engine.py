@@ -1,4 +1,3 @@
-import datetime
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc, delete

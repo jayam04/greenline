@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.db.models import Category, CashflowItem, CashflowTransaction, User
 from app.schemas.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryTreeResponse
-from app.services.cashflow_engine import build_category_lineage_map, convert_currency_to_eur, convert_currency
+from app.services.cashflow_engine import build_category_lineage_map, convert_currency
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/categories", tags=["categories"])

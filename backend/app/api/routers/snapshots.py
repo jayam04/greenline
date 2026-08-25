@@ -8,7 +8,6 @@ from app.db.database import get_db
 from app.db.models import NetworthSnapshot, Account, User
 from app.schemas.schemas import NetworthSnapshotResponse
 from app.services.snapshot_engine import calculate_account_snapshots
-from app.services.cashflow_engine import convert_currency
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])

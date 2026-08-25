@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy import select
 from app.db.database import Base
 from app.db.models import Asset, PriceHistory
-from app.services.price_engine import update_prices_for_assets, fetch_asset_price_history
+from app.services.price_engine import update_prices_for_assets
 
 @pytest.fixture
 def anyio_backend():

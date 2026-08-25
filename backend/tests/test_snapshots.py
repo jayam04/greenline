@@ -3,7 +3,7 @@ import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import select
 from app.db.database import Base
-from app.db.models import Account, Asset, Transaction, Lot, PriceHistory, NetworthSnapshot
+from app.db.models import Account, Asset, Transaction, PriceHistory, NetworthSnapshot
 from app.services.fifo_engine import process_transaction_event
 from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots, calculate_account_snapshots
 

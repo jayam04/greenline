@@ -76,7 +76,7 @@ jobs:
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: |
-          npm ci || npm install
+          npm ci
 
       - name: TypeScript Type Check
         working-directory: frontend
@@ -123,7 +123,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
           cd frontend
-          npm ci || npm install
+          npm ci
           npx playwright install --with-deps chromium
 
       - name: Build Frontend
@@ -134,13 +134,13 @@ jobs:
       - name: Start Backend Server
         run: |
           PYTHONPATH=backend python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          sleep 3
+          timeout 30 bash -c 'until curl -s http://localhost:8000/docs > /dev/null; do sleep 1; done'
 
       - name: Start Frontend Server
         working-directory: frontend
         run: |
           npm start -- --port 3000 &
-          sleep 5
+          timeout 30 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 1; done'
 
       - name: Run Playwright E2E Tests
         working-directory: frontend

@@ -2,7 +2,7 @@ import datetime
 import math
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, asc, or_
+from sqlalchemy import select, func, asc, or_
 from sqlalchemy.orm import selectinload
 from app.db.models import (
     NetworthSnapshot, NetworthByAssetClass, Lot, PriceHistory, 

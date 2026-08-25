@@ -1,13 +1,13 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from sqlalchemy.orm import aliased
 from app.db.database import get_db
 from app.db.models import Transaction, Account, Asset, User, PriceHistory
 from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse
-from app.services.fifo_engine import process_transaction_event, recalculate_all_lots
-from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
+from app.services.fifo_engine import recalculate_all_lots
+from app.services.snapshot_engine import recalculate_past_snapshots
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])

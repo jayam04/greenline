@@ -17,3 +17,6 @@
 ### Layer 3: MCP Server
 - [ ] Create a MCP server which uses new import export from previous layer and allow AI support.
 
+## Next Steps
+
+- [ ] Fix issues with Stack 2 and merge Stack 2.

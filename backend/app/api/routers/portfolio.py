@@ -2,7 +2,7 @@ import datetime
 from typing import List, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, or_
 from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem
@@ -10,7 +10,7 @@ from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotRes
 from app.services.xirr_engine import calculate_xirr_for_scope
 from app.services.cashflow_engine import convert_currency
 from app.services.snapshot_engine import calculate_account_snapshots
-from app.api.routers.accounts import calculate_all_account_balances
+from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -38,22 +38,29 @@ async def get_portfolio_summary(
     asset_allocation: Dict[str, float] = {}
     sector_allocation: Dict[str, float] = {}
     
-    # Pre-fetch latest prices for these assets
-    asset_prices: Dict[int, float] = {}
-    asset_price_dates: Dict[int, Optional[datetime.date]] = {}
-    for aid in asset_ids:
-        ph_stmt = select(PriceHistory)\
-            .where(PriceHistory.asset_id == aid)\
-            .order_by(desc(PriceHistory.price_date))\
-            .limit(1)
+    # Pre-fetch latest prices for these assets in a single batch query
+    asset_prices: Dict[int, float] = {aid: 0.0 for aid in asset_ids}
+    asset_price_dates: Dict[int, Optional[datetime.date]] = {aid: None for aid in asset_ids}
+    if asset_ids:
+        latest_date_subq = (
+            select(PriceHistory.asset_id, func.max(PriceHistory.price_date).label("max_date"))
+            .where(PriceHistory.asset_id.in_(asset_ids))
+            .group_by(PriceHistory.asset_id)
+            .subquery()
+        )
+        ph_stmt = (
+            select(PriceHistory.asset_id, PriceHistory.close_price, PriceHistory.price_date)
+            .join(
+                latest_date_subq,
+                (PriceHistory.asset_id == latest_date_subq.c.asset_id) &
+                (PriceHistory.price_date == latest_date_subq.c.max_date)
+            )
+        )
         ph_res = await db.execute(ph_stmt)
-        ph = ph_res.scalar_one_or_none()
-        if ph:
-            asset_prices[aid] = ph.close_price
-            asset_price_dates[aid] = ph.price_date
-        else:
-            asset_prices[aid] = 0.0
-            asset_price_dates[aid] = None
+        for aid, close_px, pdate in ph_res.all():
+            if close_px is not None:
+                asset_prices[aid] = float(close_px)
+                asset_price_dates[aid] = pdate
 
     # Pre-fetch assets metadata
     assets_map: Dict[int, Asset] = {}
@@ -281,7 +288,7 @@ async def get_portfolio_summary(
     total_realized_pnl = sum(tot_rpnl_res.scalars().all())
     
     # 5. Fetch Cash Balance using centralized funding-account & cashflow aware engine
-    balances = await calculate_all_account_balances(db)
+    balances = await calculate_all_account_cash_balances(db)
     if account_id:
         cash_balance = balances.get(account_id, 0.0)
     else:
@@ -396,11 +403,15 @@ async def get_realized_pnl(
 
 @router.get("/annual_snapshot", response_model=AnnualSnapshotResponse)
 async def get_annual_snapshot(
-    fiscal_year_start: Optional[str] = Query("01-01"),
-    master_currency: Optional[str] = Query("EUR"),
+    fiscal_year_start: Optional[str] = "01-01",
+    master_currency: Optional[str] = "EUR",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if not isinstance(fiscal_year_start, str):
+        fiscal_year_start = "01-01"
+    if not isinstance(master_currency, str):
+        master_currency = "EUR"
     target_currency = (master_currency or "EUR").strip().upper()
     today = datetime.date.today()
 
@@ -477,25 +488,10 @@ async def get_annual_snapshot(
     acc_map_res = await db.execute(select(Account))
     all_accs = acc_map_res.scalars().all()
     
-    current_cash_target = sum(
+    current_total_nw = sum(
         convert_currency(all_balances.get(a.account_id, 0.0), a.currency or "EUR", target_currency)
         for a in all_accs
     )
-    
-    open_lots_res = await db.execute(select(Lot).where(Lot.quantity_remaining > 0))
-    open_lots = open_lots_res.scalars().all()
-    
-    current_holdings_val = 0.0
-    for l in open_lots:
-        ph_stmt = select(PriceHistory.close_price).where(PriceHistory.asset_id == l.asset_id).order_by(desc(PriceHistory.price_date)).limit(1)
-        ph_res = await db.execute(ph_stmt)
-        price = ph_res.scalar_one_or_none() or l.cost_per_unit
-        asset_res = await db.execute(select(Asset.currency).where(Asset.asset_id == l.asset_id))
-        a_curr = asset_res.scalar_one_or_none() or "USD"
-        val = l.quantity_remaining * price
-        current_holdings_val += convert_currency(val, a_curr, target_currency)
-        
-    current_total_nw = current_cash_target + current_holdings_val
 
     # 4. Calculate start-of-year/period net worth to derive true change in net worth
     start_total_nw = 0.0

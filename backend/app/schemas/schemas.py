@@ -40,6 +40,8 @@ class AccountResponse(AccountBase):
     account_id: int
     created_at: datetime.date
     current_balance: Optional[float] = 0.0
+    cash_balance: Optional[float] = 0.0
+    securities_value: Optional[float] = 0.0
     model_config = ConfigDict(from_attributes=True)
 
 # Asset Schemas

@@ -24,6 +24,8 @@ interface Account {
   account_type: string;
   currency: string;
   current_balance?: number;
+  cash_balance?: number;
+  securities_value?: number;
   created_at?: string;
 }
 
@@ -206,7 +208,7 @@ export default function NetWorthDashboardPage() {
   // Total Cash in Bank/Wallet accounts converted to masterCurrency
   const totalBankCashMaster = useMemo(() => {
     return bankAccounts.reduce((acc, a) => {
-      const bal = a.current_balance || 0;
+      const bal = a.cash_balance !== undefined ? a.cash_balance : (a.current_balance || 0);
       return acc + convertCurrency(bal, a.currency || "EUR", masterCurrency);
     }, 0);
   }, [bankAccounts, masterCurrency]);
@@ -221,7 +223,7 @@ export default function NetWorthDashboardPage() {
   // Total Demat cash (if any uninvested cash in demat accounts)
   const totalDematCashMaster = useMemo(() => {
     return dematAccounts.reduce((acc, a) => {
-      const bal = Math.max(0, a.current_balance || 0);
+      const bal = a.cash_balance !== undefined ? a.cash_balance : 0;
       return acc + convertCurrency(bal, a.currency || "INR", masterCurrency);
     }, 0);
   }, [dematAccounts, masterCurrency]);
@@ -695,7 +697,11 @@ export default function NetWorthDashboardPage() {
                               {hideBalances ? "••••" : formatMoney(nativeBal, acc.currency || "EUR", 2)}
                             </div>
                             <div className="text-[10px] font-medium text-slate-400">
-                              {acc.currency}
+                              {!isBank && (acc.securities_value || 0) > 0 && (acc.cash_balance || 0) > 0 ? (
+                                <span>Cash: {formatMoney(acc.cash_balance, acc.currency || "EUR", 0)} • Stocks: {formatMoney(acc.securities_value, acc.currency || "EUR", 0)}</span>
+                              ) : (
+                                <span>{acc.currency}</span>
+                              )}
                             </div>
                           </td>
 

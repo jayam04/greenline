@@ -40,6 +40,51 @@ def convert_currency(amount: float, from_currency: str = "EUR", to_currency: str
 def convert_currency_to_eur(amount: float, from_currency: str = "EUR") -> float:
     return convert_currency(amount, from_currency, "EUR")
 
+def compute_transaction_cash_movement(tx: Any, valid_account_ids: Optional[Set[int]] = None) -> Tuple[int, float]:
+    """
+    Computes (cash_account_id, signed_cash_change) for an investment transaction.
+    - Cash account: funding_account_id if valid, otherwise tx.account_id.
+    - Buy: Outflow -(qty * ppu + fees + taxes) or -total_amount.
+    - Sell: Inflow (qty * ppu - fees - taxes) or (total_amount - fees - taxes) [unclamped].
+    - Dividend: Inflow total_amount - taxes.
+    - Interest: Inflow total_amount - fees - taxes.
+    - Deposit: Inflow total_amount - fees - taxes.
+    - Withdrawal / Fee: Outflow -(total_amount + fees + taxes).
+    """
+    funding_id = getattr(tx, "funding_account_id", None)
+    if funding_id and (valid_account_ids is None or funding_id in valid_account_ids):
+        cash_acc_id = funding_id
+    else:
+        cash_acc_id = tx.account_id
+
+    ttype = (getattr(tx, "transaction_type", None) or "").lower()
+    qty = float(getattr(tx, "quantity", None) or 0.0)
+    ppu = float(getattr(tx, "price_per_unit", None) or 0.0)
+    amt = float(getattr(tx, "total_amount", None) or 0.0)
+    fees = float(getattr(tx, "fees", None) or 0.0)
+    taxes = float(getattr(tx, "taxes", None) or 0.0)
+
+    if ttype == "buy":
+        trade_cash = (qty * ppu + fees + taxes) if (qty > 0 and ppu > 0) else amt
+        return cash_acc_id, -trade_cash
+    elif ttype == "sell":
+        trade_cash = (qty * ppu - fees - taxes) if (qty > 0 and ppu > 0) else (amt - fees - taxes)
+        return cash_acc_id, trade_cash
+    elif ttype == "dividend":
+        trade_cash = amt - taxes
+        return cash_acc_id, trade_cash
+    elif ttype == "interest":
+        trade_cash = amt - fees - taxes
+        return cash_acc_id, trade_cash
+    elif ttype == "deposit":
+        trade_cash = amt - fees - taxes
+        return cash_acc_id, trade_cash
+    elif ttype in ["withdrawal", "fee"]:
+        trade_cash = (amt + fees + taxes) if (fees > 0 or taxes > 0) else amt
+        return cash_acc_id, -trade_cash
+
+    return cash_acc_id, 0.0
+
 def resolve_transaction_kind(tx: Any) -> str:
     """
     Canonical derivation of transaction kind (TRANSFER, INCOME, EXPENSE).

@@ -6,7 +6,7 @@ from app.db.database import Base
 from app.db.models import Account, Asset, Transaction, Lot, Dividend, User
 from app.schemas.schemas import TransactionCreate
 from app.api.routers.transactions import create_transaction, list_transactions
-from app.api.routers.accounts import calculate_all_account_balances
+from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances
 
 @pytest.mark.anyio
 async def test_funding_account_ipo_and_trades():
@@ -62,10 +62,14 @@ async def test_funding_account_ipo_and_trades():
 
         # 4. Verify Account Balances:
         # - Zerodha cash balance: 0.0 (lots are in Zerodha, but cash was deducted from Axis Bank)
+        # - Zerodha total balance: 100,000.0 (100 shares @ 1000.0)
         # - Axis Bank balance: -100,000.0
-        balances = await calculate_all_account_balances(session)
-        assert balances[zerodha_id] == 0.0
-        assert balances[axis_id] == -100000.0
+        cash_bals = await calculate_all_account_cash_balances(session)
+        tot_bals = await calculate_all_account_balances(session)
+        assert cash_bals[zerodha_id] == 0.0
+        assert tot_bals[zerodha_id] == 100000.0
+        assert cash_bals[axis_id] == -100000.0
+        assert tot_bals[axis_id] == -100000.0
 
         # 5. Verify Dividend payout deposited into Axis Bank (+5,000 INR)
         div_in = TransactionCreate(
@@ -79,9 +83,9 @@ async def test_funding_account_ipo_and_trades():
         )
         await create_transaction(div_in, db=session, current_user=user)
 
-        balances_after_div = await calculate_all_account_balances(session)
-        assert balances_after_div[zerodha_id] == 0.0
-        assert balances_after_div[axis_id] == -95000.0 # -100,000 + 5,000 = -95,000
+        cash_bals_after = await calculate_all_account_cash_balances(session)
+        assert cash_bals_after[zerodha_id] == 0.0
+        assert cash_bals_after[axis_id] == -95000.0 # -100,000 + 5,000 = -95,000
 
         # 6. List transactions and verify response fields
         tx_list = await list_transactions(db=session, current_user=user)

@@ -1,43 +1,38 @@
-from typing import List, Dict
+from typing import List, Dict, Set, Tuple, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc, func
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import Account, User, Transaction, CashflowTransaction, CashflowPayment, CashflowItem
+from app.db.models import Account, User, Transaction, CashflowTransaction, CashflowPayment, CashflowItem, Lot, PriceHistory
 from app.schemas.schemas import AccountCreate, AccountUpdate, AccountResponse
 from app.api.deps import get_current_user
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot
-from app.services.cashflow_engine import resolve_transaction_kind
+from app.services.cashflow_engine import resolve_transaction_kind, compute_transaction_cash_movement
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
-async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
+async def calculate_all_account_details(db: AsyncSession) -> Dict[int, Dict[str, float]]:
     """
-    Computes current net cash/balance for every account combining
-    investment transactions and cashflow income/expense/transfers.
+    Computes detailed cash_balance, securities_value, and current_balance for every account in a single pass.
     """
     acc_stmt = select(Account)
     acc_res = await db.execute(acc_stmt)
     accounts = acc_res.scalars().all()
-    balances = {a.account_id: 0.0 for a in accounts}
+    account_ids = {a.account_id for a in accounts}
 
-    # 1. Investment transactions
+    cash_balances: Dict[int, float] = {a.account_id: 0.0 for a in accounts}
+    securities_values: Dict[int, float] = {a.account_id: 0.0 for a in accounts}
+
+    # 1. Investment transactions cash movements
     tx_stmt = select(Transaction)
     tx_res = await db.execute(tx_stmt)
     for tx in tx_res.scalars().all():
-        ttype = (tx.transaction_type or "").lower()
-        amt = float(tx.total_amount or 0.0)
-        fees = float(tx.fees or 0.0)
-        taxes = float(tx.taxes or 0.0)
-        cash_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
-        if cash_acc_id in balances:
-            if ttype in ["deposit", "sell", "dividend", "interest"]:
-                balances[cash_acc_id] += (amt - fees - taxes)
-            elif ttype in ["withdrawal", "buy", "fee"]:
-                balances[cash_acc_id] -= (amt + fees + taxes)
+        cash_acc_id, delta = compute_transaction_cash_movement(tx, account_ids)
+        if cash_acc_id in cash_balances:
+            cash_balances[cash_acc_id] += delta
 
     # 2. Cashflow payments
     c_stmt = select(CashflowTransaction).options(
@@ -47,10 +42,71 @@ async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
     c_res = await db.execute(c_stmt)
     for ctx in c_res.scalars().all():
         for p in ctx.payments:
-            if p.account_id in balances:
-                balances[p.account_id] += float(p.amount or 0.0)
+            if p.account_id in cash_balances:
+                cash_balances[p.account_id] += float(p.amount or 0.0)
 
-    return {k: round(v, 2) for k, v in balances.items()}
+    # 3. Securities valuation for open lots with single batch price fetch
+    lot_stmt = select(Lot).where(Lot.quantity_remaining > 0)
+    lot_res = await db.execute(lot_stmt)
+    open_lots = lot_res.scalars().all()
+
+    if open_lots:
+        asset_ids = list(set(l.asset_id for l in open_lots))
+        latest_prices: Dict[int, float] = {}
+
+        if asset_ids:
+            latest_date_subq = (
+                select(PriceHistory.asset_id, func.max(PriceHistory.price_date).label("max_date"))
+                .where(PriceHistory.asset_id.in_(asset_ids))
+                .group_by(PriceHistory.asset_id)
+                .subquery()
+            )
+            ph_stmt = (
+                select(PriceHistory.asset_id, PriceHistory.close_price)
+                .join(
+                    latest_date_subq,
+                    (PriceHistory.asset_id == latest_date_subq.c.asset_id) &
+                    (PriceHistory.price_date == latest_date_subq.c.max_date)
+                )
+            )
+            ph_res = await db.execute(ph_stmt)
+            for aid, close_px in ph_res.all():
+                if close_px is not None:
+                    latest_prices[aid] = float(close_px)
+
+        for lot in open_lots:
+            acc_id = lot.account_id
+            if acc_id in securities_values:
+                unit_price = latest_prices.get(lot.asset_id, float(lot.cost_per_unit or 0.0))
+                securities_values[acc_id] += float(lot.quantity_remaining) * unit_price
+
+    results = {}
+    for a in accounts:
+        aid = a.account_id
+        c_bal = round(cash_balances.get(aid, 0.0), 2)
+        s_val = round(securities_values.get(aid, 0.0), 2)
+        results[aid] = {
+            "cash_balance": c_bal,
+            "securities_value": s_val,
+            "current_balance": round(c_bal + s_val, 2)
+        }
+
+    return results
+
+async def calculate_all_account_cash_balances(db: AsyncSession) -> Dict[int, float]:
+    """Computes pure uninvested liquid cash for every account."""
+    details = await calculate_all_account_details(db)
+    return {k: v["cash_balance"] for k, v in details.items()}
+
+async def calculate_all_account_balances(db: AsyncSession) -> Dict[int, float]:
+    """Computes total valuation (cash + open securities) for every account."""
+    details = await calculate_all_account_details(db)
+    return {k: v["current_balance"] for k, v in details.items()}
+
+async def calculate_all_account_securities_values(db: AsyncSession) -> Dict[int, float]:
+    """Computes securities valuation for every account."""
+    details = await calculate_all_account_details(db)
+    return {k: v["securities_value"] for k, v in details.items()}
 
 @router.get("", response_model=List[AccountResponse])
 @router.get("/", response_model=List[AccountResponse])
@@ -61,12 +117,15 @@ async def list_accounts(
     stmt = select(Account)
     res = await db.execute(stmt)
     accounts = res.scalars().all()
-    balances = await calculate_all_account_balances(db)
+    details = await calculate_all_account_details(db)
 
     results = []
     for a in accounts:
         resp = AccountResponse.model_validate(a)
-        resp.current_balance = balances.get(a.account_id, 0.0)
+        d = details.get(a.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
+        resp.cash_balance = d["cash_balance"]
+        resp.securities_value = d["securities_value"]
+        resp.current_balance = d["current_balance"]
         results.append(resp)
 
     return results
@@ -84,6 +143,8 @@ async def create_account(
     await db.refresh(account)
     resp = AccountResponse.model_validate(account)
     resp.current_balance = 0.0
+    resp.cash_balance = 0.0
+    resp.securities_value = 0.0
     return resp
 
 @router.get("/{account_id}", response_model=AccountResponse)
@@ -97,9 +158,12 @@ async def get_account(
     account = res.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    balances = await calculate_all_account_balances(db)
+    details = await calculate_all_account_details(db)
+    d = details.get(account.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
     resp = AccountResponse.model_validate(account)
-    resp.current_balance = balances.get(account.account_id, 0.0)
+    resp.cash_balance = d["cash_balance"]
+    resp.securities_value = d["securities_value"]
+    resp.current_balance = d["current_balance"]
     return resp
 
 @router.put("/{account_id}", response_model=AccountResponse)
@@ -121,9 +185,12 @@ async def update_account(
 
     await db.commit()
     await db.refresh(account)
-    balances = await calculate_all_account_balances(db)
+    details = await calculate_all_account_details(db)
+    d = details.get(account.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
     resp = AccountResponse.model_validate(account)
-    resp.current_balance = balances.get(account.account_id, 0.0)
+    resp.cash_balance = d["cash_balance"]
+    resp.securities_value = d["securities_value"]
+    resp.current_balance = d["current_balance"]
     return resp
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

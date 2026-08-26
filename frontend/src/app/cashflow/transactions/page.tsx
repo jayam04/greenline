@@ -471,7 +471,13 @@ export default function CashflowTransactionsPage() {
                             const isHoldingDebit = p.holding_delta?.startsWith("-");
                             const isCredit = p.amount > 0 || Boolean(isHoldingCredit);
                             const isDebit = p.amount < 0 || Boolean(isHoldingDebit);
-                            const dotColor = isCredit ? "bg-emerald-500" : isDebit ? "bg-rose-500" : "bg-blue-500";
+                            const dotColor = tx.source === "investment"
+                              ? "bg-blue-500"
+                              : isCredit
+                              ? "bg-emerald-500"
+                              : isDebit
+                              ? "bg-rose-500"
+                              : "bg-blue-500";
                             const textColor = isCredit 
                               ? "text-emerald-600 dark:text-emerald-400" 
                               : isDebit 

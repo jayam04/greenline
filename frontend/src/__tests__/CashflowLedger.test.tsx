@@ -124,4 +124,126 @@ describe('Cashflow Overview Page (src/app/cashflow/page.tsx) Unified Transaction
     expect(screen.getByText('Trade')).toBeInTheDocument();
     expect(screen.getByText('Stock & ETF Purchases')).toBeInTheDocument();
   });
+
+  it('filters transactions to the last 30 days only in the overview table', async () => {
+    const today = new Date();
+    const dateWithin30 = new Date(today);
+    dateWithin30.setDate(today.getDate() - 5);
+    const dateOver30 = new Date(today);
+    dateOver30.setDate(today.getDate() - 45);
+
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/cashflow/summary')) return { total_income: 0, total_expenses: 0, total_invested: 0, net_savings: 0, savings_rate_pct: 0, breakdown_by_label: {}, top_expense_categories: [] };
+      if (endpoint.startsWith('/cashflow/sankey')) return { nodes: [], links: [] };
+      if (endpoint.startsWith('/cashflow')) {
+        return [
+          {
+            cashflow_id: 1,
+            transaction_date: fmt(dateWithin30),
+            title: 'Recent Expense',
+            total_amount: 50.0,
+            currency: 'EUR',
+            transaction_kind: 'EXPENSE',
+            items: [{ category_name: 'Groceries', effective_label: 'ESSENTIAL', amount: 50.0 }],
+            payments: [{ account_id: 1, account_name: 'Main Checking Bank', amount: -50.0 }]
+          },
+          {
+            cashflow_id: 2,
+            transaction_date: fmt(dateOver30),
+            title: 'Old Expense',
+            total_amount: 100.0,
+            currency: 'EUR',
+            transaction_kind: 'EXPENSE',
+            items: [{ category_name: 'Groceries', effective_label: 'ESSENTIAL', amount: 100.0 }],
+            payments: [{ account_id: 1, account_name: 'Main Checking Bank', amount: -100.0 }]
+          }
+        ];
+      }
+      if (endpoint === '/transactions') return [];
+      if (endpoint === '/accounts') return [];
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return null;
+    });
+
+    render(
+      <ThemeProvider>
+        <CashflowPage />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Recent Expense')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Old Expense')).not.toBeInTheDocument();
+  });
+
+  it('renders blue dots for stock trade payment lines and shortened label badges (E, D, I, L)', async () => {
+    const today = new Date();
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/cashflow/summary')) return { total_income: 0, total_expenses: 0, total_invested: 0, net_savings: 0, savings_rate_pct: 0, breakdown_by_label: {}, top_expense_categories: [] };
+      if (endpoint.startsWith('/cashflow/sankey')) return { nodes: [], links: [] };
+      if (endpoint.startsWith('/cashflow')) {
+        return [
+          {
+            cashflow_id: 1,
+            transaction_date: fmt(today),
+            title: 'Restaurant Dinner',
+            total_amount: 80.0,
+            currency: 'EUR',
+            transaction_kind: 'EXPENSE',
+            items: [{ category_name: 'Dining', effective_label: 'DISCRETIONARY', amount: 80.0 }],
+            payments: [{ account_id: 1, account_name: 'Credit Card', amount: -80.0 }]
+          }
+        ];
+      }
+      if (endpoint === '/transactions') {
+        return [
+          {
+            transaction_id: 10,
+            transaction_date: fmt(today),
+            asset_id: 1,
+            asset_symbol: 'NVDA',
+            account_id: 2,
+            account_name: 'Brokerage Demat',
+            funding_account_id: 1,
+            funding_account_name: 'Main Bank',
+            transaction_type: 'buy',
+            quantity: 5.0,
+            price_per_unit: 100.0,
+            total_amount: 500.0,
+            fees: 5.0,
+            taxes: 0.0,
+          }
+        ];
+      }
+      if (endpoint === '/accounts') return [];
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return null;
+    });
+
+    const { container } = render(
+      <ThemeProvider>
+        <CashflowPage />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('NVDA')).toBeInTheDocument();
+    });
+
+    // Check shortened label badges
+    expect(screen.getByText('D')).toBeInTheDocument(); // Discretionary -> D
+    expect(screen.getByText('I')).toBeInTheDocument(); // Investment -> I
+
+    // Check Blue dots (bg-blue-500) for trade payment lines (Brokerage Demat & Main Bank)
+    const tradeRow = screen.getByText('NVDA').closest('tr');
+    expect(tradeRow).not.toBeNull();
+    const blueDots = tradeRow!.querySelectorAll('.bg-blue-500');
+    expect(blueDots.length).toBeGreaterThanOrEqual(2);
+  });
 });

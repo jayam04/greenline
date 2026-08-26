@@ -17,8 +17,8 @@ vi.mock('@/lib/auth', () => ({
   removeAuthToken: vi.fn(),
 }));
 
-describe('Navbar Smart Dropdown & Routing (Task 3 & 4)', () => {
-  it('opens Investments dropdown when clicking Investments while on /investments', () => {
+describe('Navbar Component (Layer 1C: Clean Direct Navigation)', () => {
+  it('renders direct links for Investments and Cashflow without dropdowns', () => {
     currentPath = '/investments';
     render(
       <ThemeProvider>
@@ -26,29 +26,14 @@ describe('Navbar Smart Dropdown & Routing (Task 3 & 4)', () => {
       </ThemeProvider>
     );
 
-    // Click "Investments" tab
     const investLink = screen.getByRole('link', { name: /Investments/i });
-    fireEvent.click(investLink);
+    expect(investLink).toHaveAttribute('href', '/investments');
 
-    // Dropdown should be open
-    expect(screen.getByRole('link', { name: /Holdings/i })).toHaveAttribute('href', '/investments/holdings');
-    expect(screen.getByRole('link', { name: /Transactions/i })).toHaveAttribute('href', '/investments/transactions');
-  });
-
-  it('opens Cashflow dropdown when clicking Cashflow while on /cashflow', () => {
-    currentPath = '/cashflow';
-    render(
-      <ThemeProvider>
-        <Navbar />
-      </ThemeProvider>
-    );
-
-    // Click "Cashflow" tab
     const cashflowLink = screen.getByRole('link', { name: /Cashflow/i });
-    fireEvent.click(cashflowLink);
+    expect(cashflowLink).toHaveAttribute('href', '/cashflow');
 
-    // Dropdown should be open
-    expect(screen.getByRole('link', { name: /Transactions/i })).toHaveAttribute('href', '/cashflow/transactions');
-    expect(screen.getByRole('link', { name: /Categories/i })).toHaveAttribute('href', '/categories');
+    // Verify sub-navigation dropdown links are not rendered in navbar
+    expect(screen.queryByRole('link', { name: /Holdings/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Categories/i })).not.toBeInTheDocument();
   });
 });

@@ -96,11 +96,22 @@ export default function InvestmentsDashboardPage() {
   const [benchmarksDataMap, setBenchmarksDataMap] = useState<Record<string, BenchmarkRawData>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [allocationChartHeight, setAllocationChartHeight] = useState<number>(224);
+  const allocationCardRef = React.useRef<HTMLDivElement>(null);
 
-  // Load Accounts and Master Currency on mount
+  // Load Accounts, Master Currency and Chart Height on mount
   useEffect(() => {
     document.title = "Investments · greenline";
     loadAccounts();
+    if (typeof window !== "undefined") {
+      const savedH = localStorage.getItem("greenline_allocation_chart_height");
+      if (savedH) {
+        const parsed = Number(savedH);
+        if (!isNaN(parsed) && parsed >= 160) {
+          setAllocationChartHeight(parsed);
+        }
+      }
+    }
     apiFetch<{ master_currency: string }>("/settings")
       .then((res) => {
         if (res?.master_currency) {
@@ -112,6 +123,40 @@ export default function InvestmentsDashboardPage() {
         setMasterCurrency(local);
       });
   }, []);
+
+  const handleStartResize = (clientY: number) => {
+    const startY = clientY;
+    const startH = allocationChartHeight;
+    const containerWidth = allocationCardRef.current?.clientWidth || 380;
+    const maxHeight = Math.max(224, containerWidth - 32);
+    const minHeight = 160;
+
+    const onMove = (currentY: number) => {
+      const deltaY = currentY - startY;
+      const newH = Math.min(maxHeight, Math.max(minHeight, startH + deltaY));
+      setAllocationChartHeight(newH);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("greenline_allocation_chart_height", String(newH));
+      }
+    };
+
+    const onMouseMove = (e: MouseEvent) => onMove(e.clientY);
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) onMove(e.touches[0].clientY);
+    };
+
+    const onEnd = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onEnd);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onEnd);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onEnd);
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", onEnd);
+  };
 
   // Reload Summary & Snapshots whenever selectedAccount changes
   useEffect(() => {
@@ -757,28 +802,28 @@ export default function InvestmentsDashboardPage() {
         {/* RIGHT COLUMN: Allocation Donut & Performance Breakdown */}
         <div className="lg:col-span-4 space-y-5">
           {/* Card 1: Allocation Widget */}
-          <div className="getquin-card p-5">
+          <div ref={allocationCardRef} className="getquin-card p-5 flex flex-col">
             {/* Header: Title & Show More */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9] dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-[#0F172A]">Allocation</h3>
-                <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">Allocation</h3>
+                <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded">
                   PRO
                 </span>
               </div>
-              <Link href="/investments/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <Link href="/investments/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">
                 Show more
               </Link>
             </div>
 
             {/* Category Tabs */}
-            <div className="flex items-center gap-2 py-3 border-b border-[#F1F5F9] text-xs overflow-x-auto">
+            <div className="flex items-center gap-2 py-3 border-b border-[#F1F5F9] dark:border-slate-800 text-xs overflow-x-auto">
               <button
                 onClick={() => setAllocationTab("positions")}
                 className={`px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                   allocationTab === "positions"
                     ? "bg-[#0F172A] text-white"
-                    : "text-slate-500 hover:text-slate-800"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                 }`}
               >
                 Positions
@@ -788,7 +833,7 @@ export default function InvestmentsDashboardPage() {
                 className={`px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                   allocationTab === "sectors"
                     ? "bg-[#0F172A] text-white"
-                    : "text-slate-500 hover:text-slate-800"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                 }`}
               >
                 Sectors
@@ -798,7 +843,7 @@ export default function InvestmentsDashboardPage() {
                 className={`px-2.5 py-1 rounded-md font-bold transition-colors cursor-pointer ${
                   allocationTab === "type"
                     ? "bg-[#0F172A] text-white"
-                    : "text-slate-500 hover:text-slate-800"
+                    : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
                 }`}
               >
                 Asset Class
@@ -812,7 +857,26 @@ export default function InvestmentsDashboardPage() {
                 centerLabel="Total Net Worth"
                 centerValue={hideBalances ? "••••••" : formatMoney(totalNetWorthEUR, masterCurrency, 0)}
                 currency={masterCurrency}
+                height={allocationChartHeight}
               />
+            </div>
+
+            {/* Bottom Drag Resizer Handle */}
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleStartResize(e.clientY);
+              }}
+              onTouchStart={(e) => {
+                if (e.touches.length > 0) {
+                  handleStartResize(e.touches[0].clientY);
+                }
+              }}
+              data-testid="allocation-chart-resizer"
+              className="w-full flex items-center justify-center pt-2 pb-0.5 cursor-row-resize group select-none mt-1"
+              title="Drag to resize chart height"
+            >
+              <div className="w-12 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 group-hover:bg-slate-400 dark:group-hover:bg-slate-500 transition-colors" />
             </div>
           </div>
 

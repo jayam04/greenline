@@ -53,4 +53,21 @@ describe('AllocationChart Component (Task 5: Interactive Donut Hover)', () => {
     expect(screen.getByText('33.3%')).toBeInTheDocument();
     expect(screen.getByText('16.7%')).toBeInTheDocument();
   });
+
+  it('supports custom chart height and scales container accordingly', () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AllocationChart
+          allocation={mockAllocation}
+          centerLabel="Portfolio Value"
+          centerValue="$30,000"
+          currency="USD"
+          height={320}
+        />
+      </ThemeProvider>
+    );
+
+    const chartWrapper = container.querySelector('[data-testid="allocation-chart-wrapper"]');
+    expect(chartWrapper).toHaveStyle({ height: '320px' });
+  });
 });

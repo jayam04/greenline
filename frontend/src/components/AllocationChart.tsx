@@ -17,6 +17,7 @@ interface AllocationChartProps {
   centerValue?: string;
   currency?: string;
   showLegend?: boolean;
+  height?: number;
 }
 
 const GETQUIN_SPECTRUM_COLORS = [
@@ -45,6 +46,7 @@ export function AllocationChart({
   centerValue,
   currency = "USD",
   showLegend = false,
+  height = 224,
 }: AllocationChartProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -52,7 +54,11 @@ export function AllocationChart({
 
   if (!allocation || Object.keys(allocation).length === 0) {
     return (
-      <div className="h-56 flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium text-xs">
+      <div 
+        data-testid="allocation-chart-wrapper"
+        style={{ height: `${height}px` }}
+        className="w-full flex items-center justify-center text-slate-400 dark:text-slate-500 font-medium text-xs"
+      >
         No allocation data available.
       </div>
     );
@@ -70,9 +76,18 @@ export function AllocationChart({
     }))
     .sort((a, b) => b.value - a.value);
 
+  const chartHeight = height || 224;
+  const baseOuterRadius = Math.max(50, Math.floor(chartHeight / 2 - 16));
+  const outerRadius = hoveredItem ? baseOuterRadius + 3 : baseOuterRadius;
+  const innerRadius = Math.max(35, Math.floor(baseOuterRadius * 0.72));
+
   return (
     <div className="w-full flex flex-col items-center">
-      <div className="h-56 w-full relative flex items-center justify-center">
+      <div 
+        data-testid="allocation-chart-wrapper"
+        style={{ height: `${chartHeight}px` }}
+        className="w-full relative flex items-center justify-center"
+      >
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -81,8 +96,8 @@ export function AllocationChart({
               cy="50%"
               startAngle={90}
               endAngle={-270}
-              innerRadius={70}
-              outerRadius={hoveredItem ? 98 : 95}
+              innerRadius={innerRadius}
+              outerRadius={outerRadius}
               paddingAngle={2}
               dataKey="value"
               stroke={isDark ? "#121824" : "#FFFFFF"}
@@ -105,28 +120,6 @@ export function AllocationChart({
                 />
               ))}
             </Pie>
-            <Tooltip
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  const data = payload[0].payload as ChartItem;
-                  return (
-                    <div className="bg-[#0F172A] dark:bg-slate-900 border border-slate-700/50 rounded-xl px-3 py-2 text-white shadow-xl text-xs space-y-0.5">
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: data.color }} />
-                        <span>{data.name}</span>
-                      </div>
-                      <div className="text-slate-300 font-semibold tabular-nums">
-                        {formatMoney(data.value, currency)}
-                      </div>
-                      <div className="text-emerald-400 text-[10px] font-extrabold">
-                        {data.pct.toFixed(1)}% of portfolio
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
           </PieChart>
         </ResponsiveContainer>
 

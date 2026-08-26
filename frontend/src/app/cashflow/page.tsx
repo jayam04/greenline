@@ -119,7 +119,7 @@ export default function CashflowPage() {
       const [sumRes, sankeyRes, cfRes, tradeRes] = await Promise.all([
         apiFetch<CashflowSummary>(`/cashflow/summary${qs}`),
         apiFetch<SankeyDataResponse>(`/cashflow/sankey${sankeyQs}`),
-        apiFetch<CashflowTransactionItem[]>(`/cashflow${qs}`),
+        apiFetch<CashflowTransactionItem[]>(`/cashflow`),
         apiFetch<TransactionItem[]>("/transactions"),
       ]);
 
@@ -197,10 +197,6 @@ export default function CashflowPage() {
 
     // 2. Investment Trades
     tradeTxs.forEach((t) => {
-      // Filter by timeline date range if specified
-      if (startDate && t.transaction_date < startDate) return;
-      if (endDate && t.transaction_date > endDate) return;
-
       const ttype = (t.transaction_type || "").toLowerCase();
       const isBuy = ttype === "buy";
       const isSell = ttype === "sell";
@@ -241,7 +237,7 @@ export default function CashflowPage() {
         paymentsList.push({
           account_id: t.funding_account_id || t.account_id,
           account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
-          account_currency: t.account_currency || "USD",
+          account_currency: t.funding_account_currency || t.account_currency || "USD",
           amount: -netTotal,
         });
       } else if (isSell && t.quantity) {
@@ -255,14 +251,14 @@ export default function CashflowPage() {
         paymentsList.push({
           account_id: t.funding_account_id || t.account_id,
           account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
-          account_currency: t.account_currency || "USD",
+          account_currency: t.funding_account_currency || t.account_currency || "USD",
           amount: netTotal,
         });
       } else if (isDiv) {
         paymentsList.push({
           account_id: t.funding_account_id || t.account_id,
           account_name: fundingName,
-          account_currency: t.account_currency || "USD",
+          account_currency: t.funding_account_currency || t.account_currency || "USD",
           amount: netTotal,
         });
       } else {
@@ -345,11 +341,19 @@ export default function CashflowPage() {
     });
 
     return rows.sort((a, b) => b.date.localeCompare(a.date));
-  }, [cashflowTxs, tradeTxs, startDate, endDate]);
+  }, [cashflowTxs, tradeTxs]);
 
-  // Filtered transactions for the ledger
+  // Filtered transactions for the ledger (strictly last 30 days)
   const filteredTransactions = useMemo(() => {
+    const today = new Date();
+    const past30 = new Date(today);
+    past30.setDate(today.getDate() - 30);
+    const date30DaysAgoStr = past30.toISOString().split("T")[0];
+
     return unifiedRows.filter((tx) => {
+      // Limit to last 30 days
+      if (tx.date < date30DaysAgoStr) return false;
+
       // Label filter
       if (selectedLabelFilter !== "ALL") {
         const matchesLabel = tx.items.some(
@@ -631,7 +635,7 @@ export default function CashflowPage() {
                       {tx.notes && <div className="text-[10px] text-slate-400 font-normal mt-0.5">{tx.notes}</div>}
                     </td>
 
-                    {/* Payment Method(s) with Green/Red Inflow/Outflow Dots */}
+                    {/* Payment Method(s) with Inflow/Outflow / Trade Dots */}
                     <td className="py-3">
                       <div className="flex flex-col gap-1">
                         {tx.payments.map((p, pIdx) => {
@@ -640,7 +644,13 @@ export default function CashflowPage() {
                           const isHoldingDebit = p.holding_delta?.startsWith("-");
                           const isCredit = p.amount > 0 || Boolean(isHoldingCredit);
                           const isDebit = p.amount < 0 || Boolean(isHoldingDebit);
-                          const dotColor = isCredit ? "bg-emerald-500" : isDebit ? "bg-rose-500" : "bg-blue-500";
+                          const dotColor = tx.source === "investment"
+                            ? "bg-blue-500"
+                            : isCredit
+                            ? "bg-emerald-500"
+                            : isDebit
+                            ? "bg-rose-500"
+                            : "bg-blue-500";
                           const textColor = isCredit 
                             ? "text-emerald-600 dark:text-emerald-400" 
                             : isDebit 
@@ -684,6 +694,7 @@ export default function CashflowPage() {
                         ) : (
                           tx.items.map((itm, iIdx) => {
                             const lbl = itm.effective_label || "DISCRETIONARY";
+                            const badgeLetter = lbl === "LUXURY" ? "L" : lbl.charAt(0).toUpperCase();
                             const badgeColor =
                               lbl === "ESSENTIAL"
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -703,8 +714,11 @@ export default function CashflowPage() {
                                     • {itm.description}
                                   </span>
                                 )}
-                                <span className={`px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded-md border ${badgeColor}`}>
-                                  {lbl}
+                                <span 
+                                  title={lbl}
+                                  className={`w-4 h-4 flex items-center justify-center text-[9px] font-extrabold uppercase rounded-md border ${badgeColor}`}
+                                >
+                                  {badgeLetter}
                                 </span>
                                 {tx.items.length > 1 && (
                                   <span className={`font-bold text-[11px] tabular-nums ${itm.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>

@@ -32,6 +32,19 @@
 - in "http://localhost:3000/investments/holdings",
     - Allow users to see 1day change.
 
+#### Layer 1C: Basic UI
+- In /cashflows,
+    - Update "Income & Spend Transactions" table to only show transactions of last 30 days.
+    - Use Blue dot for stock transactions. For both accounts holdings and money duducted/account.
+    - IN "Income & Spend Transactions" table, shorten the names "ESSENTIAL", "DIS...", "INVESTEMENT", etc to first letters such as E, D, I, and L for Luxury.
+- Navigation Bar
+    - Remove sub-navigations from "Investments" and "Cashflow" from navbar, everyone can use new breadcrumb to navigate to sub-pages
+- In "http://localhost:3000/investments"
+    - The Allocation chart is showing assets as it should with middle changing when hovering over the section. However, hovering over a section also shows new pop-up with same information. Remove that.
+    - Allow users to change size of these charts by dragging bottom of div element below. Dragging up should reduce size of parent and so the doughnut chart, dragging down should increase size of the parent and doughnut chart. User should not be able to drag it more than it's width, as it will be useless.
+- In "http://localhost:3000/investments/holdings"
+    - If XIRR is greater than 1000%, show 999%+ instead of actual XIRR.
+
 #### Layer 2: Dividends
 - Dividends are not added automatically from Yahoo finance
 - Dividends are not added in Realized P&L.
@@ -99,3 +112,22 @@
   - [x] Remove static timeframe selector from Holdings card header on `/investments`
   - [x] Add `Total Return` vs `1D Return` toggle in `/investments` Holdings table
   - [x] Add `All-Time P&L` vs `1-Day Return` view switcher and sorting in `/investments/holdings`
+
+### Stack 3 / Layer 1C: Basic UI
+- [x] **Task 1: Cashflow Overview (`/cashflow`) 30-Day Window, Stock Dot Styling & Badge Abbreviation**
+  - [x] Filter "Income & Spend Transactions" table on `/cashflow` to last 30 days
+  - [x] Use blue dot (`bg-blue-500`) for all investment/stock trade payments (holdings and cash deductions)
+  - [x] Shorten classification badges to single letters (`E`, `D`, `I`, `L`) with tooltip hover
+- [x] **Task 2: Navbar Sub-Navigation Cleanup**
+  - [x] Remove dropdown toggle menus and chevron buttons from "Investments" and "Cashflow" in `Navbar.tsx`
+  - [x] Convert "Investments" and "Cashflow" to clean direct links matching primary navigation
+- [x] **Task 3: Allocation Chart Hover Tooltip Removal & Resizable Container**
+  - [x] Remove floating tooltip popup on hover in `AllocationChart.tsx` (retaining dynamic center donut content)
+  - [x] Add draggable bottom resize handle to adjust chart height dynamically
+  - [x] Restrict chart height so it does not exceed container width (`height <= width`)
+- [x] **Task 4: Holdings Page XIRR Capping (> 1000% -> `999%+`)**
+  - [x] Add `formatXirr` helper in `format.ts` capping values > 10.0 (1000%) to `999%+`
+  - [x] Apply `formatXirr` across `/investments/holdings` tables and summary metrics
+- [x] **Task 5: Comprehensive Automated Testing & Regression Verification**
+  - [x] Update frontend component tests for AllocationChart, HoldingsTable, and Cashflow
+  - [x] Full verification across `pytest`, `vitest`, `tsc`, `lint`, and `playwright`

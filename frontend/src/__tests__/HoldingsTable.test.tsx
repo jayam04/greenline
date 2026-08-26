@@ -218,4 +218,33 @@ describe('Holdings Production Page Component (src/app/holdings/page.tsx)', () =>
     const rows = screen.getAllByRole('row');
     expect(rows.length).toBeGreaterThan(2);
   });
+
+  it('caps XIRR exceeding 1000% to 999%+', async () => {
+    const summaryWithExtremeXirr = {
+      ...mockSummary,
+      top_holdings: [
+        {
+          ...mockSummary.top_holdings[0],
+          symbol: "MOON.BO",
+          xirr: 15.42, // 1542%
+        },
+      ],
+    };
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/portfolio/summary') return summaryWithExtremeXirr;
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return {};
+    });
+
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('MOON.BO')).toBeInTheDocument();
+    });
+
+    // Should display 999%+ instead of 1542.0%
+    expect(screen.getByText('999%+')).toBeInTheDocument();
+    expect(screen.queryByText('1542.0%')).not.toBeInTheDocument();
+  });
 });

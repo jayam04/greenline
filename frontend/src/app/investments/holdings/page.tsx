@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
-import { formatQty, formatNum, formatCleanMoney, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
+import { formatQty, formatNum, formatCleanMoney, formatXirr, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
 import { 
   ChevronDown, ChevronRight, Layers, ArrowUpRight, ArrowDownRight, 
   Plus, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2
@@ -592,12 +592,12 @@ export default function HoldingsPage() {
                             isPositiveXirr ? (
                               <span className="font-extrabold text-[#16A34A] flex items-center justify-end gap-0.5">
                                 <ArrowUpRight className="w-3 h-3" />
-                                {(Math.abs(h.xirr!) * 100).toFixed(1)}%
+                                {formatXirr(h.xirr)}
                               </span>
                             ) : (
                               <span className="font-extrabold text-[#DC2626] flex items-center justify-end gap-0.5">
                                 <ArrowDownRight className="w-3 h-3" />
-                                {(Math.abs(h.xirr!) * 100).toFixed(1)}%
+                                {formatXirr(h.xirr)}
                               </span>
                             )
                           ) : (
@@ -748,12 +748,12 @@ export default function HoldingsPage() {
                           isPositiveXirr ? (
                             <span className="font-extrabold text-[#16A34A] flex items-center justify-end gap-0.5">
                               <ArrowUpRight className="w-3 h-3" />
-                              {(Math.abs(c.xirr!) * 100).toFixed(1)}%
+                              {formatXirr(c.xirr)}
                             </span>
                           ) : (
                             <span className="font-extrabold text-[#DC2626] flex items-center justify-end gap-0.5">
                               <ArrowDownRight className="w-3 h-3" />
-                              {(Math.abs(c.xirr!) * 100).toFixed(1)}%
+                              {formatXirr(c.xirr)}
                             </span>
                           )
                         ) : (

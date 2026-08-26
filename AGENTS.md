@@ -44,3 +44,22 @@ All coding tasks, feature implementations, bug fixes, and refactoring **MUST** f
   - Stock P&L must incorporate purchase fees/taxes (cost basis) and sale fees/taxes.
   - Cash deductions on funded transactions must avoid double-counting fees/taxes when `total_amount` is already net.
 - **Account Valuations**: Demat accounts must reflect total valuation (`cash_balance + securities_value`).
+
+---
+
+## 4. Response Protocol: Mandatory Commit Message on File Edits
+
+Whenever you create, modify, rename, or delete ANY file in the workspace during a turn:
+
+1. **Mandatory Trailer**:
+   - You **MUST** end your final reply with the following trailer:
+     ```
+     Commit Message:
+     <Commit message to use>
+     ```
+2. **Formatting**:
+   - Follow Conventional Commits format: `<type>(<scope>): <summary>` (e.g., `feat(investments): ...`, `fix(cashflow): ...`, `test(portfolio): ...`, `refactor(accounts): ...`).
+   - Keep the message concise, imperative, and descriptive of the exact changes made in the turn.
+3. **Condition**:
+   - MUST be present whenever at least one file was created or modified.
+   - Omit ONLY if no files were touched in the turn (e.g., pure Q&A or planning mode).

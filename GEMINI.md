@@ -12,3 +12,10 @@ When responding to ANY coding task, bug report, or feature request:
    - Always run `PYTHONPATH=backend pytest backend/tests`
    - Always run `npx tsc --noEmit` in `frontend/`
 5. **Never finish a task without showing test execution output.**
+6. **Mandatory Commit Message Trailer**:
+   - If ANY file in the workspace was created, modified, or deleted during the turn, your reply MUST terminate with:
+     ```
+     Commit Message:
+     <Commit message to use>
+     ```
+     (using Conventional Commits format, e.g. `feat(...)`, `fix(...)`, `test(...)`).

@@ -12,13 +12,14 @@ This skill guides you through implementing features and fixes using a discipline
 
 ---
 
-## 4-Step TDD Workflow
+## 5-Step TDD Workflow
 
 ```mermaid
 graph LR
-    A[1. Requirement Spec] --> B[2. Write Failing Test (Red)]
-    B --> C[3. Implement Code (Green)]
-    C --> D[4. Refactor & Verify Suite]
+    A["1. Requirement Spec"] --> B["2. Write Failing Test (Red)"]
+    B --> C["3. Implement Code (Green)"]
+    C --> D["4. Refactor & Verify Suite"]
+    D --> E["5. Output Proposed Commit Message"]
 ```
 
 ### Step 1: Requirement & Test Specification
@@ -43,6 +44,13 @@ graph LR
   ```bash
   PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests
   cd frontend && npx tsc --noEmit
+  ```
+
+### Step 5: Output Proposed Commit Message
+- Whenever files are created or modified, append the mandatory commit message trailer at the very end of your reply:
+  ```text
+  Commit Message:
+  <Commit message to use>
   ```
 
 ---

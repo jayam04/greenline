@@ -103,3 +103,29 @@ async def run_db_migrations(session: AsyncSession) -> None:
             await session.commit()
         await mark_migration_applied(session, "v005_signed_cashflow_amounts", "Migrate legacy unsigned cashflow payments to signed convention")
         applied.add("v005_signed_cashflow_amounts")
+
+    # v006: Add source column to transactions table
+    if "v006_transaction_source_column" not in applied:
+        try:
+            await session.execute(text("ALTER TABLE transactions ADD COLUMN source VARCHAR DEFAULT 'manual'"))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+        await mark_migration_applied(session, "v006_transaction_source_column", "Add source column to transactions table")
+        applied.add("v006_transaction_source_column")
+
+    # v007: Add default_dividend_account_id to accounts table
+    if "v007_account_default_dividend_account" not in applied:
+        try:
+            await session.execute(text("ALTER TABLE accounts ADD COLUMN default_dividend_account_id INTEGER REFERENCES accounts(account_id) ON DELETE SET NULL"))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+        try:
+            await session.execute(text("CREATE INDEX IF NOT EXISTS ix_accounts_default_dividend_account_id ON accounts(default_dividend_account_id)"))
+            await session.commit()
+        except Exception:
+            await session.rollback()
+        await mark_migration_applied(session, "v007_account_default_dividend_account", "Add default_dividend_account_id to accounts table")
+        applied.add("v007_account_default_dividend_account")
+

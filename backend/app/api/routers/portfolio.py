@@ -113,6 +113,19 @@ async def get_portfolio_summary(
         for row in fees_res.all()
     }
 
+    # Pre-fetch net dividends grouped by asset
+    div_stmt = select(Transaction).where(
+        Transaction.transaction_type == "dividend",
+        Transaction.asset_id.isnot(None)
+    )
+    if account_id:
+        div_stmt = div_stmt.where(Transaction.account_id == account_id)
+    div_res = await db.execute(div_stmt)
+    div_map: Dict[int, float] = {}
+    for dtx in div_res.scalars().all():
+        net_div = max(0.0, float(dtx.total_amount or 0.0) - float(dtx.taxes or 0.0))
+        div_map[dtx.asset_id] = div_map.get(dtx.asset_id, 0.0) + net_div
+
     # Calculate Holdings
     holdings_list: List[HoldingSummary] = []
     
@@ -136,7 +149,7 @@ async def get_portfolio_summary(
         unrealized = curr_val - cost_sum
         unrealized_pct = (unrealized / cost_sum * 100.0) if cost_sum > 0 else 0.0
         
-        # Realized PnL & Cost Basis for this asset
+        # Realized PnL (Capital Gains from sales + Net Dividends) & Cost Basis for this asset
         rpnl_stmt = select(LotSale.realized_pnl, LotSale.cost_basis)\
             .join(Lot, LotSale.lot_id == Lot.lot_id)\
             .where(Lot.asset_id == aid)
@@ -144,8 +157,10 @@ async def get_portfolio_summary(
             rpnl_stmt = rpnl_stmt.where(Lot.account_id == account_id)
         rpnl_res = await db.execute(rpnl_stmt)
         rpnl_rows = rpnl_res.all()
-        realized_pnl_for_asset = sum(r[0] for r in rpnl_rows)
+        cap_gains_for_asset = sum(r[0] for r in rpnl_rows)
         cost_basis_sold_for_asset = sum(r[1] for r in rpnl_rows)
+        asset_net_div = div_map.get(aid, 0.0)
+        realized_pnl_for_asset = cap_gains_for_asset + asset_net_div
         realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0) if cost_basis_sold_for_asset > 0 else 0.0
         
         # Fetch fees and taxes for this asset from pre-fetched map
@@ -215,6 +230,8 @@ async def get_portfolio_summary(
             unrealized_pnl_pct=unrealized_pct,
             realized_pnl=realized_pnl_for_asset,
             realized_pnl_pct=realized_pnl_pct_for_asset,
+            dividend_income=asset_net_div,
+            capital_gains_realized=cap_gains_for_asset,
             fees_and_taxes=total_asset_fees_taxes,
             total_fees=asset_fees,
             total_taxes=asset_taxes,
@@ -251,8 +268,10 @@ async def get_portfolio_summary(
 
     open_asset_ids_set = set(asset_ids)
     closed_holdings_list: List[HoldingSummary] = []
+    closed_lot_rows = closed_lot_res.all()
+    closed_lot_aids = set(r[0] for r in closed_lot_rows)
 
-    for c_aid, c_rpnl, c_cost_basis, c_qty_sold in closed_lot_res.all():
+    for c_aid, c_rpnl, c_cost_basis, c_qty_sold in closed_lot_rows:
         if c_aid in open_asset_ids_set:
             continue
 
@@ -261,10 +280,12 @@ async def get_portfolio_summary(
         if not c_asset:
             continue
 
-        c_rpnl = c_rpnl or 0.0
+        c_cap_gains = c_rpnl or 0.0
         c_cost_basis = c_cost_basis or 0.0
         c_qty_sold = c_qty_sold or 0.0
-        c_rpnl_pct = (c_rpnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
+        c_net_div = div_map.get(c_aid, 0.0)
+        c_realized_pnl = c_cap_gains + c_net_div
+        c_rpnl_pct = (c_realized_pnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
 
         c_xirr = await calculate_xirr_for_scope(
             db=db,
@@ -304,23 +325,60 @@ async def get_portfolio_summary(
             current_value=0.0,
             unrealized_pnl=0.0,
             unrealized_pnl_pct=0.0,
-            realized_pnl=c_rpnl,
+            realized_pnl=c_realized_pnl,
             realized_pnl_pct=c_rpnl_pct,
+            dividend_income=c_net_div,
+            capital_gains_realized=c_cap_gains,
             fees_and_taxes=c_total_asset_fees_taxes,
             total_fees=c_asset_fees,
             total_taxes=c_asset_taxes,
-            net_pnl=c_rpnl,
+            net_pnl=c_realized_pnl,
             net_pnl_pct=c_rpnl_pct,
             xirr=c_xirr,
             open_lots=[]
         ))
 
-    # 4. Fetch Realized PnL total
-    tot_rpnl_stmt = select(LotSale.realized_pnl)
+    # Assets that only have dividends and no open lots or lot sales
+    for d_aid, d_amt in div_map.items():
+        if d_aid not in open_asset_ids_set and d_aid not in closed_lot_aids and d_amt > 0:
+            d_asset_res = await db.execute(select(Asset).where(Asset.asset_id == d_aid))
+            d_asset = d_asset_res.scalar_one_or_none()
+            if d_asset:
+                closed_holdings_list.append(HoldingSummary(
+                    asset_id=d_asset.asset_id,
+                    symbol=d_asset.symbol,
+                    name=d_asset.name,
+                    asset_type=d_asset.asset_type,
+                    sector=d_asset.sector,
+                    currency=d_asset.currency or "USD",
+                    quantity_held=0.0,
+                    avg_cost_price=0.0,
+                    total_cost=0.0,
+                    latest_price=0.0,
+                    current_value=0.0,
+                    unrealized_pnl=0.0,
+                    unrealized_pnl_pct=0.0,
+                    realized_pnl=d_amt,
+                    realized_pnl_pct=0.0,
+                    dividend_income=d_amt,
+                    capital_gains_realized=0.0,
+                    fees_and_taxes=0.0,
+                    total_fees=0.0,
+                    total_taxes=0.0,
+                    net_pnl=d_amt,
+                    net_pnl_pct=0.0,
+                    xirr=None,
+                    open_lots=[]
+                ))
+
+    # 4. Fetch Realized PnL total (Capital Gains + Net Dividends)
+    tot_cap_gains_stmt = select(LotSale.realized_pnl)
     if account_id:
-        tot_rpnl_stmt = tot_rpnl_stmt.join(Lot, LotSale.lot_id == Lot.lot_id).where(Lot.account_id == account_id)
-    tot_rpnl_res = await db.execute(tot_rpnl_stmt)
-    total_realized_pnl = sum(tot_rpnl_res.scalars().all())
+        tot_cap_gains_stmt = tot_cap_gains_stmt.join(Lot, LotSale.lot_id == Lot.lot_id).where(Lot.account_id == account_id)
+    tot_cap_gains_res = await db.execute(tot_cap_gains_stmt)
+    total_capital_gains = sum(tot_cap_gains_res.scalars().all())
+    total_net_dividends = sum(div_map.values())
+    total_realized_pnl = total_capital_gains + total_net_dividends
     
     # 5. Fetch Cash Balance using centralized funding-account & cashflow aware engine
     balances = await calculate_all_account_cash_balances(db)
@@ -389,6 +447,8 @@ async def get_portfolio_summary(
         cash_balance=cash_balance,
         total_realized_pnl=total_realized_pnl,
         total_unrealized_pnl=total_unrealized_pnl,
+        total_dividend_income=total_net_dividends,
+        total_capital_gains_realized=total_capital_gains,
         total_value_change_1d=total_value_change_1d,
         total_change_1d_pct=total_change_1d_pct,
         total_fees=total_fees,

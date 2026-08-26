@@ -29,6 +29,7 @@ describe('Breadcrumb Component (Task 1: Redesign & Sub-Page Navigation)', () => 
     // Sibling quick navigation pills on the right side
     expect(screen.getByRole('link', { name: /Overview/i })).toHaveAttribute('href', '/investments');
     expect(screen.getByRole('link', { name: /Transactions/i })).toHaveAttribute('href', '/investments/transactions');
+    expect(screen.getByRole('link', { name: /Discrepancies/i })).toHaveAttribute('href', '/investments/discrepancies');
   });
 
   it('renders hierarchical path and sub-page tabs for cashflow routes', () => {

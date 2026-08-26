@@ -15,6 +15,10 @@ interface Account {
   account_type: string;
   currency: string;
   current_balance?: number;
+  cash_balance?: number;
+  securities_value?: number;
+  default_dividend_account_id?: number | null;
+  default_dividend_account_name?: string | null;
   created_at?: string;
 }
 
@@ -311,11 +315,18 @@ export default function AccountsPage() {
                         {acc.account_type.replace(/_/g, " ")}
                       </span>
                     </div>
-                    {acc.broker_name && (
-                      <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate mt-0.5">
-                        {acc.broker_name}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                      {acc.broker_name && (
+                        <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500 truncate">
+                          {acc.broker_name}
+                        </p>
+                      )}
+                      {acc.default_dividend_account_name && (
+                        <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.2 rounded border border-emerald-200 dark:border-emerald-900/50">
+                          Div Bank: {acc.default_dividend_account_name}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -367,23 +378,23 @@ export default function AccountsPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-1 max-w-lg justify-end">
-            {/* Search Box */}
-            <div className="relative flex-1">
-              <Search className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Real-time Filter Bar */}
+            <div className="relative min-w-[220px]">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by ticker, company name, ISIN, sector..."
+                placeholder="Filter securities by name, ticker, ISIN..."
                 value={assetSearchQuery}
                 onChange={(e) => setAssetSearchQuery(e.target.value)}
-                className="w-full bg-[#F3F4F6] dark:bg-[#1A2333] text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 pl-8 pr-7 py-1.5 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 text-xs font-semibold rounded-xl pl-8 pr-3.5 py-1.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
               />
               {assetSearchQuery && (
                 <button
                   onClick={() => setAssetSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -393,7 +404,7 @@ export default function AccountsPage() {
                 setEditingAsset(null);
                 setIsAssetModalOpen(true);
               }}
-              className="btn-pill-black text-xs shrink-0 cursor-pointer"
+              className="btn-pill-black text-xs cursor-pointer shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Security</span>
@@ -401,79 +412,86 @@ export default function AccountsPage() {
           </div>
         </div>
 
-        {/* Securities Grid */}
-        {filteredAssets.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1 max-h-[600px] overflow-y-auto pr-1">
-            {filteredAssets.map((ast) => (
-              <div
-                key={ast.asset_id}
-                className="bg-white dark:bg-[#121824] rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-extrabold text-[#0F172A] dark:text-white text-xs uppercase">
-                        {ast.symbol}
-                      </span>
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">
-                        {ast.exchange || "GLOBAL"}
-                      </span>
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 rounded">
-                        {ast.asset_type}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+        {/* Security Master Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-[#F1F5F9] dark:border-[#1E293B] text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                <th className="py-2.5 px-3">Symbol / ISIN</th>
+                <th className="py-2.5 px-3">Asset Name</th>
+                <th className="py-2.5 px-3">Type</th>
+                <th className="py-2.5 px-3">Exchange</th>
+                <th className="py-2.5 px-3">Sector / Industry</th>
+                <th className="py-2.5 px-3 text-right">Currency</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#F1F5F9] dark:divide-[#1E293B]">
+              {filteredAssets.map((ast) => (
+                <tr key={ast.asset_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
+                  <td className="py-2.5 px-3 font-bold text-[#0F172A] dark:text-white">
+                    <div>{ast.symbol}</div>
+                    {ast.isin && (
+                      <div className="text-[10px] font-normal text-slate-400">{ast.isin}</div>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 font-semibold text-slate-700 dark:text-slate-300">
+                    {ast.name}
+                  </td>
+                  <td className="py-2.5 px-3 font-semibold">
+                    <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">
+                      {ast.asset_type}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 font-semibold text-slate-500 dark:text-slate-400">
+                    {ast.exchange || "US"}
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-500 dark:text-slate-400">
+                    {ast.sector ? (
+                      <div>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">{ast.sector}</span>
+                        {ast.industry && <span className="text-[10px] block opacity-75">{ast.industry}</span>}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-bold text-slate-600 dark:text-slate-400 uppercase">
+                    {ast.currency || "USD"}
+                  </td>
+                  <td className="py-2.5 px-3 text-right">
+                    <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100">
                       <button
                         onClick={() => {
                           setEditingAsset(ast);
                           setIsAssetModalOpen(true);
                         }}
-                        className="p-1 text-slate-400 dark:text-slate-500 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer"
+                        className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
                         title="Edit security"
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDeleteAsset(ast.asset_id)}
-                        className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded cursor-pointer"
+                        className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded-md transition-colors cursor-pointer"
                         title="Delete security"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </div>
-
-                  <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200 line-clamp-1">
-                    {ast.name}
-                  </h4>
-
-                  <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
-                    <span className="line-clamp-1 font-medium">
-                      {ast.sector ? `${ast.sector}` : "General"}
-                      {ast.industry ? ` • ${ast.industry}` : ""}
-                    </span>
-                    {ast.isin && (
-                      <span className="font-mono text-[10px] text-slate-400 dark:text-slate-500 shrink-0 ml-2">
-                        {ast.isin}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-10 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-800/20">
-            <Search className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-            <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
-              {assetSearchQuery ? `No securities matching "${assetSearchQuery}"` : "No Securities in Master"}
-            </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 max-w-sm mx-auto">
-              Add your stocks, ETFs, or mutual funds to the security master to record transactions.
-            </p>
-          </div>
-        )}
+                  </td>
+                </tr>
+              ))}
+              {filteredAssets.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400 font-medium">
+                    No matching securities found in master directory.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* POPUP MODAL: Account Modal */}
@@ -481,6 +499,7 @@ export default function AccountsPage() {
         <AccountModal
           isOpen={isAccountModalOpen}
           initialData={editingAccount}
+          allAccounts={accounts}
           onClose={() => {
             setIsAccountModalOpen(false);
             setEditingAccount(null);
@@ -519,15 +538,19 @@ export default function AccountsPage() {
 interface AccountModalProps {
   isOpen: boolean;
   initialData: Account | null;
+  allAccounts?: Account[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function AccountModal({ isOpen, initialData, onClose, onSuccess }: AccountModalProps) {
+export function AccountModal({ isOpen, initialData, allAccounts = [], onClose, onSuccess }: AccountModalProps) {
   const [name, setName] = useState(initialData?.account_name || "");
   const [broker, setBroker] = useState(initialData?.broker_name || "");
   const [type, setType] = useState(initialData?.account_type || "demat");
   const [currency, setCurrency] = useState(initialData?.currency || "USD");
+  const [defaultDividendAccountId, setDefaultDividendAccountId] = useState<number | "">(
+    initialData?.default_dividend_account_id ?? ""
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -553,11 +576,12 @@ export function AccountModal({ isOpen, initialData, onClose, onSuccess }: Accoun
       setLoading(true);
       setError("");
 
-      const payload = {
+      const payload: any = {
         account_name: name.trim(),
         broker_name: broker.trim() || null,
         account_type: type,
         currency: currency.toUpperCase(),
+        default_dividend_account_id: type === "demat" && defaultDividendAccountId ? Number(defaultDividendAccountId) : null,
       };
 
       if (initialData) {
@@ -684,6 +708,32 @@ export function AccountModal({ isOpen, initialData, onClose, onSuccess }: Accoun
               <option value="SGD">SGD (S$ - Singapore Dollar)</option>
             </select>
           </div>
+
+          {type === "demat" && (
+            <div>
+              <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5 flex items-center justify-between">
+                <span>Default Dividend Bank Account</span>
+                <span className="text-[10px] text-slate-400 font-normal">Optional</span>
+              </label>
+              <select
+                value={defaultDividendAccountId}
+                onChange={(e) => setDefaultDividendAccountId(e.target.value ? Number(e.target.value) : "")}
+                className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-xl px-3 py-2.5 border border-slate-200 dark:border-slate-800 focus:border-slate-400 dark:focus:border-slate-600 focus:bg-white dark:focus:bg-[#151D2B] focus:outline-none transition-all"
+              >
+                <option value="">-- None (Manual Linking) --</option>
+                {allAccounts
+                  .filter((a) => a.account_type === "bank" && a.account_id !== initialData?.account_id)
+                  .map((b) => (
+                    <option key={b.account_id} value={b.account_id}>
+                      {b.account_name} ({b.currency})
+                    </option>
+                  ))}
+              </select>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                Dividends for stocks in this Demat account will be auto-suggested to deposit into this bank account.
+              </p>
+            </div>
+          )}
 
           <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
             <button

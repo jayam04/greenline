@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, Home, Layers, Receipt, FolderTree, BarChart3, TrendingUp, Settings, Building2 } from "lucide-react";
+import { ChevronRight, Home, Layers, Receipt, FolderTree, BarChart3, TrendingUp, Settings, Building2, AlertCircle } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 interface PathSegment {
   label: string;
@@ -18,6 +19,15 @@ interface SiblingTab {
 
 export function Breadcrumb() {
   const pathname = usePathname();
+  const [discrepancyCount, setDiscrepancyCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (pathname && pathname.startsWith("/investments")) {
+      apiFetch<{ total_count: number }>("/discrepancies")
+        .then((res) => setDiscrepancyCount(res.total_count || 0))
+        .catch(() => {});
+    }
+  }, [pathname]);
 
   if (pathname === "/login") return null;
 
@@ -42,12 +52,19 @@ export function Breadcrumb() {
         pathSegments.push({ label: "Holdings" });
       } else if (pathname === "/investments/transactions") {
         pathSegments.push({ label: "Transactions" });
+      } else if (pathname === "/investments/discrepancies") {
+        pathSegments.push({ label: "Discrepancies" });
       }
     }
     siblingTabs = [
       { label: "Overview", href: "/investments", icon: <BarChart3 className="w-3 h-3" /> },
       { label: "Holdings", href: "/investments/holdings", icon: <Layers className="w-3 h-3" /> },
       { label: "Transactions", href: "/investments/transactions", icon: <Receipt className="w-3 h-3" /> },
+      { 
+        label: discrepancyCount > 0 ? `Discrepancies (${discrepancyCount})` : "Discrepancies", 
+        href: "/investments/discrepancies", 
+        icon: <AlertCircle className="w-3 h-3" /> 
+      },
     ];
   } else if (pathname.startsWith("/cashflow") || pathname === "/categories") {
     pathSegments.push({ label: "Net worth", href: "/" });

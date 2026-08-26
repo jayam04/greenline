@@ -22,11 +22,13 @@ class Account(Base):
     broker_name = Column(String, nullable=True)
     account_type = Column(String, nullable=False) # demat, mutual_fund, pf, nps, crypto_exchange, bank
     currency = Column(String(3), default="USD")
+    default_dividend_account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(Date, default=datetime.date.today)
 
     transactions = relationship("Transaction", back_populates="account", foreign_keys="[Transaction.account_id]", cascade="all, delete-orphan")
     lots = relationship("Lot", back_populates="account", cascade="all, delete-orphan")
     dividends = relationship("Dividend", back_populates="account", cascade="all, delete-orphan")
+    default_dividend_account = relationship("Account", foreign_keys=[default_dividend_account_id], remote_side="Account.account_id")
 
 class Asset(Base):
     __tablename__ = "assets"
@@ -61,6 +63,7 @@ class Transaction(Base):
     total_amount = Column(Float, nullable=False) # quantity * price +- charges
     fees = Column(Float, default=0.0)
     taxes = Column(Float, default=0.0)
+    source = Column(String, default="manual") # manual, yfinance_auto, csv_import
     notes = Column(Text, nullable=True)
 
     account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])

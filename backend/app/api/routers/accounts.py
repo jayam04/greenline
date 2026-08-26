@@ -119,6 +119,7 @@ async def list_accounts(
     accounts = res.scalars().all()
     details = await calculate_all_account_details(db)
 
+    acc_map = {a.account_id: a for a in accounts}
     results = []
     for a in accounts:
         resp = AccountResponse.model_validate(a)
@@ -126,6 +127,8 @@ async def list_accounts(
         resp.cash_balance = d["cash_balance"]
         resp.securities_value = d["securities_value"]
         resp.current_balance = d["current_balance"]
+        if a.default_dividend_account_id and a.default_dividend_account_id in acc_map:
+            resp.default_dividend_account_name = acc_map[a.default_dividend_account_id].account_name
         results.append(resp)
 
     return results
@@ -164,6 +167,10 @@ async def get_account(
     resp.cash_balance = d["cash_balance"]
     resp.securities_value = d["securities_value"]
     resp.current_balance = d["current_balance"]
+    if account.default_dividend_account_id:
+        def_acc = await db.get(Account, account.default_dividend_account_id)
+        if def_acc:
+            resp.default_dividend_account_name = def_acc.account_name
     return resp
 
 @router.put("/{account_id}", response_model=AccountResponse)
@@ -191,6 +198,10 @@ async def update_account(
     resp.cash_balance = d["cash_balance"]
     resp.securities_value = d["securities_value"]
     resp.current_balance = d["current_balance"]
+    if account.default_dividend_account_id:
+        def_acc = await db.get(Account, account.default_dividend_account_id)
+        if def_acc:
+            resp.default_dividend_account_name = def_acc.account_name
     return resp
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

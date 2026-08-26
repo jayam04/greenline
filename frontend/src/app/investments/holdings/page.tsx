@@ -38,6 +38,8 @@ interface Holding {
   unrealized_pnl_pct: number;
   realized_pnl: number;
   realized_pnl_pct: number;
+  dividend_income?: number;
+  capital_gains_realized?: number;
   fees_and_taxes?: number;
   total_fees?: number;
   total_taxes?: number;
@@ -54,6 +56,8 @@ interface PortfolioSummary {
   cash_balance: number;
   total_realized_pnl: number;
   total_unrealized_pnl: number;
+  total_dividend_income?: number;
+  total_capital_gains_realized?: number;
   total_value_change_1d?: number;
   total_change_1d_pct?: number;
   total_fees?: number;
@@ -607,39 +611,69 @@ export default function HoldingsPage() {
                       </tr>
 
                       {isExpanded && (
-                        <tr className="bg-slate-50/70">
+                        <tr className="bg-slate-50/70 dark:bg-slate-800/40">
                           <td colSpan={10} className="p-3">
-                            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-                              <h4 className="text-xs font-bold text-[#0F172A] uppercase tracking-wider mb-2.5 flex items-center gap-2">
-                                <Layers className="w-3.5 h-3.5 text-blue-600" />
-                                FIFO Lots Breakdown for {h.symbol}
-                              </h4>
-                              {h.open_lots && h.open_lots.length > 0 ? (
-                                <table className="w-full text-left text-xs tabular-nums">
-                                  <thead>
-                                    <tr className="text-slate-400 text-[11px] font-semibold border-b border-slate-100">
-                                      <th className="py-1.5 px-2">Lot ID</th>
-                                      <th className="py-1.5 px-2">Buy Date</th>
-                                      <th className="py-1.5 px-2 text-right">Original Qty</th>
-                                      <th className="py-1.5 px-2 text-right">Remaining Qty</th>
-                                      <th className="py-1.5 px-2 text-right">Unit Cost Basis</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {h.open_lots.map((lot) => (
-                                      <tr key={lot.lot_id} className="hover:bg-slate-50">
-                                        <td className="py-1.5 px-2 font-bold text-slate-700">#{lot.lot_id}</td>
-                                        <td className="py-1.5 px-2 text-slate-600">{lot.buy_date}</td>
-                                        <td className="py-1.5 px-2 text-right">{formatQty(lot.quantity_original)}</td>
-                                        <td className="py-1.5 px-2 text-right font-bold text-[#16A34A]">{formatQty(lot.quantity_remaining)}</td>
-                                        <td className="py-1.5 px-2 text-right font-bold">{formatCleanMoney(lot.cost_per_unit, h.currency)}</td>
+                            <div className="bg-white dark:bg-[#121824] rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs space-y-4">
+                              {/* Income & PnL Breakdown Bar */}
+                              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 text-xs">
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Realized Capital Gains</span>
+                                  <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                                    {formatCleanMoney(h.capital_gains_realized || 0, h.currency)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Net Dividends</span>
+                                  <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                                    +{formatCleanMoney(h.dividend_income || 0, h.currency)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Total Realized P&L</span>
+                                  <span className={`font-extrabold ${(h.realized_pnl || 0) >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                                    {formatCleanMoney(h.realized_pnl || 0, h.currency)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Fees & Withheld Taxes</span>
+                                  <span className="font-semibold text-slate-500 dark:text-slate-400">
+                                    {formatCleanMoney((h.total_fees || 0) + (h.total_taxes || 0), h.currency)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <h4 className="text-xs font-bold text-[#0F172A] dark:text-white uppercase tracking-wider mb-2.5 flex items-center gap-2">
+                                  <Layers className="w-3.5 h-3.5 text-blue-600" />
+                                  FIFO Lots Breakdown for {h.symbol}
+                                </h4>
+                                {h.open_lots && h.open_lots.length > 0 ? (
+                                  <table className="w-full text-left text-xs tabular-nums">
+                                    <thead>
+                                      <tr className="text-slate-400 text-[11px] font-semibold border-b border-slate-100 dark:border-slate-800">
+                                        <th className="py-1.5 px-2">Lot ID</th>
+                                        <th className="py-1.5 px-2">Buy Date</th>
+                                        <th className="py-1.5 px-2 text-right">Original Qty</th>
+                                        <th className="py-1.5 px-2 text-right">Remaining Qty</th>
+                                        <th className="py-1.5 px-2 text-right">Unit Cost Basis</th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              ) : (
-                                <div className="text-xs text-slate-400 italic">No open lots remaining.</div>
-                              )}
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                      {h.open_lots.map((lot) => (
+                                        <tr key={lot.lot_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                          <td className="py-1.5 px-2 font-bold text-slate-700 dark:text-slate-300">#{lot.lot_id}</td>
+                                          <td className="py-1.5 px-2 text-slate-600 dark:text-slate-400">{lot.buy_date}</td>
+                                          <td className="py-1.5 px-2 text-right">{formatQty(lot.quantity_original)}</td>
+                                          <td className="py-1.5 px-2 text-right font-bold text-[#16A34A] dark:text-emerald-400">{formatQty(lot.quantity_remaining)}</td>
+                                          <td className="py-1.5 px-2 text-right font-bold">{formatCleanMoney(lot.cost_per_unit, h.currency)}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                  <div className="text-xs text-slate-400 italic">No open lots remaining.</div>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>

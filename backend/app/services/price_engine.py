@@ -85,6 +85,13 @@ async def update_prices_for_assets(
                     ph.source = "yfinance"
 
             await db.commit()
+
+            # Also sync dividends for this asset
+            try:
+                from app.services.dividend_engine import sync_dividends_for_asset
+                await sync_dividends_for_asset(db, asset.asset_id)
+            except Exception as de:
+                print(f"Error syncing dividends for symbol {symbol}: {de}")
         except Exception as e:
             await db.rollback()
             print(f"Error fetching price for symbol {symbol}: {e}")

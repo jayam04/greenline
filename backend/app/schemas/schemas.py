@@ -26,6 +26,7 @@ class AccountBase(BaseModel):
     broker_name: Optional[str] = None
     account_type: str # demat, mutual_fund, pf, nps, crypto_exchange, bank
     currency: str = "USD"
+    default_dividend_account_id: Optional[int] = None
 
 class AccountCreate(AccountBase):
     pass
@@ -35,6 +36,7 @@ class AccountUpdate(BaseModel):
     broker_name: Optional[str] = None
     account_type: Optional[str] = None
     currency: Optional[str] = None
+    default_dividend_account_id: Optional[int] = None
 
 class AccountResponse(AccountBase):
     account_id: int
@@ -42,6 +44,7 @@ class AccountResponse(AccountBase):
     current_balance: Optional[float] = 0.0
     cash_balance: Optional[float] = 0.0
     securities_value: Optional[float] = 0.0
+    default_dividend_account_name: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 # Asset Schemas
@@ -84,6 +87,7 @@ class TransactionCreate(BaseModel):
     total_amount: float
     fees: float = 0.0
     taxes: float = 0.0
+    source: Optional[str] = "manual"
     notes: Optional[str] = None
 
 class TransactionUpdate(BaseModel):
@@ -97,6 +101,7 @@ class TransactionUpdate(BaseModel):
     total_amount: Optional[float] = None
     fees: Optional[float] = None
     taxes: Optional[float] = None
+    source: Optional[str] = None
     notes: Optional[str] = None
 
 class TransactionResponse(TransactionCreate):
@@ -107,6 +112,7 @@ class TransactionResponse(TransactionCreate):
     funding_account_currency: Optional[str] = None
     asset_symbol: Optional[str] = None
     asset_name: Optional[str] = None
+    source: str = "manual"
     model_config = ConfigDict(from_attributes=True)
 
 # Lot & LotSale Schemas
@@ -196,6 +202,8 @@ class HoldingSummary(BaseModel):
     unrealized_pnl_pct: float
     realized_pnl: float = 0.0
     realized_pnl_pct: float = 0.0
+    dividend_income: float = 0.0
+    capital_gains_realized: float = 0.0
     fees_and_taxes: float = 0.0
     total_fees: float = 0.0
     total_taxes: float = 0.0
@@ -211,6 +219,8 @@ class PortfolioSummaryResponse(BaseModel):
     cash_balance: float
     total_realized_pnl: float
     total_unrealized_pnl: float
+    total_dividend_income: float = 0.0
+    total_capital_gains_realized: float = 0.0
     total_value_change_1d: float = 0.0
     total_change_1d_pct: float = 0.0
     total_fees: float = 0.0
@@ -220,6 +230,44 @@ class PortfolioSummaryResponse(BaseModel):
     sector_allocation: dict = {}
     top_holdings: List[HoldingSummary]
     closed_holdings: List[HoldingSummary] = []
+
+# Discrepancy Schemas
+class DiscrepancyItemResponse(BaseModel):
+    transaction_id: int
+    account_id: int
+    account_name: str
+    asset_id: int
+    asset_symbol: str
+    asset_name: Optional[str] = None
+    currency: str
+    transaction_date: datetime.date
+    quantity: float
+    price_per_unit: float
+    total_amount: float
+    taxes: float
+    net_amount: float
+    source: str
+    suggested_funding_account_id: Optional[int] = None
+    suggested_funding_account_name: Optional[str] = None
+    notes: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class DiscrepancySummaryResponse(BaseModel):
+    total_count: int
+    total_unlinked_amount: float
+    auto_linkable_count: int
+    unlinked_items: List[DiscrepancyItemResponse]
+
+class DiscrepancyResolveItem(BaseModel):
+    transaction_id: int
+    funding_account_id: int
+    taxes: Optional[float] = None
+    notes: Optional[str] = None
+
+class DiscrepancyResolveRequest(BaseModel):
+    resolutions: List[DiscrepancyResolveItem]
+    set_default_for_demat: Optional[Dict[str, int]] = None
+
 
 class AnnualSnapshotResponse(BaseModel):
     year_label: str

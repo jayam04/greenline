@@ -31,7 +31,7 @@ const mockAccounts: AccountItem[] = [
 ];
 
 describe('AccountCustomizationModal Component', () => {
-  it('renders all accounts and handles visibility toggle and reordering', () => {
+  it('renders all accounts and handles visibility toggle, reordering, and zero-balance toggle', () => {
     const handleClose = vi.fn();
     const handleSave = vi.fn();
 
@@ -41,6 +41,7 @@ describe('AccountCustomizationModal Component', () => {
         accounts={mockAccounts}
         initialOrder={[1, 2, 3]}
         initialHidden={[2]}
+        initialHideZeroBalance={false}
         onClose={handleClose}
         onSave={handleSave}
       />
@@ -55,9 +56,6 @@ describe('AccountCustomizationModal Component', () => {
     expect(screen.getByText('Jupiter Bank')).toBeInTheDocument();
 
     // Check visibility toggle button for Zerodha Demat (should be currently hidden)
-    const zerodhaRow = screen.getByText('Zerodha Demat').closest('li');
-    expect(zerodhaRow).toBeInTheDocument();
-
     const visibilityButtons = screen.getAllByRole('button', { name: /toggle visibility/i });
     expect(visibilityButtons.length).toBe(3);
 
@@ -68,13 +66,19 @@ describe('AccountCustomizationModal Component', () => {
     const moveUpButtons = screen.getAllByRole('button', { name: /move up/i });
     fireEvent.click(moveUpButtons[2]); // Move 3rd item up
 
+    // Toggle hide 0 balance accounts checkbox
+    const zeroBalanceCheckbox = screen.getByLabelText(/Hide accounts with 0 balance/i);
+    expect(zeroBalanceCheckbox).not.toBeChecked();
+    fireEvent.click(zeroBalanceCheckbox);
+    expect(zeroBalanceCheckbox).toBeChecked();
+
     // Click Save Changes
     const saveButton = screen.getByRole('button', { name: /save changes/i });
     fireEvent.click(saveButton);
 
     expect(handleSave).toHaveBeenCalledTimes(1);
-    // After moving index 2 (account 3) up, the order should be [1, 3, 2] and hidden should be []
-    expect(handleSave).toHaveBeenCalledWith([1, 3, 2], []);
+    // After moving index 2 (account 3) up, order should be [1, 3, 2], hidden should be [], and hideZeroBalance true
+    expect(handleSave).toHaveBeenCalledWith([1, 3, 2], [], true);
   });
 
   it('resets to default order and unhides all accounts when Reset is clicked', () => {
@@ -87,6 +91,7 @@ describe('AccountCustomizationModal Component', () => {
         accounts={mockAccounts}
         initialOrder={[3, 2, 1]}
         initialHidden={[1, 3]}
+        initialHideZeroBalance={true}
         onClose={handleClose}
         onSave={handleSave}
       />
@@ -98,8 +103,8 @@ describe('AccountCustomizationModal Component', () => {
     const saveButton = screen.getByRole('button', { name: /save changes/i });
     fireEvent.click(saveButton);
 
-    // Should be restored to original accounts order [1, 2, 3] and empty hidden list []
-    expect(handleSave).toHaveBeenCalledWith([1, 2, 3], []);
+    // Should be restored to original accounts order [1, 2, 3], empty hidden list [], and hideZeroBalance false
+    expect(handleSave).toHaveBeenCalledWith([1, 2, 3], [], false);
   });
 
   it('closes on Escape key press', () => {

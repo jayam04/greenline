@@ -61,19 +61,6 @@ export function Navbar() {
     router.push("/login");
   };
 
-  const getBreadcrumb = () => {
-    if (pathname === "/") return "Net worth > Overview & Accounts";
-    if (pathname === "/investments") return "Investments > Portfolio Dashboard";
-    if (pathname === "/investments/holdings") return "Investments > Positions & Holdings";
-    if (pathname === "/investments/transactions") return "Investments > Transaction Ledger";
-    if (pathname === "/cashflow") return "Cashflow > Income, Spends & Sankey Flow";
-    if (pathname === "/cashflow/transactions") return "Cashflow > Transactions & Cash Ledger";
-    if (pathname === "/categories") return "Cashflow > Category Hierarchy & Labels";
-    if (pathname === "/accounts") return "Master > Accounts & Securities Master";
-    if (pathname === "/settings") return "Settings > Preferences & Configuration";
-    return "Net worth > Overview";
-  };
-
   return (
     <header className="sticky top-0 z-50 bg-white dark:bg-[#0E1522] border-b border-[#E5E7EB] dark:border-[#1E293B] font-sans transition-colors">
       {/* Primary Top Bar */}
@@ -357,13 +344,6 @@ export function Navbar() {
               </div>
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Sub-header Breadcrumb Bar */}
-      <div className="bg-[#F8F9FA] dark:bg-[#0B0F17] border-t border-[#E5E7EB]/80 dark:border-[#1E293B] px-4 lg:px-6 py-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 max-w-[1600px] mx-auto flex items-center justify-between transition-colors">
-        <div className="flex items-center gap-1">
-          <span>{getBreadcrumb()}</span>
         </div>
       </div>
     </header>

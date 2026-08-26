@@ -243,8 +243,9 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
     await expect(page.getByText('Monthly Salary')).toBeVisible();
     await expect(page.getByText('Base Salary')).toBeVisible();
 
-    // Investment trade directly in unified ledger
-    await expect(page.getByText('GROWW.BO')).toBeVisible();
+    // Investment trade directly in unified ledger with holding delta
+    await expect(page.getByText('GROWW.BO', { exact: true })).toBeVisible();
+    await expect(page.getByText('(+186 GROWW.BO)')).toBeVisible();
     await expect(page.getByText('Stock & ETF Purchases')).toBeVisible();
     await expect(page.getByText('Investment Fees & Charges')).toBeVisible();
     await expect(page.getByText('Taxes & Duties')).toBeVisible();

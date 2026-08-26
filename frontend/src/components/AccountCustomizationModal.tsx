@@ -20,8 +20,9 @@ export interface AccountCustomizationModalProps {
   accounts: AccountItem[];
   initialOrder: number[];
   initialHidden: number[];
+  initialHideZeroBalance?: boolean;
   onClose: () => void;
-  onSave: (order: number[], hidden: number[]) => void;
+  onSave: (order: number[], hidden: number[], hideZeroBalance: boolean) => void;
 }
 
 export function AccountCustomizationModal({
@@ -29,11 +30,13 @@ export function AccountCustomizationModal({
   accounts,
   initialOrder,
   initialHidden,
+  initialHideZeroBalance = false,
   onClose,
   onSave,
 }: AccountCustomizationModalProps) {
   const [orderedAccounts, setOrderedAccounts] = useState<AccountItem[]>([]);
   const [hiddenSet, setHiddenSet] = useState<Set<number>>(new Set());
+  const [hideZeroBalance, setHideZeroBalance] = useState<boolean>(initialHideZeroBalance);
 
   useEffect(() => {
     if (isOpen) {
@@ -49,8 +52,9 @@ export function AccountCustomizationModal({
 
       setOrderedAccounts(sorted);
       setHiddenSet(new Set(initialHidden));
+      setHideZeroBalance(Boolean(initialHideZeroBalance));
     }
-  }, [isOpen, accounts, initialOrder, initialHidden]);
+  }, [isOpen, accounts, initialOrder, initialHidden, initialHideZeroBalance]);
 
   // Handle escape key
   useEffect(() => {
@@ -96,11 +100,12 @@ export function AccountCustomizationModal({
   const handleReset = () => {
     setOrderedAccounts([...accounts]);
     setHiddenSet(new Set());
+    setHideZeroBalance(false);
   };
 
   const handleSave = () => {
     const newOrder = orderedAccounts.map((a) => a.account_id);
-    onSave(newOrder, Array.from(hiddenSet));
+    onSave(newOrder, Array.from(hiddenSet), hideZeroBalance);
     onClose();
   };
 
@@ -128,6 +133,19 @@ export function AccountCustomizationModal({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Global Options */}
+        <div className="px-5 pt-3.5 pb-1">
+          <label className="flex items-center gap-2.5 p-2.5 bg-slate-50 dark:bg-slate-900/60 hover:bg-slate-100/80 dark:hover:bg-slate-900 rounded-xl border border-slate-200/70 dark:border-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 cursor-pointer select-none transition-colors">
+            <input
+              type="checkbox"
+              checked={hideZeroBalance}
+              onChange={(e) => setHideZeroBalance(e.target.checked)}
+              className="w-4 h-4 rounded text-[#0F172A] dark:text-blue-500 focus:ring-0 cursor-pointer"
+            />
+            <span>Hide accounts with 0 balance</span>
+          </label>
         </div>
 
         {/* Account List */}

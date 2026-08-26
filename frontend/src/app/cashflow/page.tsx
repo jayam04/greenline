@@ -36,6 +36,7 @@ interface UnifiedRowItem {
     account_name: string;
     account_currency: string;
     amount: number;
+    holding_delta?: string;
   }[];
   items: {
     category_name: string;
@@ -75,6 +76,10 @@ export default function CashflowPage() {
   const { startDate, endDate } = useMemo(() => {
     return getTimelineDateRange(selectedTimeline);
   }, [selectedTimeline]);
+
+  useEffect(() => {
+    document.title = "Cashflow · greenline";
+  }, []);
 
   useEffect(() => {
     loadAllData();
@@ -225,12 +230,40 @@ export default function CashflowPage() {
       const signedPaymentAmt = isIncome ? netTotal : -netTotal;
 
       const paymentsList = [];
-      if (fundingName !== holdingName) {
+      if (isBuy && t.quantity) {
+        paymentsList.push({
+          account_id: t.account_id,
+          account_name: `${holdingName} (Holding)`,
+          account_currency: t.account_currency || "USD",
+          amount: 0,
+          holding_delta: `+${t.quantity} ${t.asset_symbol || "shares"}`
+        });
         paymentsList.push({
           account_id: t.funding_account_id || t.account_id,
-          account_name: `${fundingName} (Funding)`,
+          account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
           account_currency: t.account_currency || "USD",
-          amount: signedPaymentAmt,
+          amount: -netTotal,
+        });
+      } else if (isSell && t.quantity) {
+        paymentsList.push({
+          account_id: t.account_id,
+          account_name: `${holdingName} (Holding)`,
+          account_currency: t.account_currency || "USD",
+          amount: 0,
+          holding_delta: `-${t.quantity} ${t.asset_symbol || "shares"}`
+        });
+        paymentsList.push({
+          account_id: t.funding_account_id || t.account_id,
+          account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
+          account_currency: t.account_currency || "USD",
+          amount: netTotal,
+        });
+      } else if (isDiv) {
+        paymentsList.push({
+          account_id: t.funding_account_id || t.account_id,
+          account_name: fundingName,
+          account_currency: t.account_currency || "USD",
+          amount: netTotal,
         });
       } else {
         paymentsList.push({
@@ -603,20 +636,31 @@ export default function CashflowPage() {
                       <div className="flex flex-col gap-1">
                         {tx.payments.map((p, pIdx) => {
                           const pCurr = p.account_currency || tx.currency || "EUR";
-                          const isCredit = p.amount > 0;
-                          const dotColor = isCredit ? "bg-emerald-500" : "bg-rose-500";
+                          const isHoldingCredit = p.holding_delta?.startsWith("+");
+                          const isHoldingDebit = p.holding_delta?.startsWith("-");
+                          const isCredit = p.amount > 0 || Boolean(isHoldingCredit);
+                          const isDebit = p.amount < 0 || Boolean(isHoldingDebit);
+                          const dotColor = isCredit ? "bg-emerald-500" : isDebit ? "bg-rose-500" : "bg-blue-500";
                           const textColor = isCredit 
                             ? "text-emerald-600 dark:text-emerald-400" 
-                            : "text-rose-600 dark:text-rose-400";
-                          const signPrefix = isCredit ? "+" : "-";
+                            : isDebit 
+                            ? "text-rose-600 dark:text-rose-400" 
+                            : "text-slate-400";
+                          const signPrefix = p.amount > 0 ? "+" : p.amount < 0 ? "-" : "";
 
                           return (
                             <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                               <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
                               <span>{p.account_name}</span>
-                              <span className={`tabular-nums font-bold ${textColor}`}>
-                                ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
-                              </span>
+                              {p.holding_delta ? (
+                                <span className={`tabular-nums font-bold ${textColor}`}>
+                                  ({p.holding_delta})
+                                </span>
+                              ) : p.amount !== 0 ? (
+                                <span className={`tabular-nums font-bold ${textColor}`}>
+                                  ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
+                                </span>
+                              ) : null}
                             </div>
                           );
                         })}

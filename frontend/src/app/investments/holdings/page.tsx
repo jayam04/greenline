@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatCleanMoney, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
 import { 
@@ -29,6 +29,10 @@ interface Holding {
   total_cost: number;
   latest_price: number;
   latest_price_date: string;
+  previous_price?: number;
+  change_1d?: number;
+  change_1d_pct?: number;
+  value_change_1d?: number;
   current_value: number;
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
@@ -50,6 +54,8 @@ interface PortfolioSummary {
   cash_balance: number;
   total_realized_pnl: number;
   total_unrealized_pnl: number;
+  total_value_change_1d?: number;
+  total_change_1d_pct?: number;
   total_fees?: number;
   total_taxes?: number;
   portfolio_xirr: number | null;
@@ -65,13 +71,16 @@ type SortField =
   | "xirr"
   | "symbol"
   | "total_cost"
-  | "quantity_held";
+  | "quantity_held"
+  | "change_1d"
+  | "value_change_1d";
 
 export default function HoldingsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [closedHoldings, setClosedHoldings] = useState<Holding[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
+  const [viewMode, setViewMode] = useState<"all_time" | "1d">("all_time");
   const [loading, setLoading] = useState(true);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -81,6 +90,7 @@ export default function HoldingsPage() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
+    document.title = "Holdings · greenline";
     loadData();
     apiFetch<{ master_currency: string }>("/settings")
       .then((res) => {
@@ -140,6 +150,18 @@ export default function HoldingsPage() {
   const totalFeesAndTaxesMaster = convertCurrency(totalFeesAndTaxesEUR, "EUR", masterCurrency);
   const totalNetPnLEUR = totalRealizedEUR + totalUnrealizedEUR;
 
+  // 1-Day Change Metrics
+  const totalValueChange1dEUR = useMemo(() => {
+    return holdings.reduce(
+      (acc, h) => acc + convertCurrency(h.value_change_1d || 0, h.currency || "EUR", masterCurrency),
+      0
+    );
+  }, [holdings, masterCurrency]);
+  const totalValueChange1dMaster = convertCurrency(totalValueChange1dEUR, "EUR", masterCurrency);
+  const totalChange1dPct = totalValueEUR - totalValueChange1dEUR > 0
+    ? (totalValueChange1dEUR / (totalValueEUR - totalValueChange1dEUR)) * 100
+    : 0;
+
   // Sorted holdings
   const sortedHoldings = [...holdings].sort((a, b) => {
     let comparison = 0;
@@ -156,8 +178,14 @@ export default function HoldingsPage() {
       case "current_value":
         comparison = a.current_value - b.current_value;
         break;
+      case "value_change_1d":
       case "unrealized_pnl":
-        comparison = a.unrealized_pnl - b.unrealized_pnl;
+        comparison = viewMode === "1d"
+          ? (a.value_change_1d || 0) - (b.value_change_1d || 0)
+          : a.unrealized_pnl - b.unrealized_pnl;
+        break;
+      case "change_1d":
+        comparison = (a.change_1d || 0) - (b.change_1d || 0);
         break;
       case "realized_pnl":
         comparison = a.realized_pnl - b.realized_pnl;
@@ -215,7 +243,7 @@ export default function HoldingsPage() {
         </div>
       </div>
 
-      {/* 6 Summary KPI Cards (Converted to Master Currency, No + / - Signs) */}
+      {/* 6 Summary KPI Cards (Converted to Master Currency, Dynamic for 1D / All-Time) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
         {/* Card 1: Total Positions Value */}
         <div className="getquin-card p-3.5">
@@ -230,31 +258,45 @@ export default function HoldingsPage() {
           </div>
         </div>
 
-        {/* Card 2: Total Invested Cost */}
+        {/* Card 2: Invested Cost OR 1D Value Change */}
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            <span>Invested Cost</span>
+            <span>{viewMode === "1d" ? "1D Value Change" : "Invested Cost"}</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className="text-xl font-extrabold text-slate-800 tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalCostEUR, masterCurrency)}
-          </div>
+          {viewMode === "1d" ? (
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalValueChange1dMaster >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+              {totalValueChange1dMaster >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
+              <span className="truncate">{formatCleanMoney(totalValueChange1dMaster, masterCurrency)}</span>
+            </div>
+          ) : (
+            <div className="text-xl font-extrabold text-slate-800 tabular-nums mt-1 truncate">
+              {formatCleanMoney(totalCostEUR, masterCurrency)}
+            </div>
+          )}
         </div>
 
-        {/* Card 3: Total Unrealized P&L */}
+        {/* Card 3: Total Unrealized P&L OR 1D Return % */}
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            <span>Unrealized P&L</span>
+            <span>{viewMode === "1d" ? "1D Return %" : "Unrealized P&L"}</span>
             <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-            {totalUnrealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{formatCleanMoney(totalUnrealizedEUR, masterCurrency)}</span>
-          </div>
+          {viewMode === "1d" ? (
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalChange1dPct >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+              {totalChange1dPct >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
+              <span className="truncate">{formatNum(Math.abs(totalChange1dPct), 2)}%</span>
+            </div>
+          ) : (
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+              {totalUnrealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
+              <span className="truncate">{formatCleanMoney(totalUnrealizedEUR, masterCurrency)}</span>
+            </div>
+          )}
         </div>
 
         {/* Card 4: Total Realized P&L */}
@@ -301,15 +343,41 @@ export default function HoldingsPage() {
 
       {/* Active Holdings Table Card */}
       <div className="getquin-card p-5">
-        <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#F1F5F9]">
-          <h3 className="text-sm font-bold text-[#0F172A]">Active Holdings</h3>
+        <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#F1F5F9] dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">Active Holdings</h3>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-semibold">
+              <button
+                type="button"
+                onClick={() => setViewMode("all_time")}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  viewMode === "all_time"
+                    ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
+                }`}
+              >
+                All-Time P&L
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("1d")}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                  viewMode === "1d"
+                    ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
+                    : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
+                }`}
+              >
+                1-Day Return (1D)
+              </button>
+            </div>
+          </div>
           <span className="text-[10px] font-bold text-slate-400">{sortedHoldings.length} Positions</span>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="text-[11px] font-bold text-slate-400 border-b border-slate-100">
+              <tr className="text-[11px] font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800">
                 <th className="py-2.5 px-2 w-8"></th>
                 
                 {/* Asset Column */}
@@ -358,14 +426,14 @@ export default function HoldingsPage() {
                   </div>
                 </th>
 
-                {/* Unrealized P&L Column */}
+                {/* Unrealized P&L OR 1D Change Column */}
                 <th 
-                  onClick={() => handleSort("unrealized_pnl")}
+                  onClick={() => handleSort(viewMode === "1d" ? "value_change_1d" : "unrealized_pnl")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
                   <div className="flex items-center justify-end gap-1">
-                    <span>Unrealized P&L</span>
-                    {renderSortIcon("unrealized_pnl")}
+                    <span>{viewMode === "1d" ? "1D Change" : "Unrealized P&L"}</span>
+                    {renderSortIcon(viewMode === "1d" ? "value_change_1d" : "unrealized_pnl")}
                   </div>
                 </th>
 
@@ -460,15 +528,36 @@ export default function HoldingsPage() {
                           <div className="text-[11px] font-medium text-slate-400 mt-0.5">{formatCleanMoney(h.latest_price, h.currency)}</div>
                         </td>
 
-                        {/* 2-Line Unrealized P&L: Line 1 Amount, Line 2 % with Arrow */}
+                        {/* 2-Line Unrealized P&L OR 1D Change */}
                         <td className="py-3 px-3 text-right">
-                          <div className={`font-bold text-xs ${isPositiveUnrealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                            {formatCleanMoney(h.unrealized_pnl, h.currency)}
-                          </div>
-                          <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveUnrealized ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                            {isPositiveUnrealized ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                            <span>{formatNum(Math.abs(h.unrealized_pnl_pct), 2)}%</span>
-                          </div>
+                          {viewMode === "1d" ? (
+                            (() => {
+                              const val1d = h.value_change_1d || 0;
+                              const pct1d = h.change_1d_pct || 0;
+                              const isPos1d = val1d >= 0;
+                              return (
+                                <>
+                                  <div className={`font-bold text-xs ${isPos1d ? "text-[#16A34A] dark:text-emerald-400" : "text-[#DC2626] dark:text-rose-400"}`}>
+                                    {formatCleanMoney(val1d, h.currency)}
+                                  </div>
+                                  <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPos1d ? "text-[#16A34A] dark:text-emerald-400" : "text-[#DC2626] dark:text-rose-400"}`}>
+                                    {isPos1d ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                    <span>{formatNum(Math.abs(pct1d), 2)}%</span>
+                                  </div>
+                                </>
+                              );
+                            })()
+                          ) : (
+                            <>
+                              <div className={`font-bold text-xs ${isPositiveUnrealized ? "text-[#16A34A] dark:text-emerald-400" : "text-[#DC2626] dark:text-rose-400"}`}>
+                                {formatCleanMoney(h.unrealized_pnl, h.currency)}
+                              </div>
+                              <div className={`text-[11px] font-semibold flex items-center justify-end gap-0.5 mt-0.5 ${isPositiveUnrealized ? "text-[#16A34A] dark:text-emerald-400" : "text-[#DC2626] dark:text-rose-400"}`}>
+                                {isPositiveUnrealized ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                                <span>{formatNum(Math.abs(h.unrealized_pnl_pct), 2)}%</span>
+                              </div>
+                            </>
+                          )}
                         </td>
 
                         {/* 2-Line Realized P&L: Line 1 Amount, Line 2 % with Arrow */}

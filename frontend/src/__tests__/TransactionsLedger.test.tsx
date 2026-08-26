@@ -89,6 +89,25 @@ const mockTradeTxs = [
     fees: 602.64,
     taxes: 113.0,
     notes: 'Portfolio rebalance',
+  },
+  {
+    transaction_id: 202,
+    transaction_date: '2026-08-26',
+    asset_id: 5,
+    asset_symbol: 'TCS',
+    account_id: 2,
+    account_name: 'Zerodha Demat',
+    account_currency: 'INR',
+    funding_account_id: 1,
+    funding_account_name: 'Main Checking Bank',
+    funding_account_currency: 'EUR',
+    transaction_type: 'sell',
+    quantity: 50.0,
+    price_per_unit: 3600.0,
+    total_amount: 180000.0,
+    fees: 200.0,
+    taxes: 50.0,
+    notes: 'Sell 50 TCS shares',
   }
 ];
 
@@ -106,7 +125,7 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
     });
   });
 
-  it('renders all day-to-day and investment transactions directly in unified ledger', async () => {
+  it('renders all day-to-day and investment transactions directly with holdings delta in unified ledger', async () => {
     render(<CashflowTransactionsPage />);
 
     await waitFor(() => {
@@ -119,16 +138,23 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
     expect(screen.getByText('Whole Foods Market')).toBeInTheDocument();
     expect(screen.getByText('Groceries')).toBeInTheDocument();
 
-    // Verify trade records also appear in the same unified ledger
+    // Verify buy trade record with positive holding delta (+186 GROWW.BO)
     expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
     expect(screen.getByText('Stock & ETF Purchases')).toBeInTheDocument();
     expect(screen.getByText(/Bought x186 at/i)).toBeInTheDocument();
+    expect(screen.getByText('(+186 GROWW.BO)')).toBeInTheDocument();
+
+    // Verify sell trade record with negative holding delta (-50 TCS)
+    expect(screen.getByText('TCS')).toBeInTheDocument();
+    expect(screen.getByText('Stock Sale Proceeds')).toBeInTheDocument();
+    expect(screen.getByText(/Sold x50 at/i)).toBeInTheDocument();
+    expect(screen.getByText('(-50 TCS)')).toBeInTheDocument();
 
     // Check fee line item
-    expect(screen.getByText('Investment Fees & Charges')).toBeInTheDocument();
+    expect(screen.getAllByText('Investment Fees & Charges').length).toBeGreaterThanOrEqual(1);
 
     // Check tax line item
-    expect(screen.getByText('Taxes & Duties')).toBeInTheDocument();
+    expect(screen.getAllByText('Taxes & Duties').length).toBeGreaterThanOrEqual(1);
 
     // Check payment account display
     expect(screen.getAllByText(/Main Checking Bank/i).length).toBeGreaterThanOrEqual(1);

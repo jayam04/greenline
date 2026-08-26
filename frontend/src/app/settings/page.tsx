@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const [savedMessage, setSavedMessage] = useState("");
 
   useEffect(() => {
+    document.title = "Settings · greenline";
     loadSettings();
   }, []);
 

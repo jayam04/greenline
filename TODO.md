@@ -74,3 +74,28 @@
   - [x] Remove 3-way mode switch buttons (`DAY_TO_DAY`, `INVESTMENTS`, `BOTH`)
   - [x] Always render all transactions in the ledger
   - [x] Update `TransactionsLedger.test.tsx` and Playwright E2E tests
+
+### Stack 3 / Layer 1B: Basic UI
+- [x] **Task 1: Breadcrumb Redesign & Sub-Page Quick Navigation**
+  - [x] Move breadcrumb bar out of navbar and blend background with page body
+  - [x] Render full hierarchical path with clickable parent links
+  - [x] Render sub-page sibling quick navigation pills on the right side
+- [x] **Task 2: Dynamic Browser Page Titles (`<PAGE TITLE> · greenline`)**
+  - [x] Configure title template in `layout.tsx`
+  - [x] Set dynamic `document.title` on mount for all pages
+- [x] **Task 3: Networth (`/`) Account Ordering, Zero-Balance Hiding & Manage Button Removal**
+  - [x] Sync account ordering between Accounts table and Graph selection pills on `/`
+  - [x] Add "Hide 0 balance accounts" option to Account Customization Modal and table filter
+  - [x] Remove "Manage" button from Accounts card header on `/`
+  - [x] Apply custom account order to `/accounts` table
+- [x] **Task 4: Cashflow Transactions Holdings Delta Formatting**
+  - [x] Display positive/negative share changes (`+X shares` / `-X shares`) for demat holding accounts on trades
+  - [x] Ensure sell transactions display negative share changes in holding account and positive cash in funding account
+- [x] **Task 5: 1-Day Price Change Calculations in Backend Portfolio Engine**
+  - [x] Compute `previous_price`, `change_1d`, `change_1d_pct`, and `value_change_1d` in `HoldingSummary`
+  - [x] Compute portfolio-level `total_value_change_1d` and `total_change_1d_pct`
+  - [x] Add unit tests in `backend/tests/test_daily_change.py`
+- [x] **Task 6: 1-Day Change Display in `/investments` & `/investments/holdings`**
+  - [x] Remove static timeframe selector from Holdings card header on `/investments`
+  - [x] Add `Total Return` vs `1D Return` toggle in `/investments` Holdings table
+  - [x] Add `All-Time P&L` vs `1-Day Return` view switcher and sorting in `/investments/holdings`

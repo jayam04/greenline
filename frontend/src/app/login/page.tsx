@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { setAuthToken } from "@/lib/api";
 import { TrendingUp, Lock, User } from "lucide-react";
@@ -13,6 +13,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    document.title = "Login · greenline";
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

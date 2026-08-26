@@ -15,6 +15,8 @@ const mockSummary = {
   cash_balance: 500.0,
   total_realized_pnl: 1000.0,
   total_unrealized_pnl: 7500.0,
+  total_value_change_1d: 850.0,
+  total_change_1d_pct: 2.2,
   total_fees: 602.64,
   total_taxes: 113.0,
   portfolio_xirr: 0.245,
@@ -31,6 +33,10 @@ const mockSummary = {
       total_cost: 30847.64,        // All-in cost basis: (186 * 162 = 30,132) + 602.64 fees + 113.0 taxes = 30,847.64
       latest_price: 203.35,        // Latest market quote
       latest_price_date: "2026-08-25",
+      previous_price: 198.50,
+      change_1d: 4.85,
+      change_1d_pct: 2.44,
+      value_change_1d: 902.10,
       current_value: 37823.10,     // 186 * 203.35 = 37,823.10
       unrealized_pnl: 6975.46,     // 37,823.10 - 30,847.64 = +6,975.46
       unrealized_pnl_pct: 22.61,   // (+6,975.46 / 30,847.64) * 100 = +22.61%
@@ -64,6 +70,10 @@ const mockSummary = {
       total_cost: 1500.0,
       latest_price: 180.0,
       latest_price_date: "2026-08-25",
+      previous_price: 185.0,
+      change_1d: -5.0,
+      change_1d_pct: -2.7,
+      value_change_1d: -50.0,
       current_value: 1800.0,
       unrealized_pnl: 300.0,
       unrealized_pnl_pct: 20.0,
@@ -137,6 +147,34 @@ describe('Holdings Production Page Component (src/app/holdings/page.tsx)', () =>
     expect(tableWithin.getByText('$1,500.00')).toBeInTheDocument();
     expect(tableWithin.getByText('$1,800.00')).toBeInTheDocument();
     expect(tableWithin.getByText('$400.00')).toBeInTheDocument();
+  });
+
+  it('toggles between All-Time P&L and 1-Day Return (1D) view modes', async () => {
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Positions & Holdings')).toBeInTheDocument();
+    });
+
+    // Default mode: All-Time P&L
+    expect(screen.getByText('All-Time P&L')).toBeInTheDocument();
+    expect(screen.getByText('1-Day Return (1D)')).toBeInTheDocument();
+    expect(screen.getAllByText('Unrealized P&L').length).toBe(2);
+
+    // Click 1-Day Return button
+    fireEvent.click(screen.getByText('1-Day Return (1D)'));
+
+    // Header column should switch to 1D Change
+    expect(screen.getByText('1D Change')).toBeInTheDocument();
+    expect(screen.queryAllByText('Unrealized P&L').length).toBe(0);
+
+    // Card should switch to 1D Value Change
+    expect(screen.getByText('1D Value Change')).toBeInTheDocument();
+    expect(screen.getByText('1D Return %')).toBeInTheDocument();
+
+    // Should display 1D value change for GROWW.BO (₹902.10) and AAPL ($50.00)
+    expect(screen.getByText('₹902.10')).toBeInTheDocument();
+    expect(screen.getByText('$50.00')).toBeInTheDocument();
   });
 
   it('expands and collapses open FIFO lot details upon row click in real page', async () => {

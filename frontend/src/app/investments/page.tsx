@@ -708,7 +708,7 @@ export default function InvestmentsDashboardPage() {
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <Link href="/holdings" className="font-bold text-slate-600 hover:text-[#0F172A] flex items-center gap-1">
+              <Link href="/investments/holdings" className="font-bold text-slate-600 hover:text-[#0F172A] flex items-center gap-1">
                 View all holdings in detail →
               </Link>
             </div>
@@ -727,7 +727,7 @@ export default function InvestmentsDashboardPage() {
                   PRO
                 </span>
               </div>
-              <Link href="/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <Link href="/investments/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
                 Show more
               </Link>
             </div>
@@ -787,7 +787,7 @@ export default function InvestmentsDashboardPage() {
                   PRO
                 </span>
               </div>
-              <Link href="/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
+              <Link href="/investments/holdings" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
                 Show more
               </Link>
             </div>

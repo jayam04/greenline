@@ -106,53 +106,35 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
     });
   });
 
-  it('renders Day-to-Day cashflow transactions by default', async () => {
+  it('renders all day-to-day and investment transactions directly in unified ledger', async () => {
     render(<CashflowTransactionsPage />);
 
     await waitFor(() => {
       expect(screen.getByText('Cashflow Transactions')).toBeInTheDocument();
     });
 
-    // Verify cashflow records exist in Day-to-Day view
+    // Verify cashflow records exist directly
     expect(screen.getByText('Monthly Salary')).toBeInTheDocument();
     expect(screen.getByText('Base Salary')).toBeInTheDocument();
     expect(screen.getByText('Whole Foods Market')).toBeInTheDocument();
     expect(screen.getByText('Groceries')).toBeInTheDocument();
-  });
 
-  it('switches to INVESTMENTS view and displays trade itemization with gross, fees, and taxes', async () => {
-    render(<CashflowTransactionsPage />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Cashflow Transactions')).toBeInTheDocument();
-    });
-
-    // Click "Investments" tab
-    const investBtn = screen.getByRole('button', { name: /Investments/i });
-    fireEvent.click(investBtn);
-
-    // Verify trade itemization is rendered
-    await waitFor(() => {
-      expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
-    });
-
-    // Check gross buy line item
+    // Verify trade records also appear in the same unified ledger
+    expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
     expect(screen.getByText('Stock & ETF Purchases')).toBeInTheDocument();
     expect(screen.getByText(/Bought x186 at/i)).toBeInTheDocument();
 
     // Check fee line item
     expect(screen.getByText('Investment Fees & Charges')).toBeInTheDocument();
-    expect(screen.getByText(/Brokerage & Platform Charges/i)).toBeInTheDocument();
 
     // Check tax line item
     expect(screen.getByText('Taxes & Duties')).toBeInTheDocument();
-    expect(screen.getByText(/Securities Transaction Tax & Duties/i)).toBeInTheDocument();
 
-    // Check funding account display
+    // Check payment account display
     expect(screen.getAllByText(/Main Checking Bank/i).length).toBeGreaterThanOrEqual(1);
   });
 
-  it('filters transactions when typing in search input', async () => {
+  it('filters unified transactions when typing in search input', async () => {
     render(<CashflowTransactionsPage />);
 
     await waitFor(() => {
@@ -160,9 +142,10 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
     });
 
     const searchInput = screen.getByPlaceholderText(/Search merchant, account, category/i);
-    fireEvent.change(searchInput, { target: { value: 'Salary' } });
+    fireEvent.change(searchInput, { target: { value: 'GROWW' } });
 
-    expect(screen.getByText('Monthly Salary')).toBeInTheDocument();
+    expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
+    expect(screen.queryByText('Monthly Salary')).not.toBeInTheDocument();
     expect(screen.queryByText('Whole Foods Market')).not.toBeInTheDocument();
   });
 });

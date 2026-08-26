@@ -51,8 +51,8 @@ export function Navbar() {
   if (pathname === "/login") return null;
 
   const isNetworthActive = pathname === "/";
-  const isInvestmentsActive = pathname === "/investments" || pathname === "/holdings" || pathname === "/transactions";
-  const isCashflowActive = pathname === "/cashflow" || pathname === "/categories";
+  const isInvestmentsActive = pathname.startsWith("/investments");
+  const isCashflowActive = pathname.startsWith("/cashflow") || pathname === "/categories";
   const isAccountsActive = pathname === "/accounts";
 
   const handleLogout = () => {
@@ -64,8 +64,8 @@ export function Navbar() {
   const getBreadcrumb = () => {
     if (pathname === "/") return "Net worth > Overview & Accounts";
     if (pathname === "/investments") return "Investments > Portfolio Dashboard";
-    if (pathname === "/holdings") return "Investments > Positions & Holdings";
-    if (pathname === "/transactions") return "Investments > Transaction Ledger";
+    if (pathname === "/investments/holdings") return "Investments > Positions & Holdings";
+    if (pathname === "/investments/transactions") return "Investments > Transaction Ledger";
     if (pathname === "/cashflow") return "Cashflow > Income, Spends & Sankey Flow";
     if (pathname === "/cashflow/transactions") return "Cashflow > Transactions & Cash Ledger";
     if (pathname === "/categories") return "Cashflow > Category Hierarchy & Labels";
@@ -126,6 +126,13 @@ export function Navbar() {
               >
                 <Link
                   href="/investments"
+                  onClick={(e) => {
+                    if (pathname.startsWith("/investments")) {
+                      e.preventDefault();
+                      setIsInvestmentsOpen(!isInvestmentsOpen);
+                      setIsCashflowOpen(false);
+                    }
+                  }}
                   className="flex items-center gap-1.5 pl-3 pr-1 py-1.5 text-xs font-bold"
                 >
                   <Briefcase className="w-3.5 h-3.5" />
@@ -148,10 +155,10 @@ export function Navbar() {
               {isInvestmentsOpen && (
                 <div className="absolute left-0 top-10 z-50 bg-white dark:bg-[#121824] border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl py-1.5 w-48 text-xs font-semibold">
                   <Link
-                    href="/holdings"
+                    href="/investments/holdings"
                     onClick={() => setIsInvestmentsOpen(false)}
                     className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
-                      pathname === "/holdings" ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
+                      pathname === "/investments/holdings" ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
                     }`}
                   >
                     <Layers className="w-4 h-4 text-slate-400 dark:text-slate-500" />
@@ -161,10 +168,10 @@ export function Navbar() {
                     </div>
                   </Link>
                   <Link
-                    href="/transactions"
+                    href="/investments/transactions"
                     onClick={() => setIsInvestmentsOpen(false)}
                     className={`flex items-center gap-2.5 px-3.5 py-2 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors ${
-                      pathname === "/transactions" ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
+                      pathname === "/investments/transactions" ? "text-blue-600 dark:text-blue-400 font-bold bg-blue-50/50 dark:bg-blue-950/40" : "text-slate-700 dark:text-slate-200 hover:text-[#0F172A] dark:hover:text-white"
                     }`}
                   >
                     <Receipt className="w-4 h-4 text-slate-400 dark:text-slate-500" />
@@ -188,6 +195,13 @@ export function Navbar() {
               >
                 <Link
                   href="/cashflow"
+                  onClick={(e) => {
+                    if (pathname.startsWith("/cashflow") || pathname === "/categories") {
+                      e.preventDefault();
+                      setIsCashflowOpen(!isCashflowOpen);
+                      setIsInvestmentsOpen(false);
+                    }
+                  }}
                   className="flex items-center gap-1.5 pl-3 pr-1 py-1.5 text-xs font-bold"
                 >
                   <ArrowLeftRight className="w-3.5 h-3.5" />

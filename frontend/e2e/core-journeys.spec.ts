@@ -215,7 +215,7 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
   });
 
   test('Journey 2: Holdings page renders production table columns and FIFO lots', async ({ page }) => {
-    await page.goto('/holdings');
+    await page.goto('/investments/holdings');
     await expect(page.locator('h1')).toContainText(/Positions & Holdings/i);
 
     // Verify table headers
@@ -235,16 +235,15 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
     await expect(page.getByText('₹165.85')).toBeVisible();
   });
 
-  test('Journey 3: Cashflow ledger renders day-to-day transactions and investment trades', async ({ page }) => {
+  test('Journey 3: Cashflow ledger renders day-to-day transactions and investment trades in unified ledger', async ({ page }) => {
     await page.goto('/cashflow/transactions');
     await expect(page.locator('h1')).toContainText(/Cashflow Transactions/i);
 
-    // Day-to-day view
+    // Day-to-day transaction
     await expect(page.getByText('Monthly Salary')).toBeVisible();
     await expect(page.getByText('Base Salary')).toBeVisible();
 
-    // Switch to Investments tab
-    await page.getByRole('button', { name: 'Investments', exact: true }).click();
+    // Investment trade directly in unified ledger
     await expect(page.getByText('GROWW.BO')).toBeVisible();
     await expect(page.getByText('Stock & ETF Purchases')).toBeVisible();
     await expect(page.getByText('Investment Fees & Charges')).toBeVisible();

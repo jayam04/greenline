@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import React from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { isCategoryAllowedForKind } from '@/components/CashflowModal';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import CashflowPage from '@/app/cashflow/page';
+import * as api from '@/lib/api';
+
+vi.mock('@/lib/api', () => ({
+  apiFetch: vi.fn(),
+}));
 
 describe('Cashflow Category Directional Filtering (Issue #3)', () => {
   const dividendCat = { category_id: 1, name: 'Dividends', category_type: 'INVESTMENT', level: 1 };
@@ -32,31 +41,87 @@ describe('Cashflow Category Directional Filtering (Issue #3)', () => {
   });
 });
 
-describe('Cashflow Ledger Kind Derivation (Issue #1)', () => {
-  it('correctly classifies an investment dividend as income when transaction_kind is INCOME', () => {
-    const tx = {
-      cashflow_id: 101,
-      title: 'Apple Dividend',
-      total_amount: 150,
-      currency: 'USD',
-      transaction_kind: 'INCOME',
-      items: [
-        { category_id: 1, category_name: 'Dividends', category_type: 'INVESTMENT', amount: 150 }
-      ],
-      payments: [
-        { account_id: 1, account_name: 'Schwab Brokerage', amount: 150 }
-      ]
-    };
+describe('Cashflow Overview Page (src/app/cashflow/page.tsx) Unified Transactions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/cashflow/summary')) {
+        return {
+          total_income: 5000,
+          total_expenses: 150,
+          total_invested: 30132,
+          net_savings: 4850,
+          savings_rate_pct: 97,
+          breakdown_by_label: {},
+          top_expense_categories: [],
+        };
+      }
+      if (endpoint.startsWith('/cashflow/sankey')) {
+        return { nodes: [], links: [] };
+      }
+      if (endpoint.startsWith('/cashflow')) {
+        return [
+          {
+            cashflow_id: 101,
+            transaction_date: '2026-08-20',
+            title: 'Monthly Salary',
+            total_amount: 5000.0,
+            currency: 'EUR',
+            transaction_kind: 'INCOME',
+            notes: 'Direct deposit',
+            items: [
+              { category_name: 'Base Salary', category_type: 'INCOME', amount: 5000.0 }
+            ],
+            payments: [
+              { account_id: 1, account_name: 'Main Checking Bank', amount: 5000.0 }
+            ]
+          }
+        ];
+      }
+      if (endpoint === '/transactions') {
+        return [
+          {
+            transaction_id: 201,
+            transaction_date: '2026-08-25',
+            asset_id: 4,
+            asset_symbol: 'GROWW.BO',
+            account_id: 2,
+            account_name: 'Zerodha Demat',
+            account_currency: 'INR',
+            funding_account_id: 1,
+            funding_account_name: 'Main Checking Bank',
+            transaction_type: 'buy',
+            quantity: 186.0,
+            price_per_unit: 162.0,
+            total_amount: 30132.0,
+            fees: 602.64,
+            taxes: 113.0,
+          }
+        ];
+      }
+      if (endpoint === '/accounts') return [];
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return null;
+    });
+  });
 
-    const isTransfer = tx.transaction_kind === 'TRANSFER' || tx.items.some((i) => i.category_type === 'TRANSFER');
-    const isIncome = !isTransfer && (tx.transaction_kind === 'INCOME' || tx.items.some((i) => i.category_type === 'INCOME'));
+  it('renders both cashflow records and investment trades in the cashflow overview table', async () => {
+    render(
+      <ThemeProvider>
+        <CashflowPage />
+      </ThemeProvider>
+    );
 
-    expect(isTransfer).toBe(false);
-    expect(isIncome).toBe(true);
+    await waitFor(() => {
+      expect(screen.getByText('Income & Spend Transactions (2)')).toBeInTheDocument();
+    });
 
-    // Verify credit dot logic
-    const payment = tx.payments[0];
-    const isCredit = isTransfer ? payment.amount > 0 : isIncome ? payment.amount >= 0 : payment.amount < 0;
-    expect(isCredit).toBe(true);
+    // Check Day-to-Day transaction
+    expect(screen.getByText('Monthly Salary')).toBeInTheDocument();
+
+    // Check Investment trade transaction
+    expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
+    expect(screen.getByText('Trade')).toBeInTheDocument();
+    expect(screen.getByText('Stock & ETF Purchases')).toBeInTheDocument();
   });
 });

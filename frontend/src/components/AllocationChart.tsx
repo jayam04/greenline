@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   ResponsiveContainer,
   PieChart,
@@ -8,7 +8,7 @@ import {
   Cell,
   Tooltip,
 } from "recharts";
-import { formatMoney, getCurrencySymbol } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { useTheme } from "@/components/ThemeProvider";
 
 interface AllocationChartProps {
@@ -16,6 +16,7 @@ interface AllocationChartProps {
   centerLabel?: string;
   centerValue?: string;
   currency?: string;
+  showLegend?: boolean;
 }
 
 const GETQUIN_SPECTRUM_COLORS = [
@@ -31,14 +32,23 @@ const GETQUIN_SPECTRUM_COLORS = [
   "#64748B", // Slate
 ];
 
+interface ChartItem {
+  name: string;
+  value: number;
+  pct: number;
+  color: string;
+}
+
 export function AllocationChart({ 
   allocation, 
   centerLabel = "Total Net Worth", 
   centerValue,
-  currency = "USD"
+  currency = "USD",
+  showLegend = false,
 }: AllocationChartProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
+  const [hoveredItem, setHoveredItem] = useState<ChartItem | null>(null);
 
   if (!allocation || Object.keys(allocation).length === 0) {
     return (
@@ -50,12 +60,13 @@ export function AllocationChart({
 
   const total = Object.values(allocation).reduce((acc, v) => acc + v, 0);
 
-  const chartData = Object.entries(allocation)
+  const chartData: ChartItem[] = Object.entries(allocation)
     .filter(([_, value]) => value > 0)
-    .map(([key, value]) => ({
+    .map(([key, value], idx) => ({
       name: key.toUpperCase(),
       value: Number(value.toFixed(2)),
       pct: total > 0 ? (value / total) * 100 : 0,
+      color: GETQUIN_SPECTRUM_COLORS[idx % GETQUIN_SPECTRUM_COLORS.length],
     }))
     .sort((a, b) => b.value - a.value);
 
@@ -71,55 +82,101 @@ export function AllocationChart({
               startAngle={90}
               endAngle={-270}
               innerRadius={70}
-              outerRadius={95}
+              outerRadius={hoveredItem ? 98 : 95}
               paddingAngle={2}
               dataKey="value"
               stroke={isDark ? "#121824" : "#FFFFFF"}
               strokeWidth={2}
+              onMouseEnter={(_, index) => {
+                if (chartData[index]) {
+                  setHoveredItem(chartData[index]);
+                }
+              }}
+              onMouseLeave={() => {
+                setHoveredItem(null);
+              }}
             >
-              {chartData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={GETQUIN_SPECTRUM_COLORS[index % GETQUIN_SPECTRUM_COLORS.length]} />
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.color} 
+                  opacity={hoveredItem ? (hoveredItem.name === entry.name ? 1 : 0.45) : 1}
+                  className="transition-opacity duration-200 cursor-pointer"
+                />
               ))}
             </Pie>
             <Tooltip
-              contentStyle={{
-                backgroundColor: "#0F172A",
-                border: isDark ? "1px solid #1E293B" : "none",
-                borderRadius: "0.5rem",
-                color: "#FFFFFF",
-                fontSize: "12px",
-                fontWeight: "600",
-                padding: "8px 12px",
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const data = payload[0].payload as ChartItem;
+                  return (
+                    <div className="bg-[#0F172A] dark:bg-slate-900 border border-slate-700/50 rounded-xl px-3 py-2 text-white shadow-xl text-xs space-y-0.5">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: data.color }} />
+                        <span>{data.name}</span>
+                      </div>
+                      <div className="text-slate-300 font-semibold tabular-nums">
+                        {formatMoney(data.value, currency)}
+                      </div>
+                      <div className="text-emerald-400 text-[10px] font-extrabold">
+                        {data.pct.toFixed(1)}% of portfolio
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
               }}
-              formatter={(value: any, name: any) => [formatMoney(Number(value), currency), name]}
             />
           </PieChart>
         </ResponsiveContainer>
 
-        {/* Center Donut Text */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-4">
-          <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{centerLabel}</span>
-          <span className="text-sm font-extrabold text-[#0F172A] dark:text-white tabular-nums mt-0.5">
-            {centerValue || formatMoney(total, currency, 0)}
-          </span>
+        {/* Dynamic Center Donut Content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-4 transition-all duration-200">
+          {hoveredItem ? (
+            <>
+              <div className="flex items-center gap-1 max-w-[130px] truncate">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: hoveredItem.color }} />
+                <span className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate">
+                  {hoveredItem.name}
+                </span>
+              </div>
+              <span className="text-sm font-black text-[#0F172A] dark:text-white tabular-nums mt-0.5">
+                {formatMoney(hoveredItem.value, currency)}
+              </span>
+              <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                {hoveredItem.pct.toFixed(1)}% allocation
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                {centerLabel}
+              </span>
+              <span className="text-sm font-black text-[#0F172A] dark:text-white tabular-nums mt-0.5">
+                {centerValue || formatMoney(total, currency, 0)}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Sleek Legend List */}
-      <div className="w-full mt-2 grid grid-cols-2 gap-2 text-xs">
-        {chartData.slice(0, 6).map((item, idx) => (
-          <div key={item.name} className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-slate-50">
-            <div className="flex items-center gap-1.5 truncate">
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: GETQUIN_SPECTRUM_COLORS[idx % GETQUIN_SPECTRUM_COLORS.length] }}
-              />
-              <span className="font-semibold text-slate-700 truncate">{item.name}</span>
+      {/* Optional Sleek Legend List */}
+      {showLegend && (
+        <div className="w-full mt-2 grid grid-cols-2 gap-2 text-xs">
+          {chartData.slice(0, 6).map((item) => (
+            <div key={item.name} className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
+              <div className="flex items-center gap-1.5 truncate">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">{item.name}</span>
+              </div>
+              <span className="font-bold text-slate-900 dark:text-white tabular-nums ml-2">{item.pct.toFixed(1)}%</span>
             </div>
-            <span className="font-bold text-slate-900 tabular-nums ml-2">{item.pct.toFixed(1)}%</span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

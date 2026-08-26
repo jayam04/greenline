@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import HoldingsPage from '@/app/holdings/page';
+import HoldingsPage from '@/app/investments/holdings/page';
 import * as api from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({

@@ -30,6 +30,17 @@ const mockSummary = {
       source: "yfinance_auto",
       suggested_funding_account_id: 2,
       suggested_funding_account_name: "Chase Checking",
+      candidate_matches: [
+        {
+          match_id: 501,
+          match_type: "cashflow",
+          account_id: 4,
+          account_name: "Wells Fargo",
+          date: "2024-05-28",
+          amount: 45.0,
+          title: "Dividend Payout AAPL",
+        }
+      ],
       notes: "Auto-generated dividend",
     },
     {
@@ -49,6 +60,7 @@ const mockSummary = {
       source: "yfinance_auto",
       suggested_funding_account_id: null,
       suggested_funding_account_name: null,
+      candidate_matches: [],
       notes: "Auto-generated dividend",
     },
   ],
@@ -60,12 +72,12 @@ const mockAccounts = [
   { account_id: 4, account_name: "Wells Fargo", account_type: "bank", currency: "USD" },
 ];
 
-describe('DiscrepanciesPage Component', () => {
+describe('DiscrepanciesPage Component (Layer 2B)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('renders unlinked dividend items and KPI summary cards correctly', async () => {
+  it('renders unlinked dividend items, candidate match suggestion, and date pickers', async () => {
     (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
       if (endpoint === '/discrepancies') return mockSummary;
       if (endpoint === '/accounts') return mockAccounts;
@@ -84,34 +96,50 @@ describe('DiscrepanciesPage Component', () => {
     // Check KPI counts
     expect(screen.getByText('Unlinked Distributions')).toBeInTheDocument();
     expect(screen.getByText('Total Unlinked Value')).toBeInTheDocument();
-    expect(screen.getByText('Pre-Matched Ready')).toBeInTheDocument();
 
-    // Suggested default badge
-    expect(screen.getByText(/Default: Chase Checking/i)).toBeInTheDocument();
+    // Verify candidate match suggestion is displayed
+    expect(screen.getByText(/Match: Wells Fargo/i)).toBeInTheDocument();
 
-    // Auto-link button
-    expect(screen.getByText(/Auto-Link Defaults \(1\)/i)).toBeInTheDocument();
+    // Verify Auto-Link Defaults button is NOT present (removed per Layer 2B rules)
+    expect(screen.queryByText(/Auto-Link Defaults/i)).not.toBeInTheDocument();
   });
 
-  it('triggers auto-link defaults when clicked', async () => {
-    (api.apiFetch as any).mockImplementation(async (endpoint: string, options?: any) => {
+  it('applies candidate match bank and credit date on 1-click selection and resolves with custom date', async () => {
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
       if (endpoint === '/discrepancies') return mockSummary;
       if (endpoint === '/accounts') return mockAccounts;
-      if (endpoint === '/discrepancies/auto-link-defaults') return { status: 'success', linked_count: 1 };
+      if (endpoint === '/discrepancies/resolve') return { status: 'success', resolved_count: 1 };
       return {};
     });
 
     render(<DiscrepanciesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Auto-Link Defaults \(1\)/i)).toBeInTheDocument();
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
     });
 
-    const autoLinkBtn = screen.getByText(/Auto-Link Defaults \(1\)/i);
-    fireEvent.click(autoLinkBtn);
+    // Click candidate match button
+    const matchBtn = screen.getByText(/Match: Wells Fargo/i);
+    fireEvent.click(matchBtn);
+
+    // Find Link button for AAPL row and click it
+    const linkBtns = screen.getAllByRole('button', { name: /Link & Confirm/i });
+    fireEvent.click(linkBtns[0]);
 
     await waitFor(() => {
-      expect(api.apiFetch).toHaveBeenCalledWith('/discrepancies/auto-link-defaults', { method: 'POST' });
+      expect(api.apiFetch).toHaveBeenCalledWith('/discrepancies/resolve', {
+        method: 'POST',
+        body: JSON.stringify({
+          resolutions: [
+            {
+              transaction_id: 101,
+              funding_account_id: 4,
+              transaction_date: "2024-05-28",
+            }
+          ],
+          set_default_for_demat: null,
+        }),
+      });
     });
   });
 

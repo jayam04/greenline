@@ -8,6 +8,16 @@ import {
   ArrowRight, Check, Zap, Building2, HelpCircle
 } from "lucide-react";
 
+interface CandidateMatch {
+  match_id: number;
+  match_type: string;
+  account_id: number;
+  account_name: string;
+  date: string;
+  amount: number;
+  title: string;
+}
+
 interface DiscrepancyItem {
   transaction_id: number;
   account_id: number;
@@ -25,6 +35,7 @@ interface DiscrepancyItem {
   source: string;
   suggested_funding_account_id?: number | null;
   suggested_funding_account_name?: string | null;
+  candidate_matches?: CandidateMatch[];
   notes?: string | null;
 }
 
@@ -50,6 +61,7 @@ export default function DiscrepanciesPage() {
   const [resolving, setResolving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [selectedBankPerTx, setSelectedBankPerTx] = useState<Record<number, number>>({});
+  const [selectedDatePerTx, setSelectedDatePerTx] = useState<Record<number, string>>({});
   const [batchBankId, setBatchBankId] = useState<number | "">("");
   const [setDefaultDemat, setSetDefaultDemat] = useState<Record<number, boolean>>({});
 
@@ -70,16 +82,26 @@ export default function DiscrepanciesPage() {
       const bankAccounts = (accsRes || []).filter((a) => a.account_type === "bank");
       setAccounts(bankAccounts);
 
-      // Pre-fill initial bank selections with suggested account if available
+      // Pre-fill initial bank and date selections
       const initialBankMap: Record<number, number> = {};
+      const initialDateMap: Record<number, string> = {};
+
       discRes.unlinked_items.forEach((item) => {
-        if (item.suggested_funding_account_id) {
+        initialDateMap[item.transaction_id] = item.transaction_date;
+
+        if (item.candidate_matches && item.candidate_matches.length > 0) {
+          initialBankMap[item.transaction_id] = item.candidate_matches[0].account_id;
+          initialDateMap[item.transaction_id] = item.candidate_matches[0].date;
+        } else if (item.suggested_funding_account_id) {
           initialBankMap[item.transaction_id] = item.suggested_funding_account_id;
         } else if (bankAccounts.length > 0) {
           initialBankMap[item.transaction_id] = bankAccounts[0].account_id;
         }
       });
+
       setSelectedBankPerTx(initialBankMap);
+      setSelectedDatePerTx(initialDateMap);
+
       if (bankAccounts.length > 0) {
         setBatchBankId(bankAccounts[0].account_id);
       }
@@ -102,18 +124,6 @@ export default function DiscrepanciesPage() {
     }
   };
 
-  const handleAutoLinkDefaults = async () => {
-    try {
-      setResolving(true);
-      await apiFetch("/discrepancies/auto-link-defaults", { method: "POST" });
-      await loadData();
-    } catch (err: any) {
-      alert(err.message || "Failed to auto-link defaults");
-    } finally {
-      setResolving(false);
-    }
-  };
-
   const handleResolveSingle = async (txId: number, dematId: number) => {
     const bankId = selectedBankPerTx[txId];
     if (!bankId) {
@@ -124,10 +134,18 @@ export default function DiscrepanciesPage() {
     try {
       setResolving(true);
       const shouldSetDefault = setDefaultDemat[txId];
+      const creditDate = selectedDatePerTx[txId];
+
       await apiFetch("/discrepancies/resolve", {
         method: "POST",
         body: JSON.stringify({
-          resolutions: [{ transaction_id: txId, funding_account_id: bankId }],
+          resolutions: [
+            {
+              transaction_id: txId,
+              funding_account_id: bankId,
+              transaction_date: creditDate || undefined,
+            }
+          ],
           set_default_for_demat: shouldSetDefault
             ? { demat_account_id: dematId, default_dividend_account_id: bankId }
             : null,
@@ -153,6 +171,7 @@ export default function DiscrepanciesPage() {
       const resolutions = Array.from(selectedIds).map((txId) => ({
         transaction_id: txId,
         funding_account_id: Number(batchBankId),
+        transaction_date: selectedDatePerTx[txId] || undefined,
       }));
 
       await apiFetch("/discrepancies/resolve", {
@@ -209,18 +228,6 @@ export default function DiscrepanciesPage() {
 
         {/* Global Actions */}
         <div className="flex items-center gap-2">
-          {data && data.auto_linkable_count > 0 && (
-            <button
-              onClick={handleAutoLinkDefaults}
-              disabled={resolving}
-              className="btn-pill-green text-xs cursor-pointer flex items-center gap-1.5"
-              title="Automatically match all dividends whose Demat account has a default bank configured"
-            >
-              <Zap className="w-3.5 h-3.5 fill-current" />
-              <span>Auto-Link Defaults ({data.auto_linkable_count})</span>
-            </button>
-          )}
-
           <button
             onClick={handleSyncDividends}
             disabled={syncing}
@@ -235,7 +242,7 @@ export default function DiscrepanciesPage() {
 
       {/* Summary KPI Cards */}
       {data && data.total_count > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="getquin-card p-4 space-y-1">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
               Unlinked Distributions
@@ -257,18 +264,6 @@ export default function DiscrepanciesPage() {
             </div>
             <p className="text-[11px] text-slate-500">
               Net payout after withheld taxes
-            </p>
-          </div>
-
-          <div className="getquin-card p-4 space-y-1">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Pre-Matched Ready
-            </div>
-            <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-              {data.auto_linkable_count} / {data.total_count}
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Have default Demat bank assigned
             </p>
           </div>
         </div>
@@ -372,7 +367,8 @@ export default function DiscrepanciesPage() {
                         />
                       </td>
                       <td className="py-3 px-3 font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">
-                        {item.transaction_date}
+                        <div>{item.transaction_date}</div>
+                        <span className="text-[10px] text-slate-400">Ex-Date</span>
                       </td>
                       <td className="py-3 px-3">
                         <div className="font-bold text-[#0F172A] dark:text-white flex items-center gap-1.5">
@@ -397,6 +393,25 @@ export default function DiscrepanciesPage() {
                             <span>Default: {item.suggested_funding_account_name}</span>
                           </div>
                         )}
+                        {item.candidate_matches && item.candidate_matches.length > 0 && (
+                          <div className="mt-1 space-y-1">
+                            {item.candidate_matches.map((m, mIdx) => (
+                              <button
+                                key={mIdx}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedBankPerTx((prev) => ({ ...prev, [item.transaction_id]: m.account_id }));
+                                  setSelectedDatePerTx((prev) => ({ ...prev, [item.transaction_id]: m.date }));
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 transition-colors cursor-pointer text-left"
+                                title={`Use matched bank ${m.account_name} on ${m.date}`}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                <span>Match: {m.account_name} · {m.date} ({formatCurrency(m.amount, item.currency)})</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-3 text-right font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
                         {formatQty(item.quantity)} @ {formatCurrency(item.price_per_unit, item.currency)}
@@ -410,8 +425,21 @@ export default function DiscrepanciesPage() {
                       <td className="py-3 px-3 text-right font-black text-emerald-600 dark:text-emerald-400">
                         +{formatCurrency(item.net_amount, item.currency)}
                       </td>
-                      <td className="py-3 px-3 min-w-[200px]">
-                        <div className="space-y-1">
+                      <td className="py-3 px-3 min-w-[220px]">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Credit Date:</span>
+                            <input
+                              type="date"
+                              value={selectedDatePerTx[item.transaction_id] || item.transaction_date}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSelectedDatePerTx((prev) => ({ ...prev, [item.transaction_id]: val }));
+                              }}
+                              className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-medium rounded-md px-2 py-0.5 border border-slate-200 dark:border-slate-700 text-xs focus:outline-none"
+                            />
+                          </div>
+
                           <select
                             value={selectedBank || ""}
                             onChange={(e) => {
@@ -451,7 +479,7 @@ export default function DiscrepanciesPage() {
                           disabled={resolving}
                           className="btn-pill-black text-[11px] px-3 py-1.5 cursor-pointer whitespace-nowrap"
                         >
-                          Link Deposit
+                          Link & Confirm
                         </button>
                       </td>
                     </tr>

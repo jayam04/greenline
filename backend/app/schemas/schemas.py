@@ -157,6 +157,17 @@ class PriceHistoryResponse(BaseModel):
     source: str
     model_config = ConfigDict(from_attributes=True)
 
+class CustomPriceResponse(BaseModel):
+    price_id: int
+    asset_id: int
+    asset_symbol: str
+    asset_name: Optional[str] = None
+    currency: str
+    price_date: datetime.date
+    close_price: float
+    source: str
+    model_config = ConfigDict(from_attributes=True)
+
 # Corporate Action Schemas
 class CorporateActionCreate(BaseModel):
     asset_id: int
@@ -232,6 +243,15 @@ class PortfolioSummaryResponse(BaseModel):
     closed_holdings: List[HoldingSummary] = []
 
 # Discrepancy Schemas
+class CandidateMatchItem(BaseModel):
+    match_id: int
+    match_type: str  # "cashflow" or "transaction"
+    account_id: int
+    account_name: str
+    date: datetime.date
+    amount: float
+    title: str
+
 class DiscrepancyItemResponse(BaseModel):
     transaction_id: int
     account_id: int
@@ -249,6 +269,7 @@ class DiscrepancyItemResponse(BaseModel):
     source: str
     suggested_funding_account_id: Optional[int] = None
     suggested_funding_account_name: Optional[str] = None
+    candidate_matches: List[CandidateMatchItem] = []
     notes: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
@@ -261,6 +282,7 @@ class DiscrepancySummaryResponse(BaseModel):
 class DiscrepancyResolveItem(BaseModel):
     transaction_id: int
     funding_account_id: int
+    transaction_date: Optional[datetime.date] = None
     taxes: Optional[float] = None
     notes: Optional[str] = None
 

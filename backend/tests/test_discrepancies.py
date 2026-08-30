@@ -128,12 +128,17 @@ async def test_discrepancies_endpoints():
             res_after = await ac.get("/api/v1/discrepancies/")
             data_after = res_after.json()
             assert data_after["total_count"] == 1
-            assert data_after["unlinked_items"][0]["transaction_id"] == div1.transaction_id
-
-            # 3. POST /api/v1/discrepancies/auto-link-defaults (auto-link div1)
-            res_autolink = await ac.post("/api/v1/discrepancies/auto-link-defaults")
-            assert res_autolink.status_code == 200
-            assert res_autolink.json()["linked_count"] == 1
+            # 3. POST /api/v1/discrepancies/resolve (resolve div1 explicitly with credit date)
+            res_resolve2 = await ac.post("/api/v1/discrepancies/resolve", json={
+                "resolutions": [
+                    {
+                        "transaction_id": div1.transaction_id,
+                        "funding_account_id": bank_acc.account_id,
+                        "transaction_date": "2024-06-18"
+                    }
+                ]
+            })
+            assert res_resolve2.status_code == 200
 
             # Verify all discrepancies resolved
             res_final = await ac.get("/api/v1/discrepancies/")

@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { formatCurrency, formatQty } from "@/lib/format";
 import { 
   AlertCircle, CheckCircle2, RefreshCw, Landmark, 
-  ArrowRight, Check, Zap, Building2, HelpCircle
+  ArrowRight, Check, Zap, Building2, HelpCircle, XCircle, Link2Off
 } from "lucide-react";
 
 interface CandidateMatch {
@@ -19,7 +19,8 @@ interface CandidateMatch {
 }
 
 interface DiscrepancyItem {
-  transaction_id: number;
+  expected_dividend_id?: number | null;
+  transaction_id?: number | null;
   account_id: number;
   account_name: string;
   asset_id: number;
@@ -30,9 +31,12 @@ interface DiscrepancyItem {
   quantity: number;
   price_per_unit: number;
   total_amount: number;
+  expected_amount?: number | null;
+  linked_transaction_amount?: number | null;
   taxes: number;
   net_amount: number;
   source: string;
+  status: string;
   suggested_funding_account_id?: number | null;
   suggested_funding_account_name?: string | null;
   candidate_matches?: CandidateMatch[];
@@ -59,16 +63,22 @@ export default function DiscrepanciesPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [resolving, setResolving] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [selectedBankPerTx, setSelectedBankPerTx] = useState<Record<number, number>>({});
-  const [selectedDatePerTx, setSelectedDatePerTx] = useState<Record<number, string>>({});
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [selectedBankPerTx, setSelectedBankPerTx] = useState<Record<string, number>>({});
+  const [selectedDatePerTx, setSelectedDatePerTx] = useState<Record<string, string>>({});
   const [batchBankId, setBatchBankId] = useState<number | "">("");
-  const [setDefaultDemat, setSetDefaultDemat] = useState<Record<number, boolean>>({});
+  const [setDefaultDemat, setSetDefaultDemat] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     document.title = "Discrepancies · greenline";
     loadData();
   }, []);
+
+  const getRowKey = (item: DiscrepancyItem): string => {
+    if (item.expected_dividend_id) return `exp-${item.expected_dividend_id}`;
+    if (item.transaction_id) return `tx-${item.transaction_id}`;
+    return `item-${item.account_id}-${item.asset_id}-${item.transaction_date}`;
+  };
 
   const loadData = async () => {
     try {
@@ -82,20 +92,20 @@ export default function DiscrepanciesPage() {
       const bankAccounts = (accsRes || []).filter((a) => a.account_type === "bank");
       setAccounts(bankAccounts);
 
-      // Pre-fill initial bank and date selections
-      const initialBankMap: Record<number, number> = {};
-      const initialDateMap: Record<number, string> = {};
+      const initialBankMap: Record<string, number> = {};
+      const initialDateMap: Record<string, string> = {};
 
       discRes.unlinked_items.forEach((item) => {
-        initialDateMap[item.transaction_id] = item.transaction_date;
+        const key = getRowKey(item);
+        initialDateMap[key] = item.transaction_date;
 
         if (item.candidate_matches && item.candidate_matches.length > 0) {
-          initialBankMap[item.transaction_id] = item.candidate_matches[0].account_id;
-          initialDateMap[item.transaction_id] = item.candidate_matches[0].date;
+          initialBankMap[key] = item.candidate_matches[0].account_id;
+          initialDateMap[key] = item.candidate_matches[0].date;
         } else if (item.suggested_funding_account_id) {
-          initialBankMap[item.transaction_id] = item.suggested_funding_account_id;
+          initialBankMap[key] = item.suggested_funding_account_id;
         } else if (bankAccounts.length > 0) {
-          initialBankMap[item.transaction_id] = bankAccounts[0].account_id;
+          initialBankMap[key] = bankAccounts[0].account_id;
         }
       });
 
@@ -124,8 +134,9 @@ export default function DiscrepanciesPage() {
     }
   };
 
-  const handleResolveSingle = async (txId: number, dematId: number) => {
-    const bankId = selectedBankPerTx[txId];
+  const handleResolveSingle = async (item: DiscrepancyItem, dematId: number) => {
+    const key = getRowKey(item);
+    const bankId = selectedBankPerTx[key];
     if (!bankId) {
       alert("Please select a destination bank account.");
       return;
@@ -133,17 +144,20 @@ export default function DiscrepanciesPage() {
 
     try {
       setResolving(true);
-      const shouldSetDefault = setDefaultDemat[txId];
-      const creditDate = selectedDatePerTx[txId];
+      const shouldSetDefault = setDefaultDemat[key];
+      const creditDate = selectedDatePerTx[key];
 
       await apiFetch("/discrepancies/resolve", {
         method: "POST",
         body: JSON.stringify({
           resolutions: [
             {
-              transaction_id: txId,
+              expected_dividend_id: item.expected_dividend_id || undefined,
+              transaction_id: item.transaction_id || undefined,
               funding_account_id: bankId,
               transaction_date: creditDate || undefined,
+              total_amount: item.total_amount,
+              taxes: item.taxes || 0.0,
             }
           ],
           set_default_for_demat: shouldSetDefault
@@ -159,8 +173,38 @@ export default function DiscrepanciesPage() {
     }
   };
 
+  const handleDismiss = async (expId: number) => {
+    try {
+      setResolving(true);
+      await apiFetch("/discrepancies/dismiss", {
+        method: "POST",
+        body: JSON.stringify({ expected_dividend_ids: [expId] }),
+      });
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || "Failed to dismiss expected dividend");
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const handleUnlink = async (expId: number) => {
+    try {
+      setResolving(true);
+      await apiFetch("/discrepancies/unlink", {
+        method: "POST",
+        body: JSON.stringify({ expected_dividend_ids: [expId] }),
+      });
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || "Failed to unlink dividend");
+    } finally {
+      setResolving(false);
+    }
+  };
+
   const handleResolveBatch = async () => {
-    if (selectedIds.size === 0) return;
+    if (selectedKeys.size === 0 || !data) return;
     if (!batchBankId) {
       alert("Please choose a bank account for batch linking.");
       return;
@@ -168,17 +212,25 @@ export default function DiscrepanciesPage() {
 
     try {
       setResolving(true);
-      const resolutions = Array.from(selectedIds).map((txId) => ({
-        transaction_id: txId,
-        funding_account_id: Number(batchBankId),
-        transaction_date: selectedDatePerTx[txId] || undefined,
-      }));
+      const resolutions = data.unlinked_items
+        .filter((item) => selectedKeys.has(getRowKey(item)))
+        .map((item) => {
+          const key = getRowKey(item);
+          return {
+            expected_dividend_id: item.expected_dividend_id || undefined,
+            transaction_id: item.transaction_id || undefined,
+            funding_account_id: Number(batchBankId),
+            transaction_date: selectedDatePerTx[key] || undefined,
+            total_amount: item.total_amount,
+            taxes: item.taxes || 0.0,
+          };
+        });
 
       await apiFetch("/discrepancies/resolve", {
         method: "POST",
         body: JSON.stringify({ resolutions }),
       });
-      setSelectedIds(new Set());
+      setSelectedKeys(new Set());
       await loadData();
     } catch (err: any) {
       alert(err.message || "Failed to batch resolve dividends");
@@ -189,21 +241,21 @@ export default function DiscrepanciesPage() {
 
   const toggleSelectAll = () => {
     if (!data) return;
-    if (selectedIds.size === data.unlinked_items.length) {
-      setSelectedIds(new Set());
+    if (selectedKeys.size === data.unlinked_items.length) {
+      setSelectedKeys(new Set());
     } else {
-      setSelectedIds(new Set(data.unlinked_items.map((i) => i.transaction_id)));
+      setSelectedKeys(new Set(data.unlinked_items.map(getRowKey)));
     }
   };
 
-  const toggleSelectItem = (id: number) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) {
-      next.delete(id);
+  const toggleSelectItem = (key: string) => {
+    const next = new Set(selectedKeys);
+    if (next.has(key)) {
+      next.delete(key);
     } else {
-      next.add(id);
+      next.add(key);
     }
-    setSelectedIds(next);
+    setSelectedKeys(next);
   };
 
   return (
@@ -222,7 +274,7 @@ export default function DiscrepanciesPage() {
             )}
           </div>
           <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
-            Match automated and unlinked dividend distributions to your receiving bank accounts
+            Reconcile expected corporate dividend entitlements with your real bank account deposits
           </p>
         </div>
 
@@ -251,7 +303,7 @@ export default function DiscrepanciesPage() {
               {data.total_count}
             </div>
             <p className="text-[11px] text-slate-500">
-              Awaiting cash deposit routing
+              Awaiting cash deposit routing & confirmation
             </p>
           </div>
 
@@ -279,19 +331,19 @@ export default function DiscrepanciesPage() {
             </div>
             <div>
               <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
-                Unlinked Dividend Payouts
+                Dividend Reconciliation Hub
               </h2>
               <p className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                Securities held on record date that distributed cash dividends
+                Compare expected distributions with actual bank receipts
               </p>
             </div>
           </div>
 
           {/* Batch Selector Bar */}
-          {selectedIds.size > 0 && (
+          {selectedKeys.size > 0 && (
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/70 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
               <span className="font-bold text-slate-700 dark:text-slate-300">
-                {selectedIds.size} selected
+                {selectedKeys.size} selected
               </span>
               <select
                 value={batchBankId}
@@ -329,7 +381,7 @@ export default function DiscrepanciesPage() {
                   <th className="py-2.5 px-3 w-8">
                     <input
                       type="checkbox"
-                      checked={selectedIds.size === data.unlinked_items.length && data.unlinked_items.length > 0}
+                      checked={selectedKeys.size === data.unlinked_items.length && data.unlinked_items.length > 0}
                       onChange={toggleSelectAll}
                       className="rounded border-slate-300 text-black focus:ring-black cursor-pointer"
                     />
@@ -347,13 +399,14 @@ export default function DiscrepanciesPage() {
               </thead>
               <tbody className="divide-y divide-[#F1F5F9] dark:divide-[#1E293B]">
                 {data.unlinked_items.map((item) => {
-                  const isSelected = selectedIds.has(item.transaction_id);
-                  const selectedBank = selectedBankPerTx[item.transaction_id];
+                  const key = getRowKey(item);
+                  const isSelected = selectedKeys.has(key);
+                  const selectedBank = selectedBankPerTx[key];
                   const hasSuggested = Boolean(item.suggested_funding_account_id);
 
                   return (
                     <tr 
-                      key={item.transaction_id}
+                      key={key}
                       className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors ${
                         isSelected ? "bg-slate-50/80 dark:bg-slate-800/50" : ""
                       }`}
@@ -362,7 +415,7 @@ export default function DiscrepanciesPage() {
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => toggleSelectItem(item.transaction_id)}
+                          onChange={() => toggleSelectItem(key)}
                           className="rounded border-slate-300 text-black focus:ring-black cursor-pointer"
                         />
                       </td>
@@ -371,11 +424,16 @@ export default function DiscrepanciesPage() {
                         <span className="text-[10px] text-slate-400">Ex-Date</span>
                       </td>
                       <td className="py-3 px-3">
-                        <div className="font-bold text-[#0F172A] dark:text-white flex items-center gap-1.5">
+                        <div className="font-bold text-[#0F172A] dark:text-white flex items-center gap-1.5 flex-wrap">
                           <span>{item.asset_symbol}</span>
-                          {item.source === "yfinance_auto" && (
-                            <span className="px-1.5 py-0.2 text-[9px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded">
-                              Auto
+                          {item.status === "AMOUNT_MISMATCH" && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded">
+                              Mismatch
+                            </span>
+                          )}
+                          {item.status === "ORPHAN" && (
+                            <span className="px-1.5 py-0.2 text-[9px] font-bold bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 rounded">
+                              Orphan (0 shares)
                             </span>
                           )}
                         </div>
@@ -400,8 +458,8 @@ export default function DiscrepanciesPage() {
                                 key={mIdx}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedBankPerTx((prev) => ({ ...prev, [item.transaction_id]: m.account_id }));
-                                  setSelectedDatePerTx((prev) => ({ ...prev, [item.transaction_id]: m.date }));
+                                  setSelectedBankPerTx((prev) => ({ ...prev, [key]: m.account_id }));
+                                  setSelectedDatePerTx((prev) => ({ ...prev, [key]: m.date }));
                                 }}
                                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 transition-colors cursor-pointer text-left"
                                 title={`Use matched bank ${m.account_name} on ${m.date}`}
@@ -431,10 +489,10 @@ export default function DiscrepanciesPage() {
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Credit Date:</span>
                             <input
                               type="date"
-                              value={selectedDatePerTx[item.transaction_id] || item.transaction_date}
+                              value={selectedDatePerTx[key] || item.transaction_date}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setSelectedDatePerTx((prev) => ({ ...prev, [item.transaction_id]: val }));
+                                setSelectedDatePerTx((prev) => ({ ...prev, [key]: val }));
                               }}
                               className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-medium rounded-md px-2 py-0.5 border border-slate-200 dark:border-slate-700 text-xs focus:outline-none"
                             />
@@ -444,7 +502,7 @@ export default function DiscrepanciesPage() {
                             value={selectedBank || ""}
                             onChange={(e) => {
                               const val = Number(e.target.value);
-                              setSelectedBankPerTx((prev) => ({ ...prev, [item.transaction_id]: val }));
+                              setSelectedBankPerTx((prev) => ({ ...prev, [key]: val }));
                             }}
                             className="w-full bg-[#F8F9FA] dark:bg-[#1A2333] text-slate-900 dark:text-slate-100 font-semibold rounded-lg px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 text-xs focus:outline-none"
                           >
@@ -459,11 +517,11 @@ export default function DiscrepanciesPage() {
                             <label className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={Boolean(setDefaultDemat[item.transaction_id])}
+                                checked={Boolean(setDefaultDemat[key])}
                                 onChange={(e) =>
                                   setSetDefaultDemat((prev) => ({
                                     ...prev,
-                                    [item.transaction_id]: e.target.checked,
+                                    [key]: e.target.checked,
                                   }))
                                 }
                                 className="rounded text-xs border-slate-300"
@@ -474,13 +532,25 @@ export default function DiscrepanciesPage() {
                         </div>
                       </td>
                       <td className="py-3 px-3 text-right">
-                        <button
-                          onClick={() => handleResolveSingle(item.transaction_id, item.account_id)}
-                          disabled={resolving}
-                          className="btn-pill-black text-[11px] px-3 py-1.5 cursor-pointer whitespace-nowrap"
-                        >
-                          Link & Confirm
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleResolveSingle(item, item.account_id)}
+                            disabled={resolving}
+                            className="btn-pill-black text-[11px] px-3 py-1.5 cursor-pointer whitespace-nowrap"
+                          >
+                            Link & Confirm
+                          </button>
+                          {item.expected_dividend_id && (
+                            <button
+                              onClick={() => handleDismiss(item.expected_dividend_id!)}
+                              disabled={resolving}
+                              className="p-1 text-slate-400 hover:text-rose-500 rounded transition-colors"
+                              title="Dismiss expected dividend"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -139,28 +139,31 @@ async def test_sync_dividends_for_asset_auto_creation_and_orphan_cleanup():
             changes = await sync_dividends_for_asset(session, aid)
             assert changes >= 2
 
-        # Verify created dividend transactions
+        # Verify created expected dividend records in Table B
+        from app.db.models import ExpectedDividend
+        exp_stmt = select(ExpectedDividend).where(
+            ExpectedDividend.asset_id == aid
+        ).order_by(ExpectedDividend.ex_date)
+        res = await session.execute(exp_stmt)
+        exp_divs = res.scalars().all()
+
+        # Should have 2 expected dividends in Table B
+        assert len(exp_divs) == 2
+        feb_exp = next(d for d in exp_divs if d.ex_date == datetime.date(2024, 2, 15))
+        assert feb_exp.eligible_shares == 50.0
+        assert feb_exp.dividend_rate == 0.75
+        assert feb_exp.expected_amount == 37.50
+        assert feb_exp.status == "UNMATCHED"
+
+        # Verify Table C has ONLY the manual dividend (never auto-inserted)
         stmt = select(Transaction).where(
             Transaction.asset_id == aid,
             Transaction.transaction_type == "dividend"
         ).order_by(Transaction.transaction_date)
-        res = await session.execute(stmt)
-        divs = res.scalars().all()
-
-        # Should have 2 auto-generated + 1 manual = 3 dividends
-        assert len(divs) == 3
-
-        feb_div = next(d for d in divs if d.transaction_date == datetime.date(2024, 2, 15))
-        assert feb_div.source == "yfinance_auto"
-        assert feb_div.quantity == 50.0
-        assert feb_div.price_per_unit == 0.75
-        assert feb_div.total_amount == 37.50
-        assert feb_div.funding_account_id is None
-
-        # Verify manual entry is preserved exactly
-        dec_div = next(d for d in divs if d.transaction_date == datetime.date(2024, 12, 1))
-        assert dec_div.source == "manual"
-        assert dec_div.notes == "Custom special dividend"
+        divs = (await session.execute(stmt)).scalars().all()
+        assert len(divs) == 1
+        assert divs[0].source == "manual"
+        assert divs[0].notes == "Custom special dividend"
 
         # Now simulate selling all shares on 2024-03-01 (so May dividend held shares become 0)
         sell_tx = Transaction(
@@ -180,12 +183,9 @@ async def test_sync_dividends_for_asset_auto_creation_and_orphan_cleanup():
         with patch("app.services.dividend_engine.fetch_yfinance_dividends", return_value=mocked_yfinance_dividends):
             await sync_dividends_for_asset(session, aid)
 
-        # Check dividends again
-        res2 = await session.execute(stmt)
-        divs2 = res2.scalars().all()
-        # May dividend should be auto-deleted because held shares = 0!
-        assert len(divs2) == 2
-        dates = [d.transaction_date for d in divs2]
-        assert datetime.date(2024, 2, 15) in dates
-        assert datetime.date(2024, 5, 15) not in dates
-        assert datetime.date(2024, 12, 1) in dates
+        # Check Table B expected dividends again
+        res2 = await session.execute(exp_stmt)
+        exp_divs2 = res2.scalars().all()
+        # May dividend should be auto-deleted from Table B because held shares = 0 and unlinked!
+        assert len(exp_divs2) == 1
+        assert exp_divs2[0].ex_date == datetime.date(2024, 2, 15)

@@ -253,7 +253,8 @@ class CandidateMatchItem(BaseModel):
     title: str
 
 class DiscrepancyItemResponse(BaseModel):
-    transaction_id: int
+    expected_dividend_id: Optional[int] = None
+    transaction_id: Optional[int] = None
     account_id: int
     account_name: str
     asset_id: int
@@ -264,9 +265,12 @@ class DiscrepancyItemResponse(BaseModel):
     quantity: float
     price_per_unit: float
     total_amount: float
-    taxes: float
+    expected_amount: Optional[float] = None
+    linked_transaction_amount: Optional[float] = None
+    taxes: float = 0.0
     net_amount: float
-    source: str
+    source: str = "yfinance"
+    status: str = "UNMATCHED"
     suggested_funding_account_id: Optional[int] = None
     suggested_funding_account_name: Optional[str] = None
     candidate_matches: List[CandidateMatchItem] = []
@@ -280,15 +284,20 @@ class DiscrepancySummaryResponse(BaseModel):
     unlinked_items: List[DiscrepancyItemResponse]
 
 class DiscrepancyResolveItem(BaseModel):
-    transaction_id: int
+    expected_dividend_id: Optional[int] = None
+    transaction_id: Optional[int] = None
     funding_account_id: int
     transaction_date: Optional[datetime.date] = None
+    total_amount: Optional[float] = None
     taxes: Optional[float] = None
     notes: Optional[str] = None
 
 class DiscrepancyResolveRequest(BaseModel):
     resolutions: List[DiscrepancyResolveItem]
     set_default_for_demat: Optional[Dict[str, int]] = None
+
+class DiscrepancyActionRequest(BaseModel):
+    expected_dividend_ids: List[int]
 
 
 class AnnualSnapshotResponse(BaseModel):

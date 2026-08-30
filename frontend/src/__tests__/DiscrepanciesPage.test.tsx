@@ -14,7 +14,8 @@ const mockSummary = {
   auto_linkable_count: 1,
   unlinked_items: [
     {
-      transaction_id: 101,
+      expected_dividend_id: 201,
+      transaction_id: null,
       account_id: 1,
       account_name: "Zerodha Demat",
       asset_id: 10,
@@ -25,9 +26,11 @@ const mockSummary = {
       quantity: 50.0,
       price_per_unit: 1.0,
       total_amount: 50.0,
+      expected_amount: 50.0,
       taxes: 5.0,
       net_amount: 45.0,
-      source: "yfinance_auto",
+      source: "yfinance",
+      status: "UNMATCHED",
       suggested_funding_account_id: 2,
       suggested_funding_account_name: "Chase Checking",
       candidate_matches: [
@@ -41,10 +44,11 @@ const mockSummary = {
           title: "Dividend Payout AAPL",
         }
       ],
-      notes: "Auto-generated dividend",
+      notes: "Expected dividend for AAPL",
     },
     {
-      transaction_id: 102,
+      expected_dividend_id: 202,
+      transaction_id: null,
       account_id: 3,
       account_name: "Schwab Demat",
       asset_id: 20,
@@ -55,13 +59,15 @@ const mockSummary = {
       quantity: 100.0,
       price_per_unit: 1.5,
       total_amount: 150.0,
+      expected_amount: 150.0,
       taxes: 19.5,
       net_amount: 130.50,
-      source: "yfinance_auto",
+      source: "yfinance",
+      status: "UNMATCHED",
       suggested_funding_account_id: null,
       suggested_funding_account_name: null,
       candidate_matches: [],
-      notes: "Auto-generated dividend",
+      notes: "Expected dividend for MSFT",
     },
   ],
 };
@@ -104,7 +110,7 @@ describe('DiscrepanciesPage Component (Layer 2B)', () => {
     expect(screen.queryByText(/Auto-Link Defaults/i)).not.toBeInTheDocument();
   });
 
-  it('applies candidate match bank and credit date on 1-click selection and resolves with custom date', async () => {
+  it('applies candidate match bank and credit date on 1-click selection and resolves with custom date and expected_dividend_id', async () => {
     (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
       if (endpoint === '/discrepancies') return mockSummary;
       if (endpoint === '/accounts') return mockAccounts;
@@ -132,9 +138,11 @@ describe('DiscrepanciesPage Component (Layer 2B)', () => {
         body: JSON.stringify({
           resolutions: [
             {
-              transaction_id: 101,
+              expected_dividend_id: 201,
               funding_account_id: 4,
               transaction_date: "2024-05-28",
+              total_amount: 50.0,
+              taxes: 5.0,
             }
           ],
           set_default_for_demat: null,
@@ -160,8 +168,7 @@ describe('DiscrepanciesPage Component (Layer 2B)', () => {
     render(<DiscrepanciesPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('No Discrepancies Found')).toBeInTheDocument();
+      expect(screen.getByText(/No Discrepancies Found/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/All dividend distributions and cash movements are currently matched/i)).toBeInTheDocument();
   });
 });

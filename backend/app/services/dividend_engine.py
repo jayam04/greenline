@@ -110,10 +110,11 @@ async def calculate_shares_on_date(
 async def sync_dividends_for_asset(db: AsyncSession, asset_id: int) -> int:
     """
     Synchronizes Yahoo Finance dividends for an asset across all holding accounts.
-    Creates or updates auto-generated dividends with funding_account_id=None.
-    Removes orphan auto-generated dividends if shares held drops to 0.
-    Preserves manual dividend entries.
+    Populates or updates the helper ExpectedDividend table (Table B).
+    NEVER mutates or inserts into the actual Transaction ledger (Table C).
     """
+    from app.db.models import ExpectedDividend
+
     asset_res = await db.execute(select(Asset).where(Asset.asset_id == asset_id))
     asset = asset_res.scalar_one_or_none()
     if not asset or not asset.symbol:
@@ -136,56 +137,90 @@ async def sync_dividends_for_asset(db: AsyncSession, asset_id: int) -> int:
     for account in accounts:
         for ex_date, rate in dividends_list:
             shares = await calculate_shares_on_date(db, asset_id, account.account_id, ex_date)
-
-            existing_tx_stmt = select(Transaction).where(
-                Transaction.asset_id == asset_id,
-                Transaction.account_id == account.account_id,
-                Transaction.transaction_date == ex_date,
-                Transaction.transaction_type == "dividend"
-            )
-            existing_res = await db.execute(existing_tx_stmt)
-            existing_tx = existing_res.scalar_one_or_none()
-
             gross_amount = round(shares * rate, 2)
 
+            exp_stmt = select(ExpectedDividend).where(
+                ExpectedDividend.asset_id == asset_id,
+                ExpectedDividend.account_id == account.account_id,
+                ExpectedDividend.ex_date == ex_date
+            )
+            exp_res = await db.execute(exp_stmt)
+            exp = exp_res.scalar_one_or_none()
+
             if shares > 0 and gross_amount > 0:
-                if existing_tx:
-                    if getattr(existing_tx, "source", None) == "yfinance_auto":
-                        if (
-                            abs(float(existing_tx.quantity or 0.0) - shares) > 1e-5
-                            or abs(float(existing_tx.price_per_unit or 0.0) - rate) > 1e-5
-                            or abs(float(existing_tx.total_amount or 0.0) - gross_amount) > 1e-2
-                        ):
-                            existing_tx.quantity = shares
-                            existing_tx.price_per_unit = rate
-                            existing_tx.total_amount = gross_amount
-                            existing_tx.notes = f"Auto-generated dividend for {asset.symbol} ({shares} shares @ {rate}/share)"
-                            changes += 1
+                if exp:
+                    exp.eligible_shares = shares
+                    exp.dividend_rate = rate
+                    exp.expected_amount = gross_amount
+
+                    if exp.matched_transaction_id:
+                        tx_res = await db.execute(
+                            select(Transaction).where(Transaction.transaction_id == exp.matched_transaction_id)
+                        )
+                        mtx = tx_res.scalar_one_or_none()
+                        if mtx:
+                            if abs(float(mtx.total_amount or 0.0) - gross_amount) > 0.01:
+                                exp.status = "AMOUNT_MISMATCH"
+                            else:
+                                exp.status = "MATCHED"
+                        else:
+                            exp.matched_transaction_id = None
+                            exp.status = "UNMATCHED"
+                    elif exp.status not in ["DISMISSED"]:
+                        exp.status = "UNMATCHED"
+                    changes += 1
                 else:
-                    new_div_tx = Transaction(
-                        account_id=account.account_id,
-                        funding_account_id=None,
-                        asset_id=asset_id,
-                        transaction_type="dividend",
-                        transaction_date=ex_date,
-                        quantity=shares,
-                        price_per_unit=rate,
-                        total_amount=gross_amount,
-                        fees=0.0,
-                        taxes=0.0,
-                        source="yfinance_auto",
-                        notes=f"Auto-generated dividend for {asset.symbol} ({shares} shares @ {rate}/share)"
+                    # Check if an existing confirmed dividend transaction in Table C matches
+                    existing_tx_stmt = select(Transaction).where(
+                        Transaction.asset_id == asset_id,
+                        Transaction.account_id == account.account_id,
+                        Transaction.transaction_type == "dividend",
+                        Transaction.funding_account_id.is_not(None),
+                        Transaction.transaction_date >= ex_date,
+                        Transaction.transaction_date <= ex_date + datetime.timedelta(days=90),
+                        Transaction.expected_dividend_id.is_(None)
                     )
-                    db.add(new_div_tx)
+                    existing_tx = (await db.execute(existing_tx_stmt)).scalars().first()
+
+                    matched_id = None
+                    init_status = "UNMATCHED"
+
+                    if existing_tx and abs(float(existing_tx.total_amount or 0.0) - gross_amount) < 0.01:
+                        matched_id = existing_tx.transaction_id
+                        init_status = "MATCHED"
+
+                    new_exp = ExpectedDividend(
+                        asset_id=asset_id,
+                        account_id=account.account_id,
+                        ex_date=ex_date,
+                        eligible_shares=shares,
+                        dividend_rate=rate,
+                        expected_amount=gross_amount,
+                        currency=asset.currency or "USD",
+                        source="yfinance",
+                        matched_transaction_id=matched_id,
+                        status=init_status
+                    )
+                    db.add(new_exp)
+                    await db.flush()
+
+                    if existing_tx and matched_id:
+                        existing_tx.expected_dividend_id = new_exp.expected_dividend_id
+
                     changes += 1
             else:
-                if existing_tx and getattr(existing_tx, "source", None) == "yfinance_auto":
-                    await db.delete(existing_tx)
-                    changes += 1
+                if exp:
+                    if exp.matched_transaction_id:
+                        exp.eligible_shares = 0.0
+                        exp.expected_amount = 0.0
+                        exp.status = "ORPHAN"
+                        changes += 1
+                    else:
+                        await db.delete(exp)
+                        changes += 1
 
     if changes > 0:
         await db.commit()
-        await recalculate_all_lots(db)
 
     return changes
 

@@ -151,16 +151,13 @@ describe('Stack 3 Layer 4A: Net XIRR & Net Balance Tests', () => {
       expect(screen.getByText('Apple Inc.')).toBeInTheDocument();
     });
 
-    // Check table header has Net Balance column
-    expect(screen.getByText(/Net Balance/i)).toBeInTheDocument();
-
-    // Verify chronological statement balances for Chase Checking:
-    // Aug 01: +$5000 -> Running Bal: $5,000.00
-    // Aug 05: -$200  -> Running Bal: $4,800.00
-    // Aug 10: -$1510 -> Running Bal: $3,290.00
-    expect(screen.getAllByText('$5,000.00').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('$4,800.00').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('$3,290.00').length).toBeGreaterThanOrEqual(1);
+    // Verify chronological statement balances for Chase Checking inside Payment Method(s) badges:
+    // Aug 01: +$5000 -> Bal: $5,000.00
+    // Aug 05: -$200  -> Bal: $4,800.00
+    // Aug 10: -$1510 -> Bal: $3,290.00
+    expect(screen.getByText(/Bal:\s*\$5,000\.00/i)).toBeInTheDocument();
+    expect(screen.getByText(/Bal:\s*\$4,800\.00/i)).toBeInTheDocument();
+    expect(screen.getByText(/Bal:\s*\$3,290\.00/i)).toBeInTheDocument();
   });
 
   it('filters by specific account and updates net statement balances accordingly', async () => {
@@ -183,7 +180,7 @@ describe('Stack 3 Layer 4A: Net XIRR & Net Balance Tests', () => {
 
     await waitFor(() => {
       // Running balance of latest transaction (Aug 10) on Chase Checking is $3,290.00
-      expect(screen.getAllByText('$3,290.00').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/Bal:\s*\$3,290\.00/i)).toBeInTheDocument();
     });
   });
 });

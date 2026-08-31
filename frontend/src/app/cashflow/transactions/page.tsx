@@ -546,21 +546,20 @@ export default function CashflowTransactionsPage() {
                 <th className="pb-2.5 font-bold">Payment Method(s)</th>
                 <th className="pb-2.5 font-bold">Category & Description</th>
                 <th className="pb-2.5 font-bold text-right">Amount</th>
-                <th className="pb-2.5 font-bold text-right px-3">Net Balance</th>
                 <th className="pb-2.5 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 font-semibold">
+                  <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
                     Loading transactions ledger...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 font-medium text-xs">
+                  <td colSpan={6} className="py-12 text-center text-slate-400 font-medium text-xs">
                     No cashflow transactions recorded for this period.
                   </td>
                 </tr>
@@ -642,43 +641,6 @@ export default function CashflowTransactionsPage() {
                       <span className={r.isTransfer ? "text-blue-600 dark:text-blue-400" : r.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
                         {r.isIncome ? "+" : "-"}{formatCurrency(r.totalAmount, r.currency)}
                       </span>
-                    </td>
-
-                    {/* Net Balance Column */}
-                    <td className="py-3 px-3 text-right tabular-nums whitespace-nowrap font-mono">
-                      {(() => {
-                        if (selectedAccountId !== "ALL") {
-                          const aid = Number(selectedAccountId);
-                          const bal = r.runningBalancesAfter[aid];
-                          const acc = accounts.find((a) => a.account_id === aid);
-                          const curr = acc?.currency || r.currency || "USD";
-                          if (bal !== undefined) {
-                            return (
-                              <span className={`font-bold text-xs ${bal >= 0 ? "text-slate-800 dark:text-slate-200" : "text-rose-600 dark:text-rose-400"}`}>
-                                {formatCurrency(bal, curr)}
-                              </span>
-                            );
-                          }
-                          return <span className="text-slate-400">-</span>;
-                        }
-
-                        if (r.primaryBalanceAfter) {
-                          const bal = r.primaryBalanceAfter.balance;
-                          const curr = r.primaryBalanceAfter.currency;
-                          return (
-                            <div className="flex flex-col items-end">
-                              <span className={`font-bold text-xs ${bal >= 0 ? "text-slate-800 dark:text-slate-200" : "text-rose-600 dark:text-rose-400"}`}>
-                                {formatCurrency(bal, curr)}
-                              </span>
-                              <span className="text-[9px] font-semibold text-slate-400 truncate max-w-[110px]">
-                                {r.primaryBalanceAfter.account_name.replace(" (Cash)", "").replace(" (Holding)", "")}
-                              </span>
-                            </div>
-                          );
-                        }
-
-                        return <span className="text-slate-400">-</span>;
-                      })()}
                     </td>
 
                     {/* Actions */}

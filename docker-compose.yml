@@ -11,6 +11,7 @@ services:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
     environment:
+      - DATABASE_FILE=investments.db
       - DATABASE_URL=sqlite+aiosqlite:////data/investments.db
       - SECRET_KEY=super-secret-investment-tracker-key-change-in-prod-2026
       - DEFAULT_ADMIN_USER=admin

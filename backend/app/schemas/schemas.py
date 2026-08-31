@@ -469,6 +469,40 @@ class SankeyDataResponse(BaseModel):
     links: List[SankeyLink]
     total_income: float
     total_expenses: float
-    total_investments: float
+    total_investments: float = 0.0
+    net_savings: float = 0.0
     depth: int = 2
 
+# Backup Schemas
+class BackupItemResponse(BaseModel):
+    filename: str
+    filepath: str
+    size_bytes: int
+    size_formatted: str
+    created_at: str
+    kind: str
+    note: Optional[str] = None
+
+class BackupListResponse(BaseModel):
+    total_count: int
+    backups: List[BackupItemResponse]
+
+class BackupConfigResponse(BaseModel):
+    database_file: str
+    data_dir: str
+    active_db_path: str
+    autobackup_enabled: bool
+    autobackup_interval_hours: int
+    autobackup_max_copies: int
+    last_backup_timestamp: Optional[str] = None
+    next_backup_timestamp: Optional[str] = None
+    is_overdue: bool
+    total_backups_count: int
+
+class BackupConfigUpdate(BaseModel):
+    autobackup_enabled: Optional[bool] = None
+    autobackup_interval_hours: Optional[int] = None
+    autobackup_max_copies: Optional[int] = None
+
+class BackupCreateRequest(BaseModel):
+    note: Optional[str] = None

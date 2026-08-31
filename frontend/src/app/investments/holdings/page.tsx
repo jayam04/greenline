@@ -247,17 +247,17 @@ export default function HoldingsPage() {
         </div>
       </div>
 
-      {/* 6 Summary KPI Cards (Converted to Master Currency, Dynamic for 1D / All-Time) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+      {/* 7 Summary KPI Cards (Converted to Master Currency, Dynamic for 1D / All-Time) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
         {/* Card 1: Total Positions Value */}
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Positions Value</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className="text-xl font-extrabold text-[#0F172A] tabular-nums mt-1 truncate">
+          <div className="text-xl font-extrabold text-[#0F172A] dark:text-white tabular-nums mt-1 truncate">
             {formatCleanMoney(totalValueEUR, masterCurrency)}
           </div>
         </div>
@@ -266,7 +266,7 @@ export default function HoldingsPage() {
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>{viewMode === "1d" ? "1D Value Change" : "Invested Cost"}</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
@@ -276,7 +276,7 @@ export default function HoldingsPage() {
               <span className="truncate">{formatCleanMoney(totalValueChange1dMaster, masterCurrency)}</span>
             </div>
           ) : (
-            <div className="text-xl font-extrabold text-slate-800 tabular-nums mt-1 truncate">
+            <div className="text-xl font-extrabold text-slate-800 dark:text-slate-200 tabular-nums mt-1 truncate">
               {formatCleanMoney(totalCostEUR, masterCurrency)}
             </div>
           )}
@@ -286,7 +286,7 @@ export default function HoldingsPage() {
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>{viewMode === "1d" ? "1D Return %" : "Unrealized P&L"}</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
@@ -307,7 +307,7 @@ export default function HoldingsPage() {
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Realized P&L</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
@@ -317,24 +317,11 @@ export default function HoldingsPage() {
           </div>
         </div>
 
-        {/* Card 5: Fees & Taxes */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            <span>Fees & Taxes</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
-              {masterCurrency}
-            </span>
-          </div>
-          <div className="text-xl font-extrabold text-slate-700 tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalFeesAndTaxesMaster, masterCurrency)}
-          </div>
-        </div>
-
-        {/* Card 6: Total Net P&L */}
+        {/* Card 5: Total Net P&L */}
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Total Net P&L</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
@@ -342,6 +329,39 @@ export default function HoldingsPage() {
             {totalNetPnLEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
             <span className="truncate">{formatCleanMoney(totalNetPnLEUR, masterCurrency)}</span>
           </div>
+        </div>
+
+        {/* Card 6: Fees & Taxes */}
+        <div className="getquin-card p-3.5">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span>Fees & Taxes</span>
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+              {masterCurrency}
+            </span>
+          </div>
+          <div className="text-xl font-extrabold text-slate-700 dark:text-slate-300 tabular-nums mt-1 truncate">
+            {formatCleanMoney(totalFeesAndTaxesMaster, masterCurrency)}
+          </div>
+        </div>
+
+        {/* Card 7: Net Portfolio XIRR */}
+        <div className="getquin-card p-3.5">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span>Net Portfolio XIRR</span>
+            <span className="text-[9px] font-extrabold uppercase bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-1 py-0.2 rounded">
+              Annualized
+            </span>
+          </div>
+          {summary?.portfolio_xirr !== null && summary?.portfolio_xirr !== undefined ? (
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${summary.portfolio_xirr >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+              {summary.portfolio_xirr >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
+              <span className="truncate">{formatXirr(summary.portfolio_xirr)}</span>
+            </div>
+          ) : (
+            <div className="text-xl font-extrabold text-slate-400 tabular-nums mt-1 truncate">
+              -
+            </div>
+          )}
         </div>
       </div>
 

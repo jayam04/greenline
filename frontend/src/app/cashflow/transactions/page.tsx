@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { 
   ArrowLeftRight, Plus, Search, Trash2, Edit, 
-  ShoppingBag, Briefcase, Layers, RefreshCw 
+  ShoppingBag, Briefcase, Layers, RefreshCw, Wallet 
 } from "lucide-react";
 import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowModal";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
@@ -31,6 +31,7 @@ interface UnifiedRowItem {
     account_currency: string;
     amount: number;
     holding_delta?: string;
+    running_balance_after?: number;
   }[];
   items: {
     category_name: string;
@@ -43,6 +44,13 @@ interface UnifiedRowItem {
   isIncome: boolean;
   totalAmount: number;
   currency: string;
+  runningBalancesAfter: Record<number, number>;
+  primaryBalanceAfter?: {
+    account_id: number;
+    account_name: string;
+    currency: string;
+    balance: number;
+  };
 }
 
 export default function CashflowTransactionsPage() {
@@ -106,17 +114,45 @@ export default function CashflowTransactionsPage() {
     }
   };
 
-  // Convert raw records into standardized rows matching /cashflow table schema
+  // Convert raw records into standardized rows and compute chronological running statement balances
   const unifiedRows = useMemo<UnifiedRowItem[]>(() => {
-    const rows: UnifiedRowItem[] = [];
+    const rawRows: {
+      key: string;
+      sortKey: string;
+      source: "cashflow" | "investment";
+      rawCashflow?: CashflowTransactionItem;
+      rawTrade?: TransactionItem;
+      date: string;
+      title: string;
+      notes?: string | null;
+      payments: {
+        account_id: number;
+        account_name: string;
+        account_currency: string;
+        amount: number;
+        holding_delta?: string;
+      }[];
+      items: {
+        category_name: string;
+        category_type?: string;
+        description?: string | null;
+        effective_label?: string | null;
+        amount: number;
+      }[];
+      isTransfer: boolean;
+      isIncome: boolean;
+      totalAmount: number;
+      currency: string;
+    }[] = [];
 
     // 1. Day-to-Day Cashflow
     cashflowTxs.forEach((cf) => {
       const isTransfer = cf.transaction_kind === "TRANSFER" || cf.items.some((i) => i.category_type === "TRANSFER");
       const isIncome = !isTransfer && cf.items.some((i) => i.category_type === "INCOME");
 
-      rows.push({
+      rawRows.push({
         key: `cf-${cf.cashflow_id}`,
+        sortKey: `${cf.transaction_date}_cf_${String(cf.cashflow_id).padStart(10, '0')}`,
         source: "cashflow",
         rawCashflow: cf,
         date: cf.transaction_date,
@@ -144,182 +180,248 @@ export default function CashflowTransactionsPage() {
 
     // 2. Investment Trades
     tradeTxs.forEach((t) => {
-        const ttype = (t.transaction_type || "").toLowerCase();
-        const isBuy = ttype === "buy";
-        const isSell = ttype === "sell";
-        const isDiv = ttype === "dividend";
-        const isDeposit = ttype === "deposit";
-        const isWithdrawal = ttype === "withdrawal";
+      const ttype = (t.transaction_type || "").toLowerCase();
+      const isBuy = ttype === "buy";
+      const isSell = ttype === "sell";
+      const isDiv = ttype === "dividend";
+      const isDeposit = ttype === "deposit";
+      const isWithdrawal = ttype === "withdrawal";
 
-        const isIncome = isSell || isDiv || isDeposit;
-        const isTransfer = isDeposit || isWithdrawal;
+      const isIncome = isSell || isDiv || isDeposit;
+      const isTransfer = isDeposit || isWithdrawal;
 
-        const holdingName = t.account_name || "Demat Account";
-        const fundingName = t.funding_account_name || holdingName;
+      const holdingName = t.account_name || "Demat Account";
+      const fundingName = t.funding_account_name || holdingName;
 
-        const grossAmt = (t.quantity && t.price_per_unit) ? (t.quantity * t.price_per_unit) : t.total_amount;
-        const fees = t.fees || 0;
-        const taxes = t.taxes || 0;
+      const grossAmt = (t.quantity && t.price_per_unit) ? (t.quantity * t.price_per_unit) : t.total_amount;
+      const fees = t.fees || 0;
+      const taxes = t.taxes || 0;
 
-        let netTotal = grossAmt;
-        if (isBuy) {
-          netTotal = grossAmt + fees + taxes;
-        } else if (isSell) {
-          netTotal = Math.max(0, grossAmt - fees - taxes);
-        } else if (isDiv) {
-          netTotal = Math.max(0, grossAmt - taxes);
-        }
+      let netTotal = grossAmt;
+      if (isBuy) {
+        netTotal = grossAmt + fees + taxes;
+      } else if (isSell) {
+        netTotal = Math.max(0, grossAmt - fees - taxes);
+      } else if (isDiv) {
+        netTotal = Math.max(0, grossAmt - taxes);
+      }
 
-        const signedPaymentAmt = isIncome ? netTotal : -netTotal;
+      const signedPaymentAmt = isIncome ? netTotal : -netTotal;
 
-        const paymentsList = [];
-        if (isBuy && t.quantity) {
-          paymentsList.push({
-            account_id: t.account_id,
-            account_name: `${holdingName} (Holding)`,
-            account_currency: t.account_currency || "USD",
-            amount: 0,
-            holding_delta: `+${t.quantity} ${t.asset_symbol || "shares"}`
-          });
-          paymentsList.push({
-            account_id: t.funding_account_id || t.account_id,
-            account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
-            account_currency: t.funding_account_currency || t.account_currency || "USD",
-            amount: -netTotal
-          });
-        } else if (isSell && t.quantity) {
-          paymentsList.push({
-            account_id: t.account_id,
-            account_name: `${holdingName} (Holding)`,
-            account_currency: t.account_currency || "USD",
-            amount: 0,
-            holding_delta: `-${t.quantity} ${t.asset_symbol || "shares"}`
-          });
-          paymentsList.push({
-            account_id: t.funding_account_id || t.account_id,
-            account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
-            account_currency: t.funding_account_currency || t.account_currency || "USD",
-            amount: netTotal
-          });
-        } else if (isDiv) {
-          paymentsList.push({
-            account_id: t.funding_account_id || t.account_id,
-            account_name: t.funding_account_name ? t.funding_account_name : `${holdingName} (Unlinked)`,
-            account_currency: t.funding_account_currency || t.account_currency || "USD",
-            amount: t.funding_account_id ? netTotal : 0
-          });
-        } else {
-          paymentsList.push({
-            account_id: t.account_id,
-            account_name: holdingName,
-            account_currency: t.account_currency || "USD",
-            amount: signedPaymentAmt
-          });
-        }
-
-        let catName = "Stock & ETF Purchases";
-        if (isSell) catName = "Stock Sale Proceeds";
-        else if (isDiv) catName = "Dividends";
-        else if (isDeposit || isWithdrawal) catName = "Account Transfers & FX";
-
-        let tradeDesc = "";
-        if (isBuy && t.quantity && t.price_per_unit) {
-          tradeDesc = `Bought x${t.quantity} at ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`;
-        } else if (isSell && t.quantity && t.price_per_unit) {
-          tradeDesc = `Sold x${t.quantity} at ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`;
-        } else if (isDiv) {
-          tradeDesc = t.quantity && t.price_per_unit
-            ? `Dividend: ${t.quantity} shares @ ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`
-            : `Dividend Payout`;
-        }
-
-        const itemsList = [
-          {
-            category_name: catName,
-            category_type: isIncome ? "INCOME" : "INVESTMENT",
-            description: tradeDesc || t.notes || null,
-            effective_label: "INVESTMENT",
-            amount: grossAmt
-          }
-        ];
-
-        if (fees > 0) {
-          itemsList.push({
-            category_name: "Investment Fees & Charges",
-            category_type: "EXPENSE",
-            description: "Brokerage & Platform Charges",
-            effective_label: "ESSENTIAL",
-            amount: fees
-          });
-        }
-
-        if (taxes > 0) {
-          itemsList.push({
-            category_name: "Taxes & Duties",
-            category_type: "EXPENSE",
-            description: isDiv ? "Tax Withheld at Source (TDS)" : "Securities Transaction Tax & Duties",
-            effective_label: "ESSENTIAL",
-            amount: taxes
-          });
-        }
-
-        rows.push({
-          key: `trade-${t.transaction_id}`,
-          source: "investment",
-          rawTrade: t,
-          date: t.transaction_date,
-          title: t.asset_name || t.asset_symbol || `${ttype.toUpperCase()} Transaction`,
-          notes: t.notes,
-          payments: paymentsList,
-          items: itemsList,
-          isTransfer,
-          isIncome,
-          totalAmount: netTotal,
-          currency: t.account_currency || "USD"
+      const paymentsList = [];
+      if (isBuy && t.quantity) {
+        paymentsList.push({
+          account_id: t.account_id,
+          account_name: `${holdingName} (Holding)`,
+          account_currency: t.account_currency || "USD",
+          amount: 0,
+          holding_delta: `+${t.quantity} ${t.asset_symbol || "shares"}`
         });
+        paymentsList.push({
+          account_id: t.funding_account_id || t.account_id,
+          account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
+          account_currency: t.funding_account_currency || t.account_currency || "USD",
+          amount: -netTotal
+        });
+      } else if (isSell && t.quantity) {
+        paymentsList.push({
+          account_id: t.account_id,
+          account_name: `${holdingName} (Holding)`,
+          account_currency: t.account_currency || "USD",
+          amount: 0,
+          holding_delta: `-${t.quantity} ${t.asset_symbol || "shares"}`
+        });
+        paymentsList.push({
+          account_id: t.funding_account_id || t.account_id,
+          account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
+          account_currency: t.funding_account_currency || t.account_currency || "USD",
+          amount: netTotal
+        });
+      } else if (isDiv) {
+        paymentsList.push({
+          account_id: t.funding_account_id || t.account_id,
+          account_name: t.funding_account_name ? t.funding_account_name : `${holdingName} (Unlinked)`,
+          account_currency: t.funding_account_currency || t.account_currency || "USD",
+          amount: t.funding_account_id ? netTotal : 0
+        });
+      } else {
+        paymentsList.push({
+          account_id: t.account_id,
+          account_name: holdingName,
+          account_currency: t.account_currency || "USD",
+          amount: signedPaymentAmt
+        });
+      }
+
+      let catName = "Stock & ETF Purchases";
+      if (isSell) catName = "Stock Sale Proceeds";
+      else if (isDiv) catName = "Dividends";
+      else if (isDeposit || isWithdrawal) catName = "Account Transfers & FX";
+
+      let tradeDesc = "";
+      if (isBuy && t.quantity && t.price_per_unit) {
+        tradeDesc = `Bought x${t.quantity} at ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`;
+      } else if (isSell && t.quantity && t.price_per_unit) {
+        tradeDesc = `Sold x${t.quantity} at ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`;
+      } else if (isDiv) {
+        tradeDesc = t.quantity && t.price_per_unit
+          ? `Dividend: ${t.quantity} shares @ ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`
+          : `Dividend Payout`;
+      }
+
+      const itemsList = [
+        {
+          category_name: catName,
+          category_type: isIncome ? "INCOME" : "INVESTMENT",
+          description: tradeDesc || t.notes || null,
+          effective_label: "INVESTMENT",
+          amount: grossAmt
+        }
+      ];
+
+      if (fees > 0) {
+        itemsList.push({
+          category_name: "Investment Fees & Charges",
+          category_type: "EXPENSE",
+          description: "Brokerage & Platform Charges",
+          effective_label: "ESSENTIAL",
+          amount: fees
+        });
+      }
+
+      if (taxes > 0) {
+        itemsList.push({
+          category_name: "Taxes & Duties",
+          category_type: "EXPENSE",
+          description: "Withheld Taxes & Duties",
+          effective_label: "ESSENTIAL",
+          amount: taxes
+        });
+      }
+
+      rawRows.push({
+        key: `tr-${t.transaction_id}`,
+        sortKey: `${t.transaction_date}_tr_${String(t.transaction_id).padStart(10, '0')}`,
+        source: "investment",
+        rawTrade: t,
+        date: t.transaction_date,
+        title: t.asset_name ? `${t.asset_name}` : (t.asset_symbol || "Trade"),
+        notes: t.notes,
+        payments: paymentsList,
+        items: itemsList,
+        isTransfer,
+        isIncome,
+        totalAmount: netTotal,
+        currency: t.account_currency || "USD"
+      });
+    });
+
+    // Sort strictly chronological (oldest to newest) to compute cumulative running statement balances
+    rawRows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+    const currentRunningBalances: Record<number, number> = {};
+    const processedRows: UnifiedRowItem[] = [];
+
+    rawRows.forEach((r) => {
+      // Update running balance for each affected account
+      const paymentsWithBal = r.payments.map((p) => {
+        if (p.amount !== 0) {
+          currentRunningBalances[p.account_id] = (currentRunningBalances[p.account_id] || 0) + p.amount;
+        }
+        return {
+          ...p,
+          running_balance_after: currentRunningBalances[p.account_id] ?? 0
+        };
       });
 
-    return rows.sort((a, b) => b.date.localeCompare(a.date));
+      // Snapshot running balances after this transaction
+      const balancesSnapshot = { ...currentRunningBalances };
+
+      // Determine primary cash payment account for single-cell display
+      const cashPayments = paymentsWithBal.filter((p) => p.amount !== 0);
+      let primaryBalObj = undefined;
+      if (cashPayments.length > 0) {
+        const primary = cashPayments[0];
+        primaryBalObj = {
+          account_id: primary.account_id,
+          account_name: primary.account_name,
+          currency: primary.account_currency,
+          balance: primary.running_balance_after ?? 0
+        };
+      } else if (paymentsWithBal.length > 0) {
+        const primary = paymentsWithBal[0];
+        primaryBalObj = {
+          account_id: primary.account_id,
+          account_name: primary.account_name,
+          currency: primary.account_currency,
+          balance: primary.running_balance_after ?? 0
+        };
+      }
+
+      processedRows.push({
+        ...r,
+        payments: paymentsWithBal,
+        runningBalancesAfter: balancesSnapshot,
+        primaryBalanceAfter: primaryBalObj
+      });
+    });
+
+    // Return in reverse chronological order (newest first) for standard ledger display
+    return processedRows.reverse();
   }, [cashflowTxs, tradeTxs]);
 
-  // Filtered rows
+  // Filter rows
   const filteredRows = useMemo(() => {
-    return unifiedRows.filter((tx) => {
+    return unifiedRows.filter((r) => {
+      // Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = r.title.toLowerCase().includes(q);
+        const matchNotes = (r.notes || "").toLowerCase().includes(q);
+        const matchItems = r.items.some(
+          (i) => i.category_name.toLowerCase().includes(q) || (i.description || "").toLowerCase().includes(q)
+        );
+        const matchAccounts = r.payments.some((p) => p.account_name.toLowerCase().includes(q));
+        if (!matchTitle && !matchNotes && !matchItems && !matchAccounts) return false;
+      }
+
       // Account filter
       if (selectedAccountId !== "ALL") {
-        const accIdNum = Number(selectedAccountId);
-        const matchAcc = tx.payments.some((p) => p.account_id === accIdNum);
-        if (!matchAcc) return false;
+        const aid = Number(selectedAccountId);
+        if (!r.payments.some((p) => p.account_id === aid)) return false;
       }
 
       // Label filter
       if (selectedLabelFilter !== "ALL") {
-        const hasLabel = tx.items.some((i) => i.effective_label === selectedLabelFilter);
-        if (!hasLabel) return false;
-      }
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = tx.title.toLowerCase().includes(q);
-        const matchNotes = (tx.notes || "").toLowerCase().includes(q);
-        const matchCats = tx.items.some(
-          (i) =>
-            i.category_name.toLowerCase().includes(q) ||
-            (i.description && i.description.toLowerCase().includes(q))
-        );
-        const matchAccs = tx.payments.some((p) => p.account_name.toLowerCase().includes(q));
-        if (!matchTitle && !matchNotes && !matchCats && !matchAccs) return false;
+        if (!r.items.some((i) => (i.effective_label || "DISCRETIONARY") === selectedLabelFilter)) return false;
       }
 
       return true;
     });
-  }, [unifiedRows, selectedAccountId, selectedLabelFilter, searchQuery]);
+  }, [unifiedRows, searchQuery, selectedAccountId, selectedLabelFilter]);
+
+  // Current balance of selected account
+  const selectedAccountInfo = useMemo(() => {
+    if (selectedAccountId === "ALL") {
+      return null;
+    }
+    const aid = Number(selectedAccountId);
+    const acc = accounts.find((a) => a.account_id === aid);
+    if (!acc) return null;
+
+    // Latest balance across all unified rows
+    const latestRowWithAccount = unifiedRows.find((r) => r.runningBalancesAfter[aid] !== undefined);
+    const currentBal = latestRowWithAccount ? latestRowWithAccount.runningBalancesAfter[aid] : 0;
+    return {
+      name: acc.account_name,
+      currency: acc.currency,
+      balance: currentBal
+    };
+  }, [selectedAccountId, accounts, unifiedRows]);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-8 space-y-6">
-      
-      {/* Page Header */}
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -331,11 +433,10 @@ export default function CashflowTransactionsPage() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Historical ledger with split payment methods, multi-category itemization, and investment cash flows
+            Historical ledger with running statement balances, split payment methods, and multi-category itemization
           </p>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
@@ -361,18 +462,31 @@ export default function CashflowTransactionsPage() {
         </div>
       </div>
 
-      {/* Main Card with Table matching /cashflow exact layout */}
+      {/* Main Card with Table */}
       <div className="getquin-card p-5 space-y-4">
         
         {/* Table Header Bar with Mode Selector & Filters */}
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
-              Income & Spend Transactions ({filteredRows.length})
-            </h2>
-            <p className="text-[11px] font-medium text-slate-400">
-              Historical ledger with split payment methods and multi-category itemization
-            </p>
+          <div className="flex items-center gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                Income & Spend Transactions ({filteredRows.length})
+              </h2>
+              <p className="text-[11px] font-medium text-slate-400">
+                Historical statement ledger with continuous running net cash balance
+              </p>
+            </div>
+
+            {/* Selected Account Balance Badge */}
+            {selectedAccountInfo && (
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/60 rounded-xl text-xs">
+                <Wallet className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                <span className="font-semibold text-slate-600 dark:text-slate-300">{selectedAccountInfo.name}:</span>
+                <span className={`font-bold tabular-nums ${selectedAccountInfo.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                  {formatCurrency(selectedAccountInfo.balance, selectedAccountInfo.currency)}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -390,6 +504,7 @@ export default function CashflowTransactionsPage() {
 
             {/* Account Selector Filter */}
             <select
+              aria-label="account-filter"
               value={selectedAccountId}
               onChange={(e) => setSelectedAccountId(e.target.value)}
               className="bg-[#F1F5F9] dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg border border-transparent focus:outline-none cursor-pointer"
@@ -430,202 +545,215 @@ export default function CashflowTransactionsPage() {
                 <th className="pb-2.5 font-bold">Title / Merchant</th>
                 <th className="pb-2.5 font-bold">Payment Method(s)</th>
                 <th className="pb-2.5 font-bold">Category & Description</th>
-                <th className="pb-2.5 font-bold text-right">Total Amount</th>
+                <th className="pb-2.5 font-bold text-right">Amount</th>
+                <th className="pb-2.5 font-bold text-right px-3">Net Balance</th>
                 <th className="pb-2.5 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
+                  <td colSpan={7} className="py-12 text-center text-slate-400 font-semibold">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
                     Loading transactions ledger...
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-medium text-xs">
+                  <td colSpan={7} className="py-12 text-center text-slate-400 font-medium text-xs">
                     No cashflow transactions recorded for this period.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((tx) => {
-                  const isTransfer = tx.isTransfer;
-                  const isIncome = tx.isIncome;
+                filteredRows.map((r) => (
+                  <tr key={r.key} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
+                    {/* Date */}
+                    <td className="py-3 font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
+                      {r.date}
+                    </td>
 
-                  return (
-                    <tr key={tx.key} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3 font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
-                        {tx.date}
-                      </td>
+                    {/* Title */}
+                    <td className="py-3 font-bold text-[#0F172A] dark:text-white">
+                      <div className="flex items-center gap-1.5">
+                        {r.source === "investment" && (
+                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" title="Investment Trade" />
+                        )}
+                        <span>{r.title}</span>
+                      </div>
+                      {r.notes && (
+                        <div className="text-[11px] font-normal text-slate-400 line-clamp-1">{r.notes}</div>
+                      )}
+                    </td>
 
-                      <td className="py-3 font-bold text-[#0F172A] dark:text-white">
-                        <div>{tx.title}</div>
-                        {tx.notes && <div className="text-[10px] text-slate-400 font-normal mt-0.5">{tx.notes}</div>}
-                      </td>
-
-                      {/* Payment Method(s) with Green/Red Inflow/Outflow Dots */}
-                      <td className="py-3">
-                        <div className="flex flex-col gap-1">
-                          {tx.payments.map((p, pIdx) => {
-                            const pCurr = p.account_currency || tx.currency || "EUR";
-                            const isHoldingCredit = p.holding_delta?.startsWith("+");
-                            const isHoldingDebit = p.holding_delta?.startsWith("-");
-                            const isCredit = p.amount > 0 || Boolean(isHoldingCredit);
-                            const isDebit = p.amount < 0 || Boolean(isHoldingDebit);
-                            const dotColor = tx.source === "investment"
-                              ? "bg-blue-500"
-                              : isCredit
-                              ? "bg-emerald-500"
-                              : isDebit
-                              ? "bg-rose-500"
-                              : "bg-blue-500";
-                            const textColor = isCredit 
-                              ? "text-emerald-600 dark:text-emerald-400" 
-                              : isDebit 
-                              ? "text-rose-600 dark:text-rose-400" 
-                              : "text-slate-400";
-                            const signPrefix = p.amount > 0 ? "+" : p.amount < 0 ? "-" : "";
-
-                            return (
-                              <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
-                                <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-                                <span>{p.account_name}</span>
-                                {p.holding_delta ? (
-                                  <span className={`tabular-nums font-bold ${textColor}`}>
-                                    ({p.holding_delta})
-                                  </span>
-                                ) : p.amount !== 0 ? (
-                                  <span className={`tabular-nums font-bold ${textColor}`}>
-                                    ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
-                                  </span>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </td>
-
-                      {/* Category & Description (Plain text for transfers) */}
-                      <td className="py-3">
-                        <div className="flex flex-col gap-1.5">
-                          {isTransfer ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
-                                Account Transfers & FX
-                              </span>
-                              {tx.items.find((i) => i.category_name?.includes("Fee")) && (
-                                <span className="text-slate-400 text-[11px]">
-                                  • Transfer Fee
+                    {/* Payments */}
+                    <td className="py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {r.payments.map((p, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60"
+                          >
+                            <span>{p.account_name}</span>
+                            {p.holding_delta ? (
+                              <span className="text-blue-600 dark:text-blue-400 font-extrabold">({p.holding_delta})</span>
+                            ) : (
+                              <>
+                                <span className={p.amount >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                                  {p.amount >= 0 ? `+${formatCurrency(p.amount, p.account_currency)}` : formatCurrency(p.amount, p.account_currency)}
                                 </span>
-                              )}
+                                {p.running_balance_after !== undefined && (
+                                  <span className="text-[9px] text-slate-400 font-semibold pl-0.5 border-l border-slate-300 dark:border-slate-700">
+                                    Bal: {formatCurrency(p.running_balance_after, p.account_currency)}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+
+                    {/* Items */}
+                    <td className="py-3">
+                      <div className="space-y-1">
+                        {r.items.map((i, idx) => (
+                          <div key={idx} className="flex items-center gap-2 text-xs">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{i.category_name}</span>
+                            {i.description && (
+                              <span className="text-[11px] text-slate-400 line-clamp-1 font-normal">• {i.description}</span>
+                            )}
+                            {i.effective_label && (
+                              <span className="px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                {i.effective_label}
+                              </span>
+                            )}
+                            {r.items.length > 1 && (
+                              <span className="text-[10px] text-slate-400 font-semibold ml-auto">
+                                {formatCurrency(i.amount, r.currency)}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+
+                    {/* Total Amount */}
+                    <td className="py-3 text-right font-bold tabular-nums">
+                      <span className={r.isTransfer ? "text-blue-600 dark:text-blue-400" : r.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
+                        {r.isIncome ? "+" : "-"}{formatCurrency(r.totalAmount, r.currency)}
+                      </span>
+                    </td>
+
+                    {/* Net Balance Column */}
+                    <td className="py-3 px-3 text-right tabular-nums whitespace-nowrap font-mono">
+                      {(() => {
+                        if (selectedAccountId !== "ALL") {
+                          const aid = Number(selectedAccountId);
+                          const bal = r.runningBalancesAfter[aid];
+                          const acc = accounts.find((a) => a.account_id === aid);
+                          const curr = acc?.currency || r.currency || "USD";
+                          if (bal !== undefined) {
+                            return (
+                              <span className={`font-bold text-xs ${bal >= 0 ? "text-slate-800 dark:text-slate-200" : "text-rose-600 dark:text-rose-400"}`}>
+                                {formatCurrency(bal, curr)}
+                              </span>
+                            );
+                          }
+                          return <span className="text-slate-400">-</span>;
+                        }
+
+                        if (r.primaryBalanceAfter) {
+                          const bal = r.primaryBalanceAfter.balance;
+                          const curr = r.primaryBalanceAfter.currency;
+                          return (
+                            <div className="flex flex-col items-end">
+                              <span className={`font-bold text-xs ${bal >= 0 ? "text-slate-800 dark:text-slate-200" : "text-rose-600 dark:text-rose-400"}`}>
+                                {formatCurrency(bal, curr)}
+                              </span>
+                              <span className="text-[9px] font-semibold text-slate-400 truncate max-w-[110px]">
+                                {r.primaryBalanceAfter.account_name.replace(" (Cash)", "").replace(" (Holding)", "")}
+                              </span>
                             </div>
-                          ) : (
-                            tx.items.map((itm, iIdx) => {
-                              const lbl = itm.effective_label || "DISCRETIONARY";
-                              const badgeColor =
-                                lbl === "ESSENTIAL"
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800"
-                                  : lbl === "LUXURY"
-                                  ? "bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800"
-                                  : lbl === "INVESTMENT"
-                                  ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800"
-                                  : "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800";
+                          );
+                        }
 
-                              return (
-                                <div key={iIdx} className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-bold text-slate-800 dark:text-slate-100 text-xs">
-                                    {itm.category_name}
-                                  </span>
-                                  {itm.description && (
-                                    <span className="text-slate-400 text-[11px]">
-                                      • {itm.description}
-                                    </span>
-                                  )}
-                                  <span className={`px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded-md border ${badgeColor}`}>
-                                    {lbl}
-                                  </span>
-                                  {tx.items.length > 1 && (
-                                    <span className={`font-bold text-[11px] tabular-nums ${itm.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
-                                      {itm.amount < 0
-                                        ? `- ${formatCurrency(Math.abs(itm.amount), tx.currency || "EUR")} (Reimbursement)`
-                                        : formatCurrency(itm.amount, tx.currency || "EUR")}
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </td>
+                        return <span className="text-slate-400">-</span>;
+                      })()}
+                    </td>
 
-                      {/* Total Amount Column */}
-                      <td className="py-3 text-right font-bold tabular-nums">
-                        <div className={isTransfer ? "text-[#0F172A] dark:text-white text-xs" : isIncome ? "text-emerald-600 dark:text-emerald-400 text-xs" : "text-rose-600 dark:text-rose-400 text-xs"}>
-                          {formatCurrency(Math.abs(tx.totalAmount), tx.currency || "EUR")}
-                        </div>
-                      </td>
-
-                      {/* Action Menu */}
-                      <td className="py-3 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
+                    {/* Actions */}
+                    <td className="py-3 text-right whitespace-nowrap">
+                      {r.source === "cashflow" && r.rawCashflow && (
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => {
-                              if (tx.source === "cashflow" && tx.rawCashflow) {
-                                setEditingCashflowTx(tx.rawCashflow);
-                                setIsCashflowModalOpen(true);
-                              } else if (tx.source === "investment" && tx.rawTrade) {
-                                setEditingTradeTx(tx.rawTrade);
-                                setIsTradeModalOpen(true);
-                              }
+                              setEditingCashflowTx(r.rawCashflow!);
+                              setIsCashflowModalOpen(true);
                             }}
-                            className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                            title="Edit"
+                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                            title="Edit Cashflow"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (tx.source === "cashflow" && tx.rawCashflow) {
-                                handleDeleteCashflow(tx.rawCashflow.cashflow_id);
-                              } else if (tx.source === "investment" && tx.rawTrade) {
-                                handleDeleteTrade(tx.rawTrade.transaction_id);
-                              }
-                            }}
-                            className="p-1.5 text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                            title="Delete"
+                            onClick={() => handleDeleteCashflow(r.rawCashflow!.cashflow_id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Cashflow"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })
+                      )}
+
+                      {r.source === "investment" && r.rawTrade && (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              setEditingTradeTx(r.rawTrade!);
+                              setIsTradeModalOpen(true);
+                            }}
+                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                            title="Edit Trade Transaction"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTrade(r.rawTrade!.transaction_id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Delete Trade"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Cashflow Modal */}
       <CashflowModal
         isOpen={isCashflowModalOpen}
         onClose={() => {
           setIsCashflowModalOpen(false);
           setEditingCashflowTx(null);
         }}
-        onSuccess={loadData}
+        onSuccess={() => loadData()}
         initialData={editingCashflowTx}
       />
 
+      {/* Trade Modal */}
       <TransactionModal
         isOpen={isTradeModalOpen}
         onClose={() => {
           setIsTradeModalOpen(false);
           setEditingTradeTx(null);
         }}
-        onSuccess={loadData}
+        onSuccess={() => loadData()}
         initialData={editingTradeTx}
       />
     </div>

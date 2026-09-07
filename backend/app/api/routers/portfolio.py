@@ -43,25 +43,50 @@ async def get_portfolio_summary(
     asset_previous_prices: Dict[int, float] = {aid: 0.0 for aid in asset_ids}
     asset_price_dates: Dict[int, Optional[datetime.date]] = {aid: None for aid in asset_ids}
     if asset_ids:
-        ph_stmt = (
-            select(PriceHistory.asset_id, PriceHistory.close_price, PriceHistory.price_date)
+        rn_col = func.row_number().over(
+            partition_by=PriceHistory.asset_id,
+            order_by=[desc(PriceHistory.price_date), desc(PriceHistory.price_id)]
+        ).label("rn")
+
+        ranked_ph = (
+            select(
+                PriceHistory.asset_id,
+                PriceHistory.close_price,
+                PriceHistory.price_date,
+                rn_col
+            )
             .where(PriceHistory.asset_id.in_(asset_ids))
-            .order_by(PriceHistory.asset_id, desc(PriceHistory.price_date))
+            .subquery()
+        )
+
+        ph_stmt = (
+            select(
+                ranked_ph.c.asset_id,
+                ranked_ph.c.close_price,
+                ranked_ph.c.price_date,
+                ranked_ph.c.rn
+            )
+            .where(ranked_ph.c.rn <= 2)
+            .order_by(ranked_ph.c.asset_id, ranked_ph.c.rn)
         )
         ph_res = await db.execute(ph_stmt)
-        prices_by_asset: Dict[int, List[tuple]] = {aid: [] for aid in asset_ids}
-        for aid, close_px, pdate in ph_res.all():
-            if close_px is not None and len(prices_by_asset[aid]) < 2:
-                prices_by_asset[aid].append((float(close_px), pdate))
 
-        for aid, history in prices_by_asset.items():
-            if len(history) >= 1:
-                asset_prices[aid] = history[0][0]
-                asset_price_dates[aid] = history[0][1]
-            if len(history) >= 2:
-                asset_previous_prices[aid] = history[1][0]
-            elif len(history) == 1:
-                asset_previous_prices[aid] = history[0][0]
+        has_previous_price: Dict[int, bool] = {aid: False for aid in asset_ids}
+        for aid, close_px, pdate, rn in ph_res.all():
+            if close_px is not None:
+                px = float(close_px)
+                if rn == 1:
+                    asset_prices[aid] = px
+                    asset_price_dates[aid] = pdate
+                elif rn == 2:
+                    asset_previous_prices[aid] = px
+                    has_previous_price[aid] = True
+
+        for aid in asset_ids:
+            # Fallback semantics: if only one price exists (no rn == 2 record), fallback previous_price to latest_price
+            if not has_previous_price[aid] and asset_price_dates[aid] is not None:
+                asset_previous_prices[aid] = asset_prices[aid]
+
 
     # Pre-fetch assets metadata
     assets_map: Dict[int, Asset] = {}

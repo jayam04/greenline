@@ -16,42 +16,45 @@ This skill guides you through implementing features and fixes using a discipline
 
 ```mermaid
 graph LR
-    A["1. Requirement Spec"] --> B["2. Write Failing Test (Red)"]
-    B --> C["3. Implement Code (Green)"]
-    C --> D["4. Refactor & Verify Suite"]
+    A["1. Requirement / Specification"] --> B["2. Write Failing Test (Red)"]
+    B --> C["3. Implement (Green)"]
+    C --> D["4. Refactor / Verify"]
     D --> E["5. Output Proposed Commit Message"]
 ```
 
-### Step 1: Requirement & Test Specification
+### Step 1: Requirement / Specification
 - Identify input contracts, output contracts, and mathematical formulas.
-- Identify edge cases: zero amounts, negative balances, missing exchange rates, split payments.
+- Enumerate edge cases: zero values, negative balances, missing exchange rates, split payments, and database constraints.
 
-### Step 2: Write Failing Tests First (Red Phase)
-- Create or update the test file in `backend/tests/` or `frontend/`.
+### Step 2: Write Failing Test (Red Phase)
+- Create or update test files in `backend/tests/` or frontend test suites **before** writing application code.
 - Refer to [Backend Testing Guide](./references/backend_testing_guide.md) for async DB fixture boilerplate.
-- Run the single test file to confirm it fails:
+- Run the targeted test to confirm it fails on the missing capability or reproduces the bug:
   ```bash
   PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_your_feature.py -v
   ```
 
-### Step 3: Implement Minimal Code (Green Phase)
-- Write the minimal application logic to satisfy the test assertions.
-- Re-run the test to confirm it passes.
+### Step 3: Implement (Green Phase)
+- Write the minimal, cleanest application logic necessary to satisfy the test assertions.
+- Re-run the targeted test to confirm it passes.
 
-### Step 4: Refactor & Full Suite Verification
-- Clean up duplicate logic and formatting.
-- Execute full test suite and typecheck:
+### Step 4: Refactor / Verify
+- Clean up duplicate code and optimize queries without changing behavior.
+- Execute full test suites, type checking, and linters to verify zero regressions:
   ```bash
   PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests
-  cd frontend && npx tsc --noEmit
+  cd frontend && npx tsc --noEmit && npm run lint
   ```
+- Always present test execution output in the turn response.
 
 ### Step 5: Output Proposed Commit Message
-- Whenever files are created or modified, append the mandatory commit message trailer at the very end of your reply:
+- Whenever repository or workspace files have been created, modified, renamed, or deleted, append the proposed commit message as a dedicated trailing block at the very end of your final response:
   ```text
   Commit Message:
-  <Commit message to use>
+  <type>(<scope>): <imperative summary>
   ```
+- Omit the trailer for conversational responses, planning turns before approval, and read-only operations.
+- Refer to [Conventional Commit Skill](../conventional-commit/SKILL.md) for commit types and scopes.
 
 ---
 

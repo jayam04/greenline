@@ -1,26 +1,30 @@
 ---
 name: test-first-development
-description: Enforces test-driven development (TDD) and test-first generation across all coding, fixing, and refactoring tasks.
+description: Enforces test-driven development (TDD) and test-first verification across all coding, fixing, and refactoring tasks.
 trigger: always_on
 ---
 
 # Test-First Development (TDD) Rule
 
-When performing ANY task that requires creating, modifying, fixing, or refactoring code:
+When performing ANY task that involves creating, modifying, fixing, or refactoring code, follow this authoritative 5-step workflow:
 
-1. **Test-First Requirement**:
-   - Write or update automated unit/integration/E2E tests **BEFORE** writing the implementation code.
-   - Run the test to demonstrate failure (reproducing the bug or asserting new expected behavior).
+1. **Requirement / Specification**:
+   - Translate requirements into explicit test scenarios, input/output contracts, and edge cases.
 
-2. **Backend Testing Standards**:
-   - Location: `backend/tests/test_*.py`
-   - Use `@pytest.mark.anyio` and in-memory async SQLite engine (`sqlite+aiosqlite:///:memory:`).
-   - Test calculations, edge cases, zero-values, and database constraints.
-   - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
+2. **Write Failing Test (Red Phase)**:
+   - Add or update automated unit, integration, or E2E tests **before** touching application logic.
+   - Execute the test to confirm it fails, proving the test reproduces the issue or validates the new behavior.
 
-3. **Frontend Testing Standards**:
-   - Run TypeScript verification: `npx tsc --noEmit`
-   - Component & E2E tests: Ensure UI components render correct monetary values, formatters, and interactions.
+3. **Implement (Green Phase)**:
+   - Write the cleanest, most concise implementation code required to make all tests pass.
 
-4. **Completion Requirement**:
-   - A task is NEVER complete until the full test suite runs cleanly with 0 failures.
+4. **Refactor & Verify**:
+   - Clean up code structure and verify zero regressions by running full test suites and type checks:
+     - **Backend**: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
+     - **Frontend**: `cd frontend && npx tsc --noEmit && npm run lint`
+   - A task is never complete without displaying clean test execution output.
+
+5. **Output Proposed Commit Message**:
+   - Append the proposed commit message trailer at the very end of your final reply per the commit message protocol.
+
+For full test fixtures, scaffolding patterns, and runbooks, refer to [`.agents/skills/test-driven-development/SKILL.md`](../skills/test-driven-development/SKILL.md).

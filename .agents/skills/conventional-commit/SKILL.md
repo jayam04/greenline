@@ -26,13 +26,13 @@ Use this skill to craft clean, standardized git commit messages when modifying f
 ## 2. Common Types & Scopes
 
 ### Types
-- `feat`: New feature or user-visible enhancement.
-- `fix`: Bug fix, calculation correction, or UI error fix.
-- `test`: Adding or refactoring unit, component, or E2E tests.
+- `feat`: New feature or user-visible capability.
+- `fix`: Bug fix, calculation correction, or error resolution.
+- `test`: Adding, updating, or refactoring unit, component, or E2E tests.
 - `refactor`: Code change that neither fixes a bug nor adds a feature.
 - `perf`: Code change that improves performance.
 - `docs`: Documentation, rule, or skill updates.
-- `chore`: Build configuration, dependencies, or tool updates.
+- `chore`: Build configuration, dependencies, or tooling updates.
 
 ### Scopes in Greenline
 - `investments`: Portfolio, holdings, transactions, positions, FIFO lots.
@@ -40,15 +40,17 @@ Use this skill to craft clean, standardized git commit messages when modifying f
 - `accounts`: Bank accounts, demat accounts, customization modals.
 - `portfolio`: Backend valuation engine, daily price changes, XIRR calculations.
 - `agents`: Agent rules, skills, prompts, and guidelines.
-- `ui`: General UI layout, breadcrumbs, theme, navbar.
+- `ui`: General UI layout, breadcrumbs, theme, navigation.
 
 ---
 
-## 3. Mandatory Reply Trailer
+## 3. Mandatory Response Trailer
 
-Whenever workspace files are created or modified, append at the end of the reply:
+Whenever repository or workspace files are created, modified, renamed, or deleted during a turn, append the proposed commit message as a dedicated trailing block at the very end of your final response:
 
 ```text
 Commit Message:
 <type>(<scope>): <short imperative description>
 ```
+
+> **Note**: Omit the commit message for purely conversational responses, planning turns before user approval, and read-only operations (searching, inspecting code, or reading documentation).

@@ -1,27 +1,28 @@
 ---
 name: commit-message-requirement
-description: Enforces appending a proposed git commit message at the end of every reply that modifies workspace files.
+description: Enforces appending a proposed git commit message at the end of every reply that modifies repository or workspace files.
 trigger: always_on
 ---
 
 # Mandatory Commit Message Output Rule
 
-Whenever ANY tool call in the current turn creates, modifies, renames, or deletes one or more files in the workspace:
+When repository or workspace files are created, modified, renamed, or deleted during a turn, you must include a proposed git commit message in your final response.
 
-You **MUST** end your final response with the following trailer:
-
-```
+```text
 Commit Message:
-<Commit message to use>
+<type>(<scope>): <imperative summary>
 ```
 
-### Guidelines:
-1. **Format**: Follow Conventional Commits format (`<type>(<scope>): <imperative summary>`).
-   - `feat(...)`: New feature or user-facing capability.
-   - `fix(...)`: Bug fix or calculation error correction.
-   - `test(...)`: Adding or updating test suites.
-   - `refactor(...)`: Code refactoring without behavioral change.
-   - `docs(...)`: Documentation, skills, or guidelines updates.
-   - `chore(...)`: Maintenance or configuration updates.
-2. **Placement**: Always positioned at the very end of your response as the final text block.
-3. **Condition**: Only omit when NO files were created or modified during the turn (e.g. conversational replies, planning mode before approval, pure research/Q&A).
+### Protocol Guidelines:
+
+1. **Trigger Condition**:
+   - **Required**: Whenever any file in the repository or workspace is actually created, modified, renamed, or deleted.
+   - **Omitted**: Strictly omit for conversational responses, planning turns before user approval, and read-only operations (such as viewing files, searching, reading documentation, or running read-only diagnostic checks).
+
+2. **Placement**:
+   - The commit message trailer must appear at the very end of the agent's final response as a dedicated trailing block.
+   - It complements standard markdown explanations, test results, and file links without replacing them or interfering with system or developer instructions.
+
+3. **Format**:
+   - Follow Conventional Commits format: `<type>(<scope>): <imperative summary>`.
+   - See [`.agents/skills/conventional-commit/SKILL.md`](../skills/conventional-commit/SKILL.md) for the authoritative list of types, Greenline domain scopes, and formatting conventions.

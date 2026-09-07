@@ -6,19 +6,20 @@ Welcome to **Greenline**. Every AI agent interacting with this repository must s
 
 ## 1. Core Engineering Principle: Test-First Development (TDD)
 
-All coding tasks, feature implementations, bug fixes, and refactoring **MUST** follow a strict Test-First protocol:
+All coding tasks, feature implementations, bug fixes, and refactoring **MUST** follow the authoritative 5-step Test-First workflow:
 
-1. **Extract Requirements & Test Scenarios**:
-   - Before writing or modifying any implementation code, translate the user requirements into clear, explicit test scenarios.
-2. **Write Failing Tests First (Red Phase)**:
-   - Create or update the corresponding unit tests (backend `pytest`, frontend `vitest`) or End-to-End tests (`playwright`) **BEFORE** modifying application logic.
-   - Run the test to confirm that it fails on missing features or reproduces the reported bug.
-3. **Implement Minimal Code (Green Phase)**:
+1. **Requirement / Specification**:
+   - Before writing or modifying any implementation code, translate user requirements into explicit test scenarios, input/output contracts, and edge cases.
+2. **Write Failing Test (Red Phase)**:
+   - Create or update automated tests (backend `pytest`, frontend `vitest`/`playwright`) **before** modifying application logic.
+   - Run the test to confirm it fails, reproducing the bug or asserting the new capability.
+3. **Implement (Green Phase)**:
    - Write the cleanest, most concise implementation code necessary to make all tests pass.
-4. **Refactor & Verify Zero Regression (Refactor Phase)**:
-   - Run the complete test suite (`PYTHONPATH=backend pytest backend/tests`, `npx tsc --noEmit`, frontend test suites) to ensure 100% test passing and zero regressions.
-5. **No Production Edits Without Tests**:
-   - Never consider a feature or bug fix complete without dedicated automated test verification.
+4. **Refactor & Verify (Refactor Phase)**:
+   - Run the complete test suite and verification tools to ensure 100% passing tests and zero regressions.
+   - Never consider a feature or bug fix complete without dedicated automated test verification and execution output.
+5. **Output Proposed Commit Message**:
+   - When files have been modified, append the proposed commit message trailer as the final block of the response.
 
 ---
 
@@ -47,19 +48,19 @@ All coding tasks, feature implementations, bug fixes, and refactoring **MUST** f
 
 ---
 
-## 4. Response Protocol: Mandatory Commit Message on File Edits
+## 4. Response Protocol: Proposed Commit Message on File Edits
 
-Whenever you create, modify, rename, or delete ANY file in the workspace during a turn:
+When repository or workspace files are created, modified, renamed, or deleted during a turn:
 
-1. **Mandatory Trailer**:
-   - You **MUST** end your final reply with the following trailer:
-     ```
+1. **Trailer Format & Placement**:
+   - Append the proposed commit message as a dedicated trailing block at the very end of your final response:
+     ```text
      Commit Message:
      <Commit message to use>
      ```
-2. **Formatting**:
-   - Follow Conventional Commits format: `<type>(<scope>): <summary>` (e.g., `feat(investments): ...`, `fix(cashflow): ...`, `test(portfolio): ...`, `refactor(accounts): ...`).
-   - Keep the message concise, imperative, and descriptive of the exact changes made in the turn.
-3. **Condition**:
-   - MUST be present whenever at least one file was created or modified.
-   - Omit ONLY if no files were touched in the turn (e.g., pure Q&A or planning mode).
+2. **Formatting Standard**:
+   - Follow Conventional Commits format: `<type>(<scope>): <summary>`.
+   - Refer to [`.agents/skills/conventional-commit/SKILL.md`](.agents/skills/conventional-commit/SKILL.md) for full types and Greenline domain scopes.
+3. **Trigger & Omission**:
+   - **Required**: When repository or workspace files are created, modified, renamed, or deleted.
+   - **Omitted**: Omit for conversational responses, planning turns before user approval, and read-only operations (searching, code inspection, reading docs).

@@ -473,26 +473,24 @@ async def build_category_lineage_map(db: AsyncSession) -> Dict[int, Dict[str, An
 
     return lineage_map
 
-async def generate_sankey_data(
+async def load_unified_cashflow_flows(
     db: AsyncSession,
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
-    depth: int = 2,
-    include_investments: bool = True,
-    master_currency: str = "EUR"
-) -> SankeyDataResponse:
+    master_currency: str = "EUR",
+) -> List[Dict[str, Any]]:
     """
-    Generates Sankey Nodes and Links structured for depth 1 to 5:
-    - Left: Income Sources (at chosen depth)
-    - Center: Total Cash Inflow Pool
-    - Flow to Label Nodes (ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT)
-    - Right: Category breakdown down to specified depth (1 to 5)
+    Extracts and standardizes all financial flow events across:
+    1. CashflowTransaction & CashflowItem records (day-to-day income, spends, transfers)
+    2. Transaction trade records (stock buys, sells, dividends, interest, fees, taxes)
+    All monetary amounts are converted to master_currency.
     """
-    depth = max(1, min(5, depth))
     target_currency = (master_currency or "EUR").strip().upper()
     lineage_map = await build_category_lineage_map(db)
 
-    # 1. Fetch cashflow transactions in date range
+    flows: List[Dict[str, Any]] = []
+
+    # 1. Day-to-day cashflow transactions
     stmt = select(CashflowTransaction).options(
         selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
     )
@@ -503,18 +501,6 @@ async def generate_sankey_data(
 
     res = await db.execute(stmt)
     transactions = res.scalars().all()
-
-    income_flows: Dict[str, float] = {}
-    expense_flows_by_label: Dict[str, Dict[str, float]] = {
-        LABEL_ESSENTIAL: {},
-        LABEL_DISCRETIONARY: {},
-        LABEL_LUXURY: {},
-        LABEL_INVESTMENT: {}
-    }
-    
-    total_income = 0.0
-    total_expenses = 0.0
-    total_investments = 0.0
 
     for tx in transactions:
         for item in tx.items:
@@ -529,65 +515,182 @@ async def generate_sankey_data(
             raw_amt = float(item.amount or 0.0)
             amt = convert_currency(raw_amt, tx.currency or "EUR", target_currency)
 
-            # Determine category name at requested depth
-            target_idx = min(depth - 1, len(ancestors) - 1)
-            target_name = ancestors[target_idx].name
-
             if cat_type == "TRANSFER":
                 continue
 
             if cat_type == "INCOME" or (cat_type == "INVESTMENT" and tx.transaction_kind == "INCOME"):
-                total_income += amt
-                # For income, represent source at depth
-                src_name = target_name
-                income_flows[src_name] = income_flows.get(src_name, 0.0) + amt
+                flow_type = "INCOME"
             elif cat_type == "INVESTMENT":
-                if not include_investments:
-                    continue
-                total_investments += amt
-                expense_flows_by_label[LABEL_INVESTMENT][target_name] = (
-                    expense_flows_by_label[LABEL_INVESTMENT].get(target_name, 0.0) + amt
-                )
-            else: # EXPENSE
-                total_expenses += amt
-                lbl = effective_label if effective_label in expense_flows_by_label else LABEL_DISCRETIONARY
-                expense_flows_by_label[lbl][target_name] = (
-                    expense_flows_by_label[lbl].get(target_name, 0.0) + amt
-                )
+                flow_type = "INVESTMENT"
+            else:
+                flow_type = "EXPENSE"
 
-    # 2. Include Investment Dividends & Sales if enabled
-    if include_investments:
-        # Fetch stock dividends
-        div_stmt = select(func.sum(Transaction.total_amount))\
-            .where(Transaction.transaction_type == "dividend")
-        if start_date:
-            div_stmt = div_stmt.where(Transaction.transaction_date >= start_date)
-        if end_date:
-            div_stmt = div_stmt.where(Transaction.transaction_date <= end_date)
-        div_res = await db.execute(div_stmt)
-        raw_div = div_res.scalar_one_or_none() or 0.0
-        div_total = convert_currency(raw_div, "USD", target_currency)
+            lineage_names = [a.name for a in ancestors]
+            flows.append({
+                "flow_type": flow_type,
+                "effective_label": effective_label,
+                "amount": amt,
+                "lineage": lineage_names,
+                "title": tx.title,
+                "date": tx.transaction_date,
+            })
 
-        if div_total > 0.01:
-            total_income += div_total
-            income_flows["Stock Dividends"] = income_flows.get("Stock Dividends", 0.0) + div_total
+    # 2. Investment transactions from Transaction table
+    tx_stmt = select(Transaction).options(
+        selectinload(Transaction.account),
+        selectinload(Transaction.asset)
+    )
+    if start_date:
+        tx_stmt = tx_stmt.where(Transaction.transaction_date >= start_date)
+    if end_date:
+        tx_stmt = tx_stmt.where(Transaction.transaction_date <= end_date)
 
-        # Fetch realized stock sales profits
-        rpnl_stmt = select(func.sum(LotSale.realized_pnl))\
-            .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
-        if start_date:
-            rpnl_stmt = rpnl_stmt.where(Transaction.transaction_date >= start_date)
-        if end_date:
-            rpnl_stmt = rpnl_stmt.where(Transaction.transaction_date <= end_date)
-        rpnl_res = await db.execute(rpnl_stmt)
-        raw_rpnl = rpnl_res.scalar_one_or_none() or 0.0
-        rpnl_total = convert_currency(raw_rpnl, "USD", target_currency)
+    tx_res = await db.execute(tx_stmt)
+    trades = tx_res.scalars().all()
 
-        if rpnl_total > 0.01:
-            total_income += rpnl_total
-            income_flows["Realized Stock Gains"] = income_flows.get("Realized Stock Gains", 0.0) + rpnl_total
+    for t in trades:
+        ttype = (t.transaction_type or "").lower()
+        acc_curr = (t.account.currency if t.account else None) or "USD"
+        qty = float(t.quantity or 0.0)
+        ppu = float(t.price_per_unit or 0.0)
+        gross_amt = (qty * ppu) if (qty > 0 and ppu > 0) else float(t.total_amount or 0.0)
+        fees = float(t.fees or 0.0)
+        taxes = float(t.taxes or 0.0)
+        asset_label = (t.asset.symbol + (f" - {t.asset.name}" if t.asset.name else "")) if t.asset else "Securities Trade"
 
-    # 3. Construct Sankey Nodes and Links
+        if ttype == "buy":
+            # Buy Principal -> Investment Outflow
+            if gross_amt > 0:
+                flows.append({
+                    "flow_type": "INVESTMENT",
+                    "effective_label": LABEL_INVESTMENT,
+                    "amount": convert_currency(gross_amt, acc_curr, target_currency),
+                    "lineage": ["Investments", "Stock & ETF Purchases", asset_label],
+                    "title": f"Buy {t.asset.symbol if t.asset else ''}",
+                    "date": t.transaction_date,
+                })
+            # Buy Fees -> Expense Outflow (Essential)
+            if fees > 0:
+                flows.append({
+                    "flow_type": "EXPENSE",
+                    "effective_label": LABEL_ESSENTIAL,
+                    "amount": convert_currency(fees, acc_curr, target_currency),
+                    "lineage": ["Spends", "Financial & Taxes", "Bank & Brokerage Fees"],
+                    "title": "Brokerage Fees",
+                    "date": t.transaction_date,
+                })
+            # Buy Taxes -> Expense Outflow (Essential)
+            if taxes > 0:
+                flows.append({
+                    "flow_type": "EXPENSE",
+                    "effective_label": LABEL_ESSENTIAL,
+                    "amount": convert_currency(taxes, acc_curr, target_currency),
+                    "lineage": ["Spends", "Financial & Taxes", "Taxes & Duties"],
+                    "title": "Securities Taxes & Duties",
+                    "date": t.transaction_date,
+                })
+        elif ttype == "sell":
+            # Sell Gross Proceeds -> Inflow
+            if gross_amt > 0:
+                flows.append({
+                    "flow_type": "INCOME",
+                    "effective_label": LABEL_INVESTMENT,
+                    "amount": convert_currency(gross_amt, acc_curr, target_currency),
+                    "lineage": ["Investment Inflows", "Stock Sale Proceeds", asset_label],
+                    "title": f"Sell {t.asset.symbol if t.asset else ''}",
+                    "date": t.transaction_date,
+                })
+            if fees > 0:
+                flows.append({
+                    "flow_type": "EXPENSE",
+                    "effective_label": LABEL_ESSENTIAL,
+                    "amount": convert_currency(fees, acc_curr, target_currency),
+                    "lineage": ["Spends", "Financial & Taxes", "Bank & Brokerage Fees"],
+                    "title": "Brokerage Fees",
+                    "date": t.transaction_date,
+                })
+            if taxes > 0:
+                flows.append({
+                    "flow_type": "EXPENSE",
+                    "effective_label": LABEL_ESSENTIAL,
+                    "amount": convert_currency(taxes, acc_curr, target_currency),
+                    "lineage": ["Spends", "Financial & Taxes", "Taxes & Duties"],
+                    "title": "Securities Taxes & Duties",
+                    "date": t.transaction_date,
+                })
+        elif ttype == "dividend":
+            # Gross Dividend -> Inflow
+            if gross_amt > 0:
+                flows.append({
+                    "flow_type": "INCOME",
+                    "effective_label": LABEL_INVESTMENT,
+                    "amount": convert_currency(gross_amt, acc_curr, target_currency),
+                    "lineage": ["Investment Inflows", "Dividends Received", asset_label],
+                    "title": f"Dividend {t.asset.symbol if t.asset else ''}",
+                    "date": t.transaction_date,
+                })
+            if taxes > 0:
+                flows.append({
+                    "flow_type": "EXPENSE",
+                    "effective_label": LABEL_ESSENTIAL,
+                    "amount": convert_currency(taxes, acc_curr, target_currency),
+                    "lineage": ["Spends", "Financial & Taxes", "Taxes & Duties"],
+                    "title": "Dividend Tax Withheld (TDS)",
+                    "date": t.transaction_date,
+                })
+        elif ttype == "interest":
+            if gross_amt > 0:
+                flows.append({
+                    "flow_type": "INCOME",
+                    "effective_label": LABEL_INVESTMENT,
+                    "amount": convert_currency(gross_amt, acc_curr, target_currency),
+                    "lineage": ["Investment Inflows", "Interest Income"],
+                    "title": "Interest",
+                    "date": t.transaction_date,
+                })
+        elif ttype == "fee":
+            fee_tot = gross_amt + fees + taxes
+            if fee_tot > 0:
+                flows.append({
+                    "flow_type": "EXPENSE",
+                    "effective_label": LABEL_ESSENTIAL,
+                    "amount": convert_currency(fee_tot, acc_curr, target_currency),
+                    "lineage": ["Spends", "Financial & Taxes", "Bank & Brokerage Fees"],
+                    "title": "Account Fee",
+                    "date": t.transaction_date,
+                })
+
+    return flows
+
+async def generate_sankey_data(
+    db: AsyncSession,
+    start_date: Optional[datetime.date] = None,
+    end_date: Optional[datetime.date] = None,
+    depth: int = 2,
+    include_investments: bool = True,
+    master_currency: str = "EUR"
+) -> SankeyDataResponse:
+    """
+    Generates Sankey Nodes and Links with true multi-layer expansion:
+    - Depth 1 (3 columns): Inflow Roots (1) -> Total Inflow Pool (2) -> Outflow Roots (3)
+    - Depth 2 (5 columns): Insub1 (1) -> Inflow Roots (2) -> Total Inflow Pool (3) -> Outflow Roots (4) -> Outsub1 (5)
+    - Depth 3 (7 columns): Insub2 (1) -> Insub1 (2) -> Inflow Roots (3) -> Total Inflow Pool (4) -> Outflow Roots (5) -> Outsub1 (6) -> Outsub2 (7)
+    - Depth 4 & 5 expand subcategories further.
+    Parent layers are preserved without replacement.
+    """
+    depth = max(1, min(5, depth))
+    target_currency = (master_currency or "EUR").strip().upper()
+
+    flows = await load_unified_cashflow_flows(
+        db, start_date=start_date, end_date=end_date, master_currency=target_currency
+    )
+    if not include_investments:
+        flows = [f for f in flows if f["flow_type"] != "INVESTMENT" and f.get("effective_label") != LABEL_INVESTMENT]
+
+    total_income = sum(f["amount"] for f in flows if f["flow_type"] == "INCOME")
+    total_expenses = sum(f["amount"] for f in flows if f["flow_type"] == "EXPENSE")
+    total_investments = sum(f["amount"] for f in flows if f["flow_type"] == "INVESTMENT")
+
     nodes: List[SankeyNode] = []
     links: List[SankeyLink] = []
     node_id_set: Set[str] = set()
@@ -603,69 +706,107 @@ async def generate_sankey_data(
                 category_type=c_type
             ))
 
+    link_map: Dict[Tuple[str, str], float] = {}
+    link_color_map: Dict[Tuple[str, str], str] = {}
+
+    def add_link(src: str, tgt: str, val: float, color: str):
+        if val <= 0.001:
+            return
+        key = (src, tgt)
+        link_map[key] = link_map.get(key, 0.0) + val
+        link_color_map[key] = color
+
     # Center Hub Node
     hub_id = "node_cash_inflow"
-    add_node(hub_id, "Total Inflow Pool", level=2, color="#10B981")
+    hub_level = depth + 1
+    add_node(hub_id, "Total Inflow Pool", level=hub_level, color="#10B981")
 
-    # Inflow Links: [Income Source] -> [Total Inflow Pool]
-    for src_name, amt in income_flows.items():
-        if amt <= 0.001:
-            continue
-        src_id = f"inc_{src_name.lower().replace(' ', '_')}"
-        add_node(src_id, src_name, level=1, color="#10B981", c_type="INCOME")
-        links.append(SankeyLink(source=src_id, target=hub_id, value=round(amt, 2), color="#34D399"))
+    # Inflows Processing
+    inflows = [f for f in flows if f["flow_type"] == "INCOME" and f["amount"] > 0]
+    for inf in inflows:
+        amt = inf["amount"]
+        lineage = inf["lineage"] or ["Income"]
 
-    # Check for Deficit (Expenses > Income) -> Draw from past savings
+        max_k = min(len(lineage) - 1, depth - 1)
+        prev_node_id = None
+        for k in range(max_k, -1, -1):
+            name = lineage[k]
+            lvl = depth - k
+            nid = f"in_{lvl}_{name.lower().replace(' ', '_')}"
+            c_color = "#10B981" if k == 0 else ("#34D399" if k == 1 else "#6EE7B7")
+            add_node(nid, name, level=lvl, color=c_color, c_type="INCOME")
+
+            if prev_node_id:
+                add_link(prev_node_id, nid, amt, "#34D399")
+
+            prev_node_id = nid
+
+        root_name = lineage[0]
+        root_id = f"in_{depth}_{root_name.lower().replace(' ', '_')}"
+        add_link(root_id, hub_id, amt, "#10B981")
+
+    # Check for Deficit
     total_outflows = total_expenses + total_investments
     if total_outflows > total_income + 0.001:
         deficit = total_outflows - total_income
-        sav_src_id = "inc_savings_used"
-        add_node(sav_src_id, "Savings / Reserves Used", level=1, color="#F59E0B", c_type="INCOME")
-        links.append(SankeyLink(source=sav_src_id, target=hub_id, value=round(deficit, 2), color="#FBBF24"))
+        sav_src_id = f"in_{depth}_savings_used"
+        add_node(sav_src_id, "Savings / Reserves Used", level=depth, color="#F59E0B", c_type="INCOME")
+        add_link(sav_src_id, hub_id, deficit, "#FBBF24")
 
-    # Outflow Nodes & Links based on Depth:
-    if depth == 1:
-        # High Level: Inflow Pool -> Expenses, Investments, Savings
-        if total_expenses > 0:
-            exp_id = "node_expenses"
-            add_node(exp_id, "Total Expenses", level=3, color="#EF4444", c_type="EXPENSE")
-            links.append(SankeyLink(source=hub_id, target=exp_id, value=round(total_expenses, 2), color="#F87171"))
-        
-        if total_investments > 0:
-            inv_id = "node_investments"
-            add_node(inv_id, "Investments & Savings", level=3, color="#3B82F6", c_type="INVESTMENT")
-            links.append(SankeyLink(source=hub_id, target=inv_id, value=round(total_investments, 2), color="#60A5FA"))
+    # Outflows Processing
+    outflows = [f for f in flows if f["flow_type"] in ("EXPENSE", "INVESTMENT") and f["amount"] > 0]
+    for out in outflows:
+        amt = out["amount"]
+        ftype = out["flow_type"]
+        lbl = out.get("effective_label") or LABEL_DISCRETIONARY
+        lineage = out["lineage"] or []
 
-        if total_income > total_outflows + 0.001:
-            surplus = total_income - total_outflows
-            sav_id = "node_retained_cash"
-            add_node(sav_id, "Retained Cash / Added to Savings", level=3, color="#059669")
-            links.append(SankeyLink(source=hub_id, target=sav_id, value=round(surplus, 2), color="#10B981"))
-    else:
-        # Depth >= 2: Inflow Pool -> Label Nodes -> Category Breakdown Nodes
-        for label_key, cat_map in expense_flows_by_label.items():
-            label_sum = sum(cat_map.values())
-            if label_sum <= 0.001:
-                continue
+        if ftype == "INVESTMENT":
+            root_out_name = "Investments"
+            root_color = "#3B82F6"
+        else:
+            if lbl == LABEL_ESSENTIAL:
+                root_out_name = "Essential"
+                root_color = "#10B981"
+            elif lbl == LABEL_LUXURY:
+                root_out_name = "Luxury"
+                root_color = "#EC4899"
+            else:
+                root_out_name = "Discretionary"
+                root_color = "#F59E0B"
 
-            label_node_id = f"lbl_{label_key.lower()}"
-            lbl_color = DEFAULT_CATEGORY_COLORS.get(label_key, "#64748B")
-            add_node(label_node_id, label_key.replace("_", " ").title(), level=3, color=lbl_color)
-            links.append(SankeyLink(source=hub_id, target=label_node_id, value=round(label_sum, 2), color=lbl_color))
+        root_out_id = f"out_{depth + 2}_{root_out_name.lower()}"
+        add_node(root_out_id, root_out_name, level=depth + 2, color=root_color, c_type=ftype)
+        add_link(hub_id, root_out_id, amt, root_color)
 
-            for cat_name, cat_amt in cat_map.items():
-                if cat_amt <= 0.001:
-                    continue
-                cat_node_id = f"cat_{cat_name.lower().replace(' ', '_')}"
-                add_node(cat_node_id, cat_name, level=4, color=lbl_color)
-                links.append(SankeyLink(source=label_node_id, target=cat_node_id, value=round(cat_amt, 2), color=lbl_color))
+        sub_chain: List[str] = []
+        for idx in range(1, len(lineage)):
+            sub_chain.append(lineage[idx])
 
-        # Retained buffer link if income > outflows
-        if total_income > total_outflows + 0.001:
-            surplus = total_income - total_outflows
-            sav_id = "node_retained_cash"
-            add_node(sav_id, "Retained Cash / Added to Savings", level=3, color="#059669")
-            links.append(SankeyLink(source=hub_id, target=sav_id, value=round(surplus, 2), color="#10B981"))
+        prev_node_id = root_out_id
+        for j in range(min(len(sub_chain), depth - 1)):
+            sub_name = sub_chain[j]
+            lvl = depth + 3 + j
+            nid = f"out_{lvl}_{sub_name.lower().replace(' ', '_')}"
+            add_node(nid, sub_name, level=lvl, color=root_color, c_type=ftype)
+            add_link(prev_node_id, nid, amt, root_color)
+            prev_node_id = nid
+
+    # Check for Surplus
+    if total_income > total_outflows + 0.001:
+        surplus = total_income - total_outflows
+        sav_id = f"out_{depth + 2}_retained_cash"
+        add_node(sav_id, "Retained Cash / Added to Savings", level=depth + 2, color="#059669")
+        add_link(hub_id, sav_id, surplus, "#10B981")
+
+    # Build Links list
+    for (s, t), val in link_map.items():
+        links.append(SankeyLink(
+            source=s,
+            target=t,
+            value=round(val, 2),
+            color=link_color_map.get((s, t))
+        ))
 
     return SankeyDataResponse(
         nodes=nodes,
@@ -687,22 +828,17 @@ async def get_cashflow_summary(
     Computes summary KPI metrics and label distribution for Income & Spends dashboard.
     """
     target_currency = (master_currency or "EUR").strip().upper()
-    lineage_map = await build_category_lineage_map(db)
 
-    stmt = select(CashflowTransaction).options(
-        selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
+    flows = await load_unified_cashflow_flows(
+        db, start_date=start_date, end_date=end_date, master_currency=target_currency
     )
-    if start_date:
-        stmt = stmt.where(CashflowTransaction.transaction_date >= start_date)
-    if end_date:
-        stmt = stmt.where(CashflowTransaction.transaction_date <= end_date)
+    if not include_investments:
+        flows = [f for f in flows if f["flow_type"] != "INVESTMENT" and f.get("effective_label") != LABEL_INVESTMENT]
 
-    res = await db.execute(stmt)
-    transactions = res.scalars().all()
+    total_income = sum(f["amount"] for f in flows if f["flow_type"] == "INCOME")
+    total_expenses = sum(f["amount"] for f in flows if f["flow_type"] == "EXPENSE")
+    total_invested = sum(f["amount"] for f in flows if f["flow_type"] == "INVESTMENT")
 
-    total_income = 0.0
-    total_expenses = 0.0
-    total_invested = 0.0
     breakdown_by_label: Dict[str, float] = {
         LABEL_ESSENTIAL: 0.0,
         LABEL_DISCRETIONARY: 0.0,
@@ -711,34 +847,17 @@ async def get_cashflow_summary(
     }
     cat_expense_totals: Dict[str, float] = {}
 
-    for tx in transactions:
-        for item in tx.items:
-            meta = lineage_map.get(item.category_id)
-            if not meta:
-                continue
+    for f in flows:
+        lbl = f.get("effective_label")
+        if f["flow_type"] == "INVESTMENT":
+            breakdown_by_label[LABEL_INVESTMENT] += f["amount"]
+        elif f["flow_type"] == "EXPENSE":
+            valid_lbl = lbl if lbl in breakdown_by_label else LABEL_DISCRETIONARY
+            breakdown_by_label[valid_lbl] += f["amount"]
 
-            cat_type = meta["category"].category_type
-            effective_label = item.label or meta["effective_label"]
-            raw_amt = float(item.amount or 0.0)
-            amt = convert_currency(raw_amt, tx.currency or "EUR", target_currency)
-
-            if cat_type == "TRANSFER":
-                continue
-
-            if cat_type == "INCOME" or (cat_type == "INVESTMENT" and tx.transaction_kind == "INCOME"):
-                total_income += amt
-            elif cat_type == "INVESTMENT":
-                if not include_investments:
-                    continue
-                total_invested += amt
-                breakdown_by_label[LABEL_INVESTMENT] += amt
-            else: # EXPENSE
-                total_expenses += amt
-                lbl = effective_label if effective_label in breakdown_by_label else LABEL_DISCRETIONARY
-                breakdown_by_label[lbl] += amt
-                
-                cat_name = meta["category"].name
-                cat_expense_totals[cat_name] = cat_expense_totals.get(cat_name, 0.0) + amt
+            lineage = f.get("lineage") or ["General"]
+            cat_name = lineage[-1] if len(lineage) > 1 else lineage[0]
+            cat_expense_totals[cat_name] = cat_expense_totals.get(cat_name, 0.0) + f["amount"]
 
     net_savings = total_income - total_expenses
     savings_rate = (net_savings / total_income * 100.0) if total_income > 0 else 0.0

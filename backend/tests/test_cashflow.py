@@ -97,7 +97,8 @@ async def test_cashflow_splits_and_sankey():
         sankey_d1 = await generate_sankey_data(session, depth=1)
         assert sankey_d1.total_income == 3000.0
         assert len(sankey_d1.nodes) >= 3
-        assert any(n.name == "Total Expenses" for n in sankey_d1.nodes)
+        assert any(n.name == "Luxury" for n in sankey_d1.nodes)
+        assert any(n.name == "Total Inflow Pool" for n in sankey_d1.nodes)
 
         sankey_d2 = await generate_sankey_data(session, depth=2)
         assert any("node_cash_inflow" == l.target for l in sankey_d2.links)

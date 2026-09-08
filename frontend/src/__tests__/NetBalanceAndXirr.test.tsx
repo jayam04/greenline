@@ -239,6 +239,79 @@ describe('Stack 3 Layer 4: Net Balance & XIRR Comprehensive Test Suite', () => {
       expect(within(rows[2]).getByText(/Bal:\s*\$1,000\.00/i)).toBeInTheDocument();
     });
 
+    it('deterministically orders same-day transactions (inflows before outflows) independent of database IDs or array order', async () => {
+      // Jan 1: deposit +1000 (id 202), expense -200 (id 201), expense -100 (id 203)
+      // Provided in scrambled order with id 201 (-200) having a lower ID than deposit (202)
+      const scrambledSameDayCashflows = [
+        {
+          cashflow_id: 203,
+          transaction_date: "2026-01-01",
+          title: "Minor Expense",
+          total_amount: 100,
+          currency: "USD",
+          transaction_kind: "EXPENSE",
+          payments: [{ payment_id: 3, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: -100 }],
+          items: [{ item_id: 3, category_name: "Shopping", category_type: "EXPENSE", amount: 100 }]
+        },
+        {
+          cashflow_id: 201,
+          transaction_date: "2026-01-01",
+          title: "Utility Expense",
+          total_amount: 200,
+          currency: "USD",
+          transaction_kind: "EXPENSE",
+          payments: [{ payment_id: 1, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: -200 }],
+          items: [{ item_id: 1, category_name: "Bills", category_type: "EXPENSE", amount: 200 }]
+        },
+        {
+          cashflow_id: 202,
+          transaction_date: "2026-01-01",
+          title: "Initial Deposit",
+          total_amount: 1000,
+          currency: "USD",
+          transaction_kind: "INCOME",
+          payments: [{ payment_id: 2, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: 1000 }],
+          items: [{ item_id: 2, category_name: "Deposit", category_type: "INCOME", amount: 1000 }]
+        }
+      ];
+
+      (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+        if (endpoint === '/cashflow') return scrambledSameDayCashflows;
+        if (endpoint === '/transactions') return [];
+        if (endpoint === '/accounts') return mockAccounts;
+        return {};
+      });
+
+      render(<CashflowTransactionsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Initial Deposit')).toBeInTheDocument();
+        expect(screen.getByText('Utility Expense')).toBeInTheDocument();
+        expect(screen.getByText('Minor Expense')).toBeInTheDocument();
+      });
+
+      const tbody = screen.getByRole('table').querySelector('tbody')!;
+      const rows = tbody.querySelectorAll('tr');
+      expect(rows.length).toBe(3);
+
+      // Deterministic chronological execution on 2026-01-01:
+      // Inflow first: +1000 -> Bal: $1,000.00
+      // Outflows next: -200 -> Bal: $800.00
+      // Outflows next: -100 -> Bal: $700.00
+      // Reversed presentation (newest first):
+      // Row 0: Minor Expense (-100) -> Bal: $700.00
+      // Row 1: Utility Expense (-200) -> Bal: $800.00
+      // Row 2: Initial Deposit (+1000) -> Bal: $1,000.00
+      expect(within(rows[0]).getByText('Minor Expense')).toBeInTheDocument();
+      expect(within(rows[0]).getByText(/Bal:\s*\$700\.00/i)).toBeInTheDocument();
+
+      expect(within(rows[1]).getByText('Utility Expense')).toBeInTheDocument();
+      expect(within(rows[1]).getByText(/Bal:\s*\$800\.00/i)).toBeInTheDocument();
+
+      expect(within(rows[2]).getByText('Initial Deposit')).toBeInTheDocument();
+      expect(within(rows[2]).getByText(/Bal:\s*\$1,000\.00/i)).toBeInTheDocument();
+    });
+
     it('handles split payments across multiple accounts within a single transaction', async () => {
       const splitCashflow = [
         {
@@ -437,6 +510,79 @@ describe('Stack 3 Layer 4: Net Balance & XIRR Comprehensive Test Suite', () => {
       expect(within(rows[3]).getByText('2026-08-01')).toBeInTheDocument();
       expect(within(rows[3]).getByText(/Bal:\s*\$1,000\.00/i)).toBeInTheDocument();
     });
+
+    it('mathematically asserts running balance continuity from transaction amounts', async () => {
+      const mathCashflows = [
+        {
+          cashflow_id: 401,
+          transaction_date: "2026-04-01",
+          title: "Income A",
+          total_amount: 1000,
+          currency: "USD",
+          transaction_kind: "INCOME",
+          payments: [{ payment_id: 1, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: 1000 }],
+          items: [{ item_id: 1, category_name: "Deposit", category_type: "INCOME", amount: 1000 }]
+        },
+        {
+          cashflow_id: 402,
+          transaction_date: "2026-04-02",
+          title: "Spend B",
+          total_amount: 350,
+          currency: "USD",
+          transaction_kind: "EXPENSE",
+          payments: [{ payment_id: 2, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: -350 }],
+          items: [{ item_id: 2, category_name: "Shopping", category_type: "EXPENSE", amount: 350 }]
+        },
+        {
+          cashflow_id: 403,
+          transaction_date: "2026-04-03",
+          title: "Spend C",
+          total_amount: 150,
+          currency: "USD",
+          transaction_kind: "EXPENSE",
+          payments: [{ payment_id: 3, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: -150 }],
+          items: [{ item_id: 3, category_name: "Food", category_type: "EXPENSE", amount: 150 }]
+        }
+      ];
+
+      (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+        if (endpoint === '/cashflow') return mathCashflows;
+        if (endpoint === '/transactions') return [];
+        if (endpoint === '/accounts') return mockAccounts;
+        return {};
+      });
+
+      render(<CashflowTransactionsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Income A')).toBeInTheDocument();
+      });
+
+      const badges = screen.getAllByTestId('payment-badge');
+      expect(badges.length).toBe(3);
+
+      const balRow0 = parseFloat(badges[0].getAttribute('data-running-balance') || '0');
+      const amtRow0 = parseFloat(badges[0].getAttribute('data-amount') || '0');
+
+      const balRow1 = parseFloat(badges[1].getAttribute('data-running-balance') || '0');
+      const amtRow1 = parseFloat(badges[1].getAttribute('data-amount') || '0');
+
+      const balRow2 = parseFloat(badges[2].getAttribute('data-running-balance') || '0');
+      const amtRow2 = parseFloat(badges[2].getAttribute('data-amount') || '0');
+
+      // Math continuity assertions:
+      // Row 2 (oldest): bal2 = amt2 = 1000
+      expect(balRow2).toBe(1000);
+      expect(amtRow2).toBe(1000);
+
+      // Row 1: bal1 = bal2 + amtRow1 = 1000 + (-350) = 650
+      expect(balRow1).toBe(balRow2 + amtRow1);
+      expect(balRow1).toBe(650);
+
+      // Row 0: bal0 = bal1 + amtRow0 = 650 + (-150) = 500
+      expect(balRow0).toBe(balRow1 + amtRow0);
+      expect(balRow0).toBe(500);
+    });
   });
 
   describe('2. Account Filtering & Statement Balance KPI', () => {
@@ -543,6 +689,76 @@ describe('Stack 3 Layer 4: Net Balance & XIRR Comprehensive Test Suite', () => {
         expect(screen.queryByText(/Chase Checking:/i)).not.toBeInTheDocument();
         expect(screen.getByText('Checking Salary')).toBeInTheDocument();
         expect(screen.getByText('Savings Initial Deposit')).toBeInTheDocument();
+      });
+    });
+
+    it('strictly isolates Account A (+1000) and Account B (+500) during filtering, switching, and clearing', async () => {
+      const accountIsolatedFlows = [
+        {
+          cashflow_id: 301,
+          transaction_date: "2026-03-01",
+          title: "Account A Funding",
+          total_amount: 1000,
+          currency: "USD",
+          transaction_kind: "INCOME",
+          payments: [{ payment_id: 1, account_id: 1, account_name: "Chase Checking", account_currency: "USD", amount: 1000 }],
+          items: [{ item_id: 1, category_name: "Deposit", category_type: "INCOME", amount: 1000 }]
+        },
+        {
+          cashflow_id: 302,
+          transaction_date: "2026-03-02",
+          title: "Account B Funding",
+          total_amount: 500,
+          currency: "USD",
+          transaction_kind: "INCOME",
+          payments: [{ payment_id: 2, account_id: 3, account_name: "Emergency Savings", account_currency: "USD", amount: 500 }],
+          items: [{ item_id: 2, category_name: "Deposit", category_type: "INCOME", amount: 500 }]
+        }
+      ];
+
+      (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+        if (endpoint === '/cashflow') return accountIsolatedFlows;
+        if (endpoint === '/transactions') return [];
+        if (endpoint === '/accounts') return mockAccounts;
+        return {};
+      });
+
+      render(<CashflowTransactionsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Account A Funding')).toBeInTheDocument();
+        expect(screen.getByText('Account B Funding')).toBeInTheDocument();
+      });
+
+      const accountSelect = screen.getByLabelText(/account-filter/i);
+
+      // 1. Filter to Account A (id: 1)
+      fireEvent.change(accountSelect, { target: { value: '1' } });
+      await waitFor(() => {
+        // Account B transactions must not contribute to the balance
+        expect(screen.queryByText('Account B Funding')).not.toBeInTheDocument();
+        expect(screen.getByText('Account A Funding')).toBeInTheDocument();
+        // The displayed running balance must be calculated only from Account A
+        expect(screen.getByTestId('selected-account-balance')).toHaveTextContent(/Chase Checking:/i);
+        expect(screen.getByTestId('selected-account-balance')).toHaveTextContent('$1,000.00');
+        expect(screen.getByTestId('selected-account-balance')).not.toHaveTextContent('$1,500.00');
+      });
+
+      // 2. Switching to Account B (id: 3) should recalculate correctly
+      fireEvent.change(accountSelect, { target: { value: '3' } });
+      await waitFor(() => {
+        expect(screen.queryByText('Account A Funding')).not.toBeInTheDocument();
+        expect(screen.getByText('Account B Funding')).toBeInTheDocument();
+        expect(screen.getByTestId('selected-account-balance')).toHaveTextContent(/Emergency Savings:/i);
+        expect(screen.getByTestId('selected-account-balance')).toHaveTextContent('$500.00');
+      });
+
+      // 3. Clearing the filter should restore the combined result
+      fireEvent.change(accountSelect, { target: { value: 'ALL' } });
+      await waitFor(() => {
+        expect(screen.queryByTestId('selected-account-balance')).not.toBeInTheDocument();
+        expect(screen.getByText('Account A Funding')).toBeInTheDocument();
+        expect(screen.getByText('Account B Funding')).toBeInTheDocument();
       });
     });
   });
@@ -801,6 +1017,60 @@ describe('Stack 3 Layer 4: Net Balance & XIRR Comprehensive Test Suite', () => {
       const cells = row.querySelectorAll('td');
       const xirrCell = cells[cells.length - 1];
       expect(within(xirrCell).getByText('999%+')).toBeInTheDocument();
+    });
+
+    it('handles invalid and non-finite XIRR values (Infinity, -Infinity, NaN) gracefully', async () => {
+      const summaryNonFinite = {
+        total_net_worth: 10000,
+        total_invested: 10000,
+        total_current_value: 10000,
+        cash_balance: 0,
+        total_realized_pnl: 0,
+        total_unrealized_pnl: 0,
+        portfolio_xirr: Infinity,
+        asset_allocation: {},
+        top_holdings: [
+          {
+            asset_id: 5,
+            symbol: "DIVZERO",
+            name: "Divergent Holding",
+            asset_type: "STOCK",
+            currency: "USD",
+            quantity_held: 1,
+            avg_cost_price: 100,
+            total_cost: 100,
+            latest_price: 100,
+            current_value: 100,
+            unrealized_pnl: 0,
+            unrealized_pnl_pct: 0,
+            net_pnl: 0,
+            net_pnl_pct: 0,
+            xirr: -Infinity,
+            open_lots: []
+          }
+        ],
+        closed_holdings: []
+      };
+
+      (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+        if (endpoint === '/portfolio/summary') return summaryNonFinite;
+        if (endpoint === '/settings') return { master_currency: "USD" };
+        return {};
+      });
+
+      render(<HoldingsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Divergent Holding')).toBeInTheDocument();
+      });
+
+      // KPI card shows "-" fallback for Infinity
+      expect(screen.getByTestId('kpi-portfolio-xirr')).toBeInTheDocument();
+      expect(screen.getByTestId('kpi-portfolio-xirr')).toHaveTextContent('-');
+
+      // Holding row shows "-" fallback for -Infinity
+      const xirrCell = screen.getByTestId('holding-xirr-cell');
+      expect(xirrCell).toHaveTextContent('-');
     });
   });
 });

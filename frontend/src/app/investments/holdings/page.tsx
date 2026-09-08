@@ -345,14 +345,14 @@ export default function HoldingsPage() {
         </div>
 
         {/* Card 7: Net Portfolio XIRR */}
-        <div className="getquin-card p-3.5">
+        <div className="getquin-card p-3.5" data-testid="kpi-portfolio-xirr">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Net Portfolio XIRR</span>
             <span className="text-[9px] font-extrabold uppercase bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-1 py-0.2 rounded">
               Annualized
             </span>
           </div>
-          {summary?.portfolio_xirr !== null && summary?.portfolio_xirr !== undefined ? (
+          {summary?.portfolio_xirr !== null && summary?.portfolio_xirr !== undefined && !isNaN(summary.portfolio_xirr) && isFinite(summary.portfolio_xirr) ? (
             <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${summary.portfolio_xirr >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
               {summary.portfolio_xirr >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
               <span className="truncate">{formatXirr(summary.portfolio_xirr)}</span>
@@ -503,7 +503,7 @@ export default function HoldingsPage() {
                   const isPositiveUnrealized = h.unrealized_pnl >= 0;
                   const isPositiveRealized = h.realized_pnl >= 0;
                   const hasRealized = Math.abs(h.realized_pnl) > 0.0001;
-                  const hasXirr = h.xirr !== null && h.xirr !== undefined;
+                  const hasXirr = h.xirr !== null && h.xirr !== undefined && !isNaN(h.xirr) && isFinite(h.xirr);
                   const isPositiveXirr = hasXirr && h.xirr! >= 0;
                   const netVal = h.net_pnl !== undefined ? h.net_pnl : (h.realized_pnl + h.unrealized_pnl);
                   const isPositiveNet = netVal >= 0;
@@ -611,7 +611,7 @@ export default function HoldingsPage() {
                         </td>
 
                         {/* XIRR Column with Sign-free Arrow */}
-                        <td className="py-3 px-3 text-right">
+                        <td className="py-3 px-3 text-right" data-testid="holding-xirr-cell">
                           {hasXirr ? (
                             isPositiveXirr ? (
                               <span className="font-extrabold text-[#16A34A] flex items-center justify-end gap-0.5">

@@ -150,9 +150,17 @@ export default function CashflowTransactionsPage() {
       const isTransfer = cf.transaction_kind === "TRANSFER" || cf.items.some((i) => i.category_type === "TRANSFER");
       const isIncome = !isTransfer && cf.items.some((i) => i.category_type === "INCOME");
 
+      const netCashDelta = cf.payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      let flowPriority = 1; // neutral / transfer
+      if (netCashDelta > 0 || isIncome) {
+        flowPriority = 0; // inflow / credit
+      } else if (netCashDelta < 0 || !isTransfer) {
+        flowPriority = 2; // outflow / debit
+      }
+
       rawRows.push({
         key: `cf-${cf.cashflow_id}`,
-        sortKey: `${cf.transaction_date}_cf_${String(cf.cashflow_id).padStart(10, '0')}`,
+        sortKey: `${cf.transaction_date}_p${flowPriority}_cf_${String(cf.cashflow_id).padStart(10, '0')}`,
         source: "cashflow",
         rawCashflow: cf,
         date: cf.transaction_date,
@@ -299,9 +307,17 @@ export default function CashflowTransactionsPage() {
         });
       }
 
+      const netTradeCashDelta = paymentsList.reduce((sum, p) => sum + (p.amount || 0), 0);
+      let tradeFlowPriority = 1;
+      if (netTradeCashDelta > 0 || isIncome) {
+        tradeFlowPriority = 0; // sell proceeds, dividend, deposit
+      } else if (netTradeCashDelta < 0 || !isTransfer) {
+        tradeFlowPriority = 2; // buy, withdrawal
+      }
+
       rawRows.push({
         key: `tr-${t.transaction_id}`,
-        sortKey: `${t.transaction_date}_tr_${String(t.transaction_id).padStart(10, '0')}`,
+        sortKey: `${t.transaction_date}_p${tradeFlowPriority}_tr_${String(t.transaction_id).padStart(10, '0')}`,
         source: "investment",
         rawTrade: t,
         date: t.transaction_date,
@@ -479,7 +495,10 @@ export default function CashflowTransactionsPage() {
 
             {/* Selected Account Balance Badge */}
             {selectedAccountInfo && (
-              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/60 rounded-xl text-xs">
+              <div 
+                data-testid="selected-account-balance"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/60 rounded-xl text-xs"
+              >
                 <Wallet className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 <span className="font-semibold text-slate-600 dark:text-slate-300">{selectedAccountInfo.name}:</span>
                 <span className={`font-bold tabular-nums ${selectedAccountInfo.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
@@ -565,7 +584,7 @@ export default function CashflowTransactionsPage() {
                 </tr>
               ) : (
                 filteredRows.map((r) => (
-                  <tr key={r.key} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
+                  <tr key={r.key} data-testid="transaction-row" className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
                     {/* Date */}
                     <td className="py-3 font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
                       {r.date}
@@ -590,6 +609,10 @@ export default function CashflowTransactionsPage() {
                         {r.payments.map((p, idx) => (
                           <span
                             key={idx}
+                            data-testid="payment-badge"
+                            data-account-id={p.account_id}
+                            data-amount={p.amount}
+                            data-running-balance={p.running_balance_after}
                             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60"
                           >
                             <span>{p.account_name}</span>

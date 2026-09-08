@@ -183,7 +183,7 @@ export function formatXirr(
   decimals: number = 1,
   preserveSign: boolean = false
 ): string {
-  if (val === null || val === undefined || isNaN(val)) return "-";
+  if (val === null || val === undefined || isNaN(val) || !isFinite(val)) return "-";
   const num = Number(val);
   const absNum = Math.abs(num);
   const sign = num < 0 && preserveSign ? "-" : "";

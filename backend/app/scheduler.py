@@ -42,7 +42,8 @@ def start_scheduler():
         id="autobackup_job", 
         replace_existing=True
     )
-    scheduler.start()
+    if not scheduler.running:
+        scheduler.start()
 
 def reschedule_autobackup_job(interval_hours: int = 1, enabled: bool = True):
     """

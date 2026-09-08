@@ -5,7 +5,7 @@ import shutil
 import sqlite3
 import datetime
 import asyncio
-from typing import List, Dict, Optional, Any, Set
+from typing import List, Dict, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
 from app.config import settings
@@ -16,7 +16,6 @@ from app.db.models import (
     NetworthByAssetClass, CashFlow, XIRRCache, Benchmark
 )
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.price_engine import update_prices_for_assets
 from app.services.snapshot_engine import recalculate_past_snapshots
 
 FILENAME_REGEX = re.compile(r"^[a-zA-Z0-9_\-\.]+\.(db|json)$")
@@ -24,6 +23,13 @@ _backup_lock = asyncio.Lock()
 
 def get_active_db_path() -> str:
     """Returns the absolute filesystem path to the active SQLite database file."""
+    db_url = getattr(settings, "DATABASE_URL", "")
+    if db_url and "sqlite" in db_url:
+        match = re.search(r"^sqlite(?:\+[a-zA-Z0-9_]+)?:///(.+)$", db_url)
+        if match:
+            raw_path = match.group(1)
+            if raw_path != ":memory:":
+                return os.path.abspath(raw_path)
     data_dir = getattr(settings, "DATA_DIR", "./data")
     db_file = getattr(settings, "DATABASE_FILE", "investments.db")
     return os.path.abspath(os.path.join(data_dir, db_file))
@@ -249,13 +255,20 @@ async def create_backup(
         dest_path = os.path.join(backup_dir, backup_filename)
         temp_dest = os.path.join(backup_dir, f".tmp_{timestamp_str}_{backup_filename}")
 
-        if os.path.exists(db_path):
-            shutil.copy2(db_path, temp_dest)
-            os.replace(temp_dest, dest_path)
-        else:
-            with open(temp_dest, "w") as f:
-                f.write("")
-            os.replace(temp_dest, dest_path)
+        try:
+            if os.path.exists(db_path):
+                shutil.copy2(db_path, temp_dest)
+                os.replace(temp_dest, dest_path)
+            else:
+                with open(temp_dest, "w") as f:
+                    f.write("")
+                os.replace(temp_dest, dest_path)
+        finally:
+            if os.path.exists(temp_dest):
+                try:
+                    os.remove(temp_dest)
+                except OSError:
+                    pass
 
         stat = os.stat(dest_path)
         now_iso = datetime.datetime.utcnow().isoformat()
@@ -374,11 +387,15 @@ def validate_backup_payload(data: dict) -> None:
                 seen_ids.add(item_id)
 
     # Validate accounts
+    valid_account_types = {"demat", "mutual_fund", "pf", "nps", "crypto_exchange", "bank"}
     for acc in data.get("accounts", []):
         if not acc.get("account_name"):
             raise ValueError("Invalid account: missing account_name.")
-        if not acc.get("account_type"):
+        acc_type = acc.get("account_type")
+        if not acc_type:
             raise ValueError("Invalid account: missing account_type.")
+        if acc_type.lower() not in valid_account_types:
+            raise ValueError(f"Invalid account_type '{acc_type}'. Must be one of {', '.join(sorted(valid_account_types))}.")
         if "created_at" in acc and acc["created_at"]:
             _parse_optional_iso_date(acc["created_at"], "account.created_at")
 
@@ -392,11 +409,17 @@ def validate_backup_payload(data: dict) -> None:
             raise ValueError("Invalid asset: missing asset_type.")
 
     # Validate transactions
+    valid_tx_types = {"buy", "sell", "dividend", "bonus", "split", "interest", "fee", "deposit", "withdrawal"}
     for tx in data.get("transactions", []):
-        if not tx.get("transaction_type"):
+        tx_type = tx.get("transaction_type")
+        if not tx_type:
             raise ValueError("Invalid transaction: missing transaction_type.")
+        if tx_type.lower() not in valid_tx_types:
+            raise ValueError(f"Invalid transaction_type '{tx_type}'. Must be one of {', '.join(sorted(valid_tx_types))}.")
         _parse_iso_date(tx.get("transaction_date"), "transaction.transaction_date")
-        _parse_float(tx.get("total_amount"), "transaction.total_amount")
+        tot_amt = _parse_float(tx.get("total_amount"), "transaction.total_amount")
+        if tot_amt < 0.0:
+            raise ValueError(f"Invalid transaction total_amount '{tot_amt}': must be non-negative.")
         if tx.get("quantity") is not None:
             _parse_float(tx.get("quantity"), "transaction.quantity")
         if tx.get("price_per_unit") is not None:
@@ -407,9 +430,13 @@ def validate_backup_payload(data: dict) -> None:
             _parse_float(tx.get("taxes"), "transaction.taxes")
 
     # Validate categories
+    valid_cat_types = {"INCOME", "EXPENSE", "INVESTMENT", "TRANSFER"}
     for cat in data.get("categories", []):
         if not cat.get("name"):
             raise ValueError("Invalid category: missing name.")
+        cat_type = cat.get("category_type")
+        if cat_type and cat_type.upper() not in valid_cat_types:
+            raise ValueError(f"Invalid category_type '{cat_type}'. Must be one of {', '.join(sorted(valid_cat_types))}.")
 
     # Validate expected dividends
     for ed in data.get("expected_dividends", []):
@@ -439,10 +466,14 @@ def validate_backup_payload(data: dict) -> None:
         _parse_float(ph.get("close_price"), "price_history.close_price")
 
     # Validate corporate actions
+    valid_action_types = {"split", "bonus", "dividend", "merger", "spinoff", "spin_off", "name_change", "rights"}
     for ca in data.get("corporate_actions", []):
         _parse_iso_date(ca.get("action_date"), "corporate_action.action_date")
-        if not ca.get("action_type"):
+        action_type = ca.get("action_type")
+        if not action_type:
             raise ValueError("Invalid corporate action: missing action_type.")
+        if action_type.lower() not in valid_action_types:
+            raise ValueError(f"Invalid corporate action_type '{action_type}'.")
 
     # Referential integrity checks
     account_ids = {a["account_id"] for a in data.get("accounts", []) if "account_id" in a}
@@ -849,18 +880,22 @@ async def restore_from_sqlite_file(backup_path: str, filename: str) -> Dict[str,
         backup_dir = ensure_backup_dir()
 
         # Check SQLite integrity if file is non-empty
-        if os.path.exists(backup_path) and os.path.getsize(backup_path) > 0:
-            with open(backup_path, "rb") as f:
-                header = f.read(16)
-            if header.startswith(b"SQLite format 3\x00"):
-                try:
-                    conn = sqlite3.connect(backup_path)
-                    res = conn.execute("PRAGMA integrity_check;").fetchall()
-                    conn.close()
-                    if not res or res[0][0].lower() != "ok":
-                        raise ValueError("Backup database file failed integrity check.")
-                except sqlite3.DatabaseError as dbe:
-                    raise ValueError("Backup file is not a valid SQLite database.")
+        if not os.path.exists(backup_path) or os.path.getsize(backup_path) == 0:
+            raise ValueError("Backup file is empty or does not exist.")
+
+        with open(backup_path, "rb") as f:
+            header = f.read(16)
+        if not header.startswith(b"SQLite format 3\x00"):
+            raise ValueError("Backup file is not a valid SQLite database.")
+
+        try:
+            conn = sqlite3.connect(backup_path)
+            res = conn.execute("PRAGMA integrity_check;").fetchall()
+            conn.close()
+            if not res or res[0][0].lower() != "ok":
+                raise ValueError("Backup database file failed integrity check.")
+        except sqlite3.DatabaseError:
+            raise ValueError("Backup file is not a valid SQLite database.")
 
         # Create pre-restore safety snapshot
         safety_filename = None
@@ -875,6 +910,12 @@ async def restore_from_sqlite_file(backup_path: str, filename: str) -> Dict[str,
                 os.replace(temp_safety, safety_path)
             except Exception as e:
                 print(f"[Backup] Warning: Could not create pre-restore safety backup: {e}")
+            finally:
+                if os.path.exists(temp_safety):
+                    try:
+                        os.remove(temp_safety)
+                    except OSError:
+                        pass
 
         # Invalidate SQLAlchemy connection pool before replacing database file
         from app.db.database import engine
@@ -888,15 +929,16 @@ async def restore_from_sqlite_file(backup_path: str, filename: str) -> Dict[str,
             shutil.copy2(backup_path, temp_active)
             os.replace(temp_active, db_path)
         except Exception:
+            # Rollback to safety copy if available
+            if safety_path and os.path.exists(safety_path):
+                shutil.copy2(safety_path, db_path)
+            raise ValueError("Failed to replace active database file.")
+        finally:
             if os.path.exists(temp_active):
                 try:
                     os.remove(temp_active)
                 except OSError:
                     pass
-            # Rollback to safety copy if available
-            if safety_path and os.path.exists(safety_path):
-                shutil.copy2(safety_path, db_path)
-            raise ValueError("Failed to replace active database file.")
 
         return {
             "status": "success",

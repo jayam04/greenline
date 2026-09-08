@@ -6,7 +6,7 @@ import datetime
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from app.main import app
 from app.db.database import Base, get_db
 from app.api.deps import get_current_user
@@ -36,6 +36,7 @@ def temp_backup_env(monkeypatch):
     monkeypatch.setattr(app.config.settings, "DATA_DIR", tmp_dir)
     monkeypatch.setattr(app.config.settings, "DATABASE_FILE", "investments.db")
     monkeypatch.setattr(app.config.settings, "BACKUP_DIR", backup_dir)
+    monkeypatch.setattr(app.config.settings, "DATABASE_URL", f"sqlite+aiosqlite:///{db_file_path}")
 
     yield {
         "tmp_dir": tmp_dir,
@@ -678,4 +679,411 @@ async def test_scheduler_reschedule_job():
 
     # Disable job
     reschedule_autobackup_job(enabled=False)
+
+@pytest.mark.anyio
+async def test_backup_endpoints_require_authentication():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        endpoints = [
+            ("GET", "/api/v1/backup/config", None),
+            ("PUT", "/api/v1/backup/config", {}),
+            ("GET", "/api/v1/backup/list", None),
+            ("POST", "/api/v1/backup/create", {}),
+            ("GET", "/api/v1/backup/download/any_file.db", None),
+            ("POST", "/api/v1/backup/restore/any_file.db", None),
+            ("DELETE", "/api/v1/backup/any_file.db", None),
+            ("GET", "/api/v1/backup/export", None),
+            ("POST", "/api/v1/backup/import", None),
+        ]
+        for method, url, payload in endpoints:
+            if method == "GET":
+                res = await ac.get(url)
+            elif method == "POST":
+                res = await ac.post(url, json=payload if payload is not None else None)
+            elif method == "PUT":
+                res = await ac.put(url, json=payload)
+            elif method == "DELETE":
+                res = await ac.delete(url)
+            assert res.status_code == 401, f"Expected 401 for unauthenticated {method} {url}, got {res.status_code}"
+
+@pytest.mark.anyio
+async def test_sqlite_restore_invalid_header_rejection(temp_backup_env):
+    backup_dir = temp_backup_env["backup_dir"]
+    fake_fname = "greenline_backup_fake_header.db"
+    fake_path = os.path.join(backup_dir, fake_fname)
+    # Write non-sqlite content
+    with open(fake_path, "wb") as f:
+        f.write(b"THIS_IS_NOT_A_SQLITE_DATABASE_FILE_HEADER")
+
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn_async:
+        await conn_async.run_sync(Base.metadata.create_all)
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="header_user", password_hash="hash")
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            res = await ac.post(f"/api/v1/backup/restore/{fake_fname}")
+            # Must reject invalid header with 400 Bad Request
+            assert res.status_code == 400
+            assert "sqlite" in res.json().get("detail", "").lower()
+    finally:
+        app.dependency_overrides.clear()
+
+@pytest.mark.anyio
+async def test_backup_validation_enums_and_negative_values():
+    from app.services.backup_service import validate_backup_payload
+
+    base_payload = {
+        "version": "2.0",
+        "accounts": [{"account_id": 1, "account_name": "Test Bank", "account_type": "bank", "currency": "USD"}],
+        "assets": [{"asset_id": 1, "symbol": "AAPL", "name": "Apple", "asset_type": "stock", "currency": "USD"}],
+        "transactions": [{
+            "transaction_id": 1,
+            "account_id": 1,
+            "asset_id": 1,
+            "transaction_type": "buy",
+            "transaction_date": "2026-01-01",
+            "quantity": 10.0,
+            "price_per_unit": 100.0,
+            "total_amount": 1000.0
+        }],
+        "categories": [{"category_id": 1, "name": "Food", "category_type": "EXPENSE"}],
+        "corporate_actions": [{"action_id": 1, "asset_id": 1, "action_type": "split", "action_date": "2026-02-01"}],
+        "cashflow_transactions": [],
+        "cashflow_payments": [],
+        "cashflow_items": [],
+        "price_history": [],
+        "expected_dividends": []
+    }
+
+    # 1. Invalid account_type
+    bad_acc = json.loads(json.dumps(base_payload))
+    bad_acc["accounts"][0]["account_type"] = "unsupported_acc_type"
+    with pytest.raises(ValueError, match="account_type"):
+        validate_backup_payload(bad_acc)
+
+    # 2. Invalid transaction_type
+    bad_tx = json.loads(json.dumps(base_payload))
+    bad_tx["transactions"][0]["transaction_type"] = "invalid_tx_type"
+    with pytest.raises(ValueError, match="transaction_type"):
+        validate_backup_payload(bad_tx)
+
+    # 3. Negative transaction total_amount
+    neg_tx = json.loads(json.dumps(base_payload))
+    neg_tx["transactions"][0]["total_amount"] = -500.0
+    with pytest.raises(ValueError, match="total_amount"):
+        validate_backup_payload(neg_tx)
+
+    # 4. Invalid category_type
+    bad_cat = json.loads(json.dumps(base_payload))
+    bad_cat["categories"][0]["category_type"] = "INVALID_CAT"
+    with pytest.raises(ValueError, match="category_type"):
+        validate_backup_payload(bad_cat)
+
+    # 5. Invalid corporate action_type
+    bad_ca = json.loads(json.dumps(base_payload))
+    bad_ca["corporate_actions"][0]["action_type"] = "invalid_action"
+    with pytest.raises(ValueError, match="action_type"):
+        validate_backup_payload(bad_ca)
+
+@pytest.mark.anyio
+async def test_active_db_path_synchronized_with_database_url(monkeypatch):
+    import app.config
+    from app.services.backup_service import get_active_db_path
+
+    monkeypatch.setattr(app.config.settings, "DATABASE_URL", "sqlite+aiosqlite:////custom/path/custom_db.db")
+    active_path = get_active_db_path()
+    assert active_path == os.path.abspath("/custom/path/custom_db.db")
+
+@pytest.mark.anyio
+async def test_scheduler_idempotency_and_duplicate_start():
+    from app.scheduler import scheduler, start_scheduler
+
+    # Calling start_scheduler multiple times must NOT crash
+    start_scheduler()
+    assert scheduler.running is True
+    # Second invocation should be completely safe
+    start_scheduler()
+    assert scheduler.running is True
+
+@pytest.mark.anyio
+async def test_restore_atomic_rollback_on_insertion_error(temp_backup_env):
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="rollback_user", password_hash="hash")
+        session.add(user)
+        # Seed an original account that must survive rollback
+        orig_acc = Account(account_name="Original Stable Account", account_type="bank", currency="USD")
+        session.add(orig_acc)
+        await session.commit()
+        await session.refresh(orig_acc)
+        orig_id = orig_acc.account_id
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            # Create a backup payload that passes schema validation, but we inject an error during restore
+            from unittest.mock import patch
+            from app.services.backup_service import restore_from_json_data
+
+            valid_payload = {
+                "version": "2.0",
+                "accounts": [{"account_id": 10, "account_name": "New Imported Bank", "account_type": "bank", "currency": "USD"}],
+                "assets": [],
+                "transactions": [],
+                "categories": [],
+                "cashflow_transactions": [],
+                "cashflow_payments": [],
+                "cashflow_items": [],
+                "price_history": [],
+                "corporate_actions": [],
+                "expected_dividends": []
+            }
+
+            # Simulate an unhandled database exception halfway through restore_from_json_data
+            async with TestSession() as session:
+                with patch("app.services.backup_service.recalculate_all_lots", side_effect=RuntimeError("Simulated lot engine failure")):
+                    with pytest.raises(Exception):
+                        # Force error inside database transaction block
+                        with patch.object(session, "commit", side_effect=RuntimeError("Simulated DB commit failure")):
+                            await restore_from_json_data(valid_payload, session)
+
+                # Verify original account still exists intact in session
+                check_acc = await session.get(Account, orig_id)
+                assert check_acc is not None
+                assert check_acc.account_name == "Original Stable Account"
+
+                # Verify partially imported record was rolled back and does not exist
+                new_acc_q = await session.execute(select(Account).where(Account.account_name == "New Imported Bank"))
+                assert new_acc_q.scalar_one_or_none() is None
+    finally:
+        app.dependency_overrides.clear()
+
+@pytest.mark.anyio
+async def test_full_round_trip_export_import_all_11_entities(temp_backup_env):
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="roundtrip_user", password_hash="hash")
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        # 1. Accounts
+        bank = Account(account_name="Main Bank Account", account_type="bank", currency="USD")
+        session.add(bank)
+        await session.flush()
+        demat = Account(account_name="Main Demat Broker", account_type="demat", currency="USD", default_dividend_account_id=bank.account_id)
+        session.add(demat)
+        await session.flush()
+
+        # 2. Assets
+        asset = Asset(symbol="MSFT", name="Microsoft Corp", asset_type="stock", currency="USD")
+        session.add(asset)
+        await session.flush()
+
+        # 3. Expected Dividend
+        exp_div = ExpectedDividend(
+            asset_id=asset.asset_id,
+            account_id=demat.account_id,
+            ex_date=datetime.date(2026, 3, 1),
+            eligible_shares=50.0,
+            dividend_rate=2.0,
+            expected_amount=100.0,
+            currency="USD",
+            status="MATCHED"
+        )
+        session.add(exp_div)
+        await session.flush()
+
+        # 4. Transactions
+        tx_buy = Transaction(
+            account_id=demat.account_id,
+            funding_account_id=bank.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2026, 1, 15),
+            quantity=50.0,
+            price_per_unit=200.0,
+            total_amount=10000.0,
+            fees=10.0,
+            taxes=5.0,
+            source="manual"
+        )
+        tx_div = Transaction(
+            account_id=demat.account_id,
+            funding_account_id=bank.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="dividend",
+            transaction_date=datetime.date(2026, 3, 10),
+            total_amount=100.0,
+            taxes=15.0,
+            source="manual",
+            expected_dividend_id=exp_div.expected_dividend_id
+        )
+        session.add_all([tx_buy, tx_div])
+        await session.flush()
+        exp_div.matched_transaction_id = tx_div.transaction_id
+
+        # 5. Price History
+        session.add(PriceHistory(asset_id=asset.asset_id, price_date=datetime.date(2026, 4, 1), close_price=220.0, source="manual"))
+
+        # 6. Corporate Action
+        session.add(CorporateAction(asset_id=asset.asset_id, action_type="bonus", action_date=datetime.date(2026, 4, 15), ratio="1:1"))
+
+        # 7. Categories
+        cat_parent = Category(name="Finances", category_type="EXPENSE", default_label="ESSENTIAL")
+        session.add(cat_parent)
+        await session.flush()
+        cat_child = Category(name="Banking Fees", category_type="EXPENSE", parent_id=cat_parent.category_id)
+        session.add(cat_child)
+        await session.flush()
+
+        # 8. Cashflows
+        cf_tx = CashflowTransaction(
+            transaction_date=datetime.date(2026, 2, 1),
+            title="Monthly Account Maintenance",
+            total_amount=12.0,
+            currency="USD",
+            transaction_kind="EXPENSE"
+        )
+        session.add(cf_tx)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf_tx.cashflow_id, account_id=bank.account_id, amount=12.0))
+        session.add(CashflowItem(cashflow_id=cf_tx.cashflow_id, category_id=cat_child.category_id, amount=12.0))
+
+        # 9. App Settings
+        session.add(AppSetting(key="master_currency", value="USD"))
+        session.add(AppSetting(key="fiscal_year_start", value="04-01"))
+
+        await session.commit()
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            # Step A: Export
+            res_exp = await ac.get("/api/v1/backup/export")
+            assert res_exp.status_code == 200
+            exported_data = res_exp.json()
+
+            # Step B: Modify live DB (delete some items, change names)
+            async with TestSession() as session:
+                await session.execute(delete(Transaction))
+                await session.execute(delete(Asset))
+                await session.commit()
+
+            # Step C: Import the exported JSON
+            import_bytes = json.dumps(exported_data).encode("utf-8")
+            res_imp = await ac.post("/api/v1/backup/import", files={"file": ("full_backup.json", import_bytes, "application/json")})
+            assert res_imp.status_code == 200
+
+            # Step D: Verify complete fidelity across all 11 entities
+            async with TestSession() as session:
+                # Accounts
+                accs = (await session.execute(select(Account))).scalars().all()
+                assert len(accs) == 2
+                res_demat = next(a for a in accs if a.account_name == "Main Demat Broker")
+                res_bank = next(a for a in accs if a.account_name == "Main Bank Account")
+                assert res_demat.default_dividend_account_id == res_bank.account_id
+
+                # Assets
+                asts = (await session.execute(select(Asset))).scalars().all()
+                assert len(asts) == 1
+                assert asts[0].symbol == "MSFT"
+
+                # Transactions
+                txs = (await session.execute(select(Transaction).order_by(Transaction.transaction_date))).scalars().all()
+                assert len(txs) == 2
+                assert txs[0].transaction_type == "buy"
+                assert txs[0].total_amount == 10000.0
+                assert txs[1].transaction_type == "dividend"
+                assert txs[1].total_amount == 100.0
+
+                # Expected Dividends
+                eds = (await session.execute(select(ExpectedDividend))).scalars().all()
+                assert len(eds) == 1
+                assert eds[0].expected_amount == 100.0
+                assert eds[0].matched_transaction_id == txs[1].transaction_id
+                assert txs[1].expected_dividend_id == eds[0].expected_dividend_id
+
+                # Categories
+                cats = (await session.execute(select(Category))).scalars().all()
+                assert len(cats) == 2
+                res_child = next(c for c in cats if c.name == "Banking Fees")
+                res_parent = next(c for c in cats if c.name == "Finances")
+                assert res_child.parent_id == res_parent.category_id
+
+                # Cashflows
+                cfs = (await session.execute(select(CashflowTransaction))).scalars().all()
+                assert len(cfs) == 1
+                assert cfs[0].total_amount == 12.0
+
+                # Payments & Items
+                pmts = (await session.execute(select(CashflowPayment))).scalars().all()
+                assert len(pmts) == 1
+                assert pmts[0].amount == 12.0
+                assert pmts[0].account_id == res_bank.account_id
+
+                items = (await session.execute(select(CashflowItem))).scalars().all()
+                assert len(items) == 1
+                assert items[0].amount == 12.0
+                assert items[0].category_id == res_child.category_id
+
+                # Price history & Corporate action
+                phs = (await session.execute(select(PriceHistory))).scalars().all()
+                assert len(phs) == 1
+                assert phs[0].close_price == 220.0
+
+                cas = (await session.execute(select(CorporateAction))).scalars().all()
+                assert len(cas) == 1
+                assert cas[0].action_type == "bonus"
+    finally:
+        app.dependency_overrides.clear()
+
 

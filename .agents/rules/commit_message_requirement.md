@@ -1,12 +1,18 @@
 ---
 name: commit-message-requirement
-description: Enforces appending a proposed git commit message at the end of every reply that modifies repository or workspace files.
+description: Enforces providing a proposed git commit message at the end of every reply that modifies repository or workspace files.
 trigger: always_on
 ---
 
-# Mandatory Commit Message Output Rule
+# Proposed Commit Message Rule
 
-When repository or workspace files are created, modified, renamed, or deleted during a turn, you must include a proposed git commit message in your final response.
+## Instruction Precedence
+
+This repository rule is subordinate to and explicitly defers to higher-priority system and developer instructions. It complements standard explanations and verification outputs without replacing them or conflicting with higher-priority instructions.
+
+## Requirement
+
+When repository or workspace files are created, modified, deleted, renamed, or moved during a turn, you must include a proposed git commit message at the very end of your final response.
 
 ```text
 Commit Message:
@@ -15,13 +21,13 @@ Commit Message:
 
 ### Protocol Guidelines:
 
-1. **Trigger Condition**:
-   - **Required**: Whenever any file in the repository or workspace is actually created, modified, renamed, or deleted.
-   - **Omitted**: Strictly omit for conversational responses, planning turns before user approval, and read-only operations (such as viewing files, searching, reading documentation, or running read-only diagnostic checks).
+1. **When the Requirement Applies**:
+   - **Required**: Whenever any file in the repository or workspace is actually created, modified, deleted, renamed, or moved, or any repository/workspace change is made.
+   - **Omitted**: Strictly omit when no repository or workspace files are modified, such as read-only inspection, searching, reading documentation, running tests that do not modify files, planning turns before user approval, or purely conversational responses.
 
 2. **Placement**:
-   - The commit message trailer must appear at the very end of the agent's final response as a dedicated trailing block.
-   - It complements standard markdown explanations, test results, and file links without replacing them or interfering with system or developer instructions.
+   - The proposed commit message must appear at the very end of the agent's final response as a dedicated block.
+   - It complements standard markdown explanations, test results, and file links without replacing them.
 
 3. **Format**:
    - Follow Conventional Commits format: `<type>(<scope>): <imperative summary>`.

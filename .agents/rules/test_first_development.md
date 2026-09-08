@@ -6,6 +6,12 @@ trigger: always_on
 
 # Test-First Development (TDD) Rule
 
+## Instruction Precedence
+
+This repository rule is subordinate to and explicitly defers to higher-priority system and developer instructions.
+
+## Mandatory 5-Step Workflow
+
 When performing ANY task that involves creating, modifying, fixing, or refactoring code, follow this authoritative 5-step workflow:
 
 1. **Requirement / Specification**:
@@ -24,7 +30,7 @@ When performing ANY task that involves creating, modifying, fixing, or refactori
      - **Frontend**: `cd frontend && npx tsc --noEmit && npm run lint`
    - A task is never complete without displaying clean test execution output.
 
-5. **Output Proposed Commit Message**:
-   - Append the proposed commit message trailer at the very end of your final reply per the commit message protocol.
+5. **Provide Proposed Commit Message**:
+   - When repository or workspace files have been created, modified, deleted, renamed, or moved, append the proposed commit message at the very end of your final response per the commit message protocol.
 
 For full test fixtures, scaffolding patterns, and runbooks, refer to [`.agents/skills/test-driven-development/SKILL.md`](../skills/test-driven-development/SKILL.md).

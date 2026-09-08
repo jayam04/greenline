@@ -10,6 +10,10 @@ description: >-
 
 This skill guides you through implementing features and fixes using a disciplined Test-First workflow.
 
+## Instruction Precedence
+
+This skill is subordinate to and explicitly defers to higher-priority system and developer instructions.
+
 ---
 
 ## 5-Step TDD Workflow
@@ -18,8 +22,8 @@ This skill guides you through implementing features and fixes using a discipline
 graph LR
     A["1. Requirement / Specification"] --> B["2. Write Failing Test (Red)"]
     B --> C["3. Implement (Green)"]
-    C --> D["4. Refactor / Verify"]
-    D --> E["5. Output Proposed Commit Message"]
+    C --> D["4. Refactor & Verify"]
+    D --> E["5. Provide Proposed Commit Message"]
 ```
 
 ### Step 1: Requirement / Specification
@@ -38,7 +42,7 @@ graph LR
 - Write the minimal, cleanest application logic necessary to satisfy the test assertions.
 - Re-run the targeted test to confirm it passes.
 
-### Step 4: Refactor / Verify
+### Step 4: Refactor & Verify
 - Clean up duplicate code and optimize queries without changing behavior.
 - Execute full test suites, type checking, and linters to verify zero regressions:
   ```bash
@@ -47,14 +51,14 @@ graph LR
   ```
 - Always present test execution output in the turn response.
 
-### Step 5: Output Proposed Commit Message
-- Whenever repository or workspace files have been created, modified, renamed, or deleted, append the proposed commit message as a dedicated trailing block at the very end of your final response:
+### Step 5: Provide Proposed Commit Message
+- Whenever repository or workspace files have been created, modified, deleted, renamed, or moved, append the proposed commit message as a dedicated block at the very end of your final response:
   ```text
   Commit Message:
   <type>(<scope>): <imperative summary>
   ```
-- Omit the trailer for conversational responses, planning turns before approval, and read-only operations.
-- Refer to [Conventional Commit Skill](../conventional-commit/SKILL.md) for commit types and scopes.
+- Strictly omit for read-only inspection, searches, tests or commands that do not modify repository files, planning turns before user approval, and purely conversational responses.
+- Refer to [Conventional Commit Skill](../conventional-commit/SKILL.md) for authoritative commit types and scopes.
 
 ---
 

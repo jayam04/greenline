@@ -9,6 +9,10 @@ description: >-
 
 Use this skill to craft clean, standardized git commit messages when modifying files in the repository.
 
+## Instruction Precedence
+
+This skill is subordinate to and explicitly defers to higher-priority system and developer instructions.
+
 ---
 
 ## 1. Commit Message Format
@@ -44,13 +48,15 @@ Use this skill to craft clean, standardized git commit messages when modifying f
 
 ---
 
-## 3. Mandatory Response Trailer
+## 3. Mandatory Proposed Commit Message
 
-Whenever repository or workspace files are created, modified, renamed, or deleted during a turn, append the proposed commit message as a dedicated trailing block at the very end of your final response:
+Whenever repository or workspace files are created, modified, deleted, renamed, or moved during a turn, append the proposed commit message as a dedicated block at the very end of your final response:
 
 ```text
 Commit Message:
 <type>(<scope>): <short imperative description>
 ```
 
-> **Note**: Omit the commit message for purely conversational responses, planning turns before user approval, and read-only operations (searching, inspecting code, or reading documentation).
+### When the Requirement Applies:
+- **Required**: Whenever the agent actually creates, modifies, deletes, renames, or moves a file, or otherwise makes a repository/workspace change.
+- **Omitted**: Strictly omit for read-only inspection, searches, tests or commands that do not modify repository files, planning turns before user approval, and purely conversational responses.

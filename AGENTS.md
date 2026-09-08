@@ -1,10 +1,16 @@
 # Project Guidelines for AI Agents (Antigravity CLI, IDE, Subagents)
 
-Welcome to **Greenline**. Every AI agent interacting with this repository must strictly adhere to the engineering guidelines outlined below.
+Welcome to **Greenline**. Every AI agent interacting with this repository must adhere to the engineering guidelines outlined below.
 
 ---
 
-## 1. Core Engineering Principle: Test-First Development (TDD)
+## 1. Instruction Precedence
+
+These repository-level guidelines and rules are subordinate to and explicitly defer to higher-priority system and developer instructions. They guide development conventions in this codebase without conflicting with or overriding higher-priority instructions.
+
+---
+
+## 2. Core Engineering Principle: Test-First Development (TDD)
 
 All coding tasks, feature implementations, bug fixes, and refactoring **MUST** follow the authoritative 5-step Test-First workflow:
 
@@ -18,17 +24,19 @@ All coding tasks, feature implementations, bug fixes, and refactoring **MUST** f
 4. **Refactor & Verify (Refactor Phase)**:
    - Run the complete test suite and verification tools to ensure 100% passing tests and zero regressions.
    - Never consider a feature or bug fix complete without dedicated automated test verification and execution output.
-5. **Output Proposed Commit Message**:
-   - When files have been modified, append the proposed commit message trailer as the final block of the response.
+5. **Provide Proposed Commit Message**:
+   - When repository or workspace files have been created, modified, deleted, renamed, or moved, provide a proposed Conventional Commit message at the very end of your final response.
+
+For complete fixtures, scaffolding patterns, and runbooks, refer to [`.agents/skills/test-driven-development/SKILL.md`](.agents/skills/test-driven-development/SKILL.md).
 
 ---
 
-## 2. Testing Stack & Conventions
+## 3. Testing Stack & Conventions
 
 - **Backend**:
   - Test runner: `pytest` with `@pytest.mark.anyio`
   - In-memory database fixture: `sqlite+aiosqlite:///:memory:`
-  - Run command: `PYTHONPATH=backend pytest backend/tests`
+  - Run command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
 - **Frontend**:
   - Type checking: `npx tsc --noEmit`
   - Linting: `npm run lint`
@@ -37,7 +45,7 @@ All coding tasks, feature implementations, bug fixes, and refactoring **MUST** f
 
 ---
 
-## 3. Financial Computation Integrity
+## 4. Financial Computation Integrity
 
 - **Precision**: Store and calculate monetary amounts with 2 decimal places precision (`round(x, 2)`).
 - **FIFO Engine**: When processing sells, always deplete open lots in chronological order (earliest `buy_date` first).
@@ -48,19 +56,19 @@ All coding tasks, feature implementations, bug fixes, and refactoring **MUST** f
 
 ---
 
-## 4. Response Protocol: Proposed Commit Message on File Edits
+## 5. Response Protocol: Proposed Commit Message on Repository Modifications
 
-When repository or workspace files are created, modified, renamed, or deleted during a turn:
+When repository or workspace files are created, modified, deleted, renamed, or moved during a turn:
 
-1. **Trailer Format & Placement**:
-   - Append the proposed commit message as a dedicated trailing block at the very end of your final response:
+1. **Format & Placement**:
+   - Include the proposed commit message as a dedicated block at the very end of your final response:
      ```text
      Commit Message:
-     <Commit message to use>
+     <type>(<scope>): <short imperative description>
      ```
 2. **Formatting Standard**:
    - Follow Conventional Commits format: `<type>(<scope>): <summary>`.
-   - Refer to [`.agents/skills/conventional-commit/SKILL.md`](.agents/skills/conventional-commit/SKILL.md) for full types and Greenline domain scopes.
-3. **Trigger & Omission**:
-   - **Required**: When repository or workspace files are created, modified, renamed, or deleted.
-   - **Omitted**: Omit for conversational responses, planning turns before user approval, and read-only operations (searching, code inspection, reading docs).
+   - Refer to [`.agents/skills/conventional-commit/SKILL.md`](.agents/skills/conventional-commit/SKILL.md) for authoritative types and Greenline domain scopes.
+3. **When the Requirement Applies**:
+   - **Required**: Whenever the agent actually creates, modifies, deletes, renames, or moves a file, or otherwise makes a repository/workspace change.
+   - **Omitted**: Strictly omit for read-only inspection, searches, tests or commands that do not modify repository files, planning turns before user approval, and purely conversational answers.

@@ -4,7 +4,13 @@ These guidelines apply to Gemini and Antigravity agents working in Greenline. Th
 
 ---
 
-## 🚨 MANDATORY PROTOCOL: 5-Step Test-First Development (TDD)
+## 1. Instruction Precedence
+
+These repository-level guidelines explicitly defer to higher-priority system and developer instructions. They guide development conventions in this codebase without conflicting with or overriding higher-priority instructions.
+
+---
+
+## 2. Mandatory Protocol: 5-Step Test-First Development (TDD)
 
 When responding to ANY coding task, bug report, or feature implementation:
 
@@ -17,14 +23,14 @@ When responding to ANY coding task, bug report, or feature implementation:
    - Modify only the necessary application files to pass the tests cleanly.
 4. **Refactor / Verify**:
    - Run the full verification suite to ensure zero regressions:
-     - `PYTHONPATH=backend pytest backend/tests`
+     - `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
      - `cd frontend && npx tsc --noEmit && npm run lint`
    - Always display test execution output in the turn response.
-5. **Output Proposed Commit Message**:
-   - Whenever repository or workspace files are created, modified, renamed, or deleted, append the proposed commit message as a dedicated trailing block at the very end of your final response:
+5. **Provide Proposed Commit Message**:
+   - When repository or workspace files have been created, modified, deleted, renamed, or moved, append the proposed commit message as a dedicated block at the very end of your final response:
      ```text
      Commit Message:
      <type>(<scope>): <imperative summary>
      ```
-   - Omit this trailer for conversational responses, planning turns before user approval, and read-only operations.
+   - Omit the proposed commit message for read-only inspection, file searches, non-modifying tests, planning turns before user approval, and purely conversational responses.
    - Follow Conventional Commits format per [`.agents/skills/conventional-commit/SKILL.md`](.agents/skills/conventional-commit/SKILL.md).

@@ -114,74 +114,62 @@ async def run_db_migrations(session: AsyncSession) -> None:
 
     # v006: Add source column to transactions table
     if "v006_transaction_source_column" not in applied:
-        try:
+        cols_res = await session.execute(text("PRAGMA table_info(transactions)"))
+        tx_cols = {row[1] for row in cols_res.all()}
+        if "source" not in tx_cols:
             await session.execute(text("ALTER TABLE transactions ADD COLUMN source VARCHAR DEFAULT 'manual'"))
             await session.commit()
-        except Exception:
-            await session.rollback()
         await mark_migration_applied(session, "v006_transaction_source_column", "Add source column to transactions table")
         applied.add("v006_transaction_source_column")
 
     # v007: Add default_dividend_account_id to accounts table
     if "v007_account_default_dividend_account" not in applied:
-        try:
+        acc_cols_res = await session.execute(text("PRAGMA table_info(accounts)"))
+        acc_cols = {row[1] for row in acc_cols_res.all()}
+        if "default_dividend_account_id" not in acc_cols:
             await session.execute(text("ALTER TABLE accounts ADD COLUMN default_dividend_account_id INTEGER REFERENCES accounts(account_id) ON DELETE SET NULL"))
             await session.commit()
-        except Exception:
-            await session.rollback()
-        try:
-            await session.execute(text("CREATE INDEX IF NOT EXISTS ix_accounts_default_dividend_account_id ON accounts(default_dividend_account_id)"))
-            await session.commit()
-        except Exception:
-            await session.rollback()
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_accounts_default_dividend_account_id ON accounts(default_dividend_account_id)"))
+        await session.commit()
         await mark_migration_applied(session, "v007_account_default_dividend_account", "Add default_dividend_account_id to accounts table")
         applied.add("v007_account_default_dividend_account")
 
     # v008: Add expected_dividends table and expected_dividend_id column to transactions table
     if "v008_expected_dividends_table" not in applied:
-        try:
-            await session.execute(text("""
-                CREATE TABLE IF NOT EXISTS expected_dividends (
-                    expected_dividend_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    asset_id INTEGER NOT NULL REFERENCES assets(asset_id) ON DELETE CASCADE,
-                    account_id INTEGER NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
-                    ex_date DATE NOT NULL,
-                    pay_date DATE,
-                    eligible_shares FLOAT NOT NULL DEFAULT 0.0,
-                    dividend_rate FLOAT NOT NULL DEFAULT 0.0,
-                    expected_amount FLOAT NOT NULL DEFAULT 0.0,
-                    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
-                    source VARCHAR DEFAULT 'yfinance',
-                    matched_transaction_id INTEGER REFERENCES transactions(transaction_id) ON DELETE SET NULL,
-                    status VARCHAR NOT NULL DEFAULT 'UNMATCHED',
-                    created_at DATETIME,
-                    updated_at DATETIME
-                )
-            """))
-            await session.commit()
-        except Exception:
-            await session.rollback()
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS expected_dividends (
+                expected_dividend_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL REFERENCES assets(asset_id) ON DELETE CASCADE,
+                account_id INTEGER NOT NULL REFERENCES accounts(account_id) ON DELETE CASCADE,
+                ex_date DATE NOT NULL,
+                pay_date DATE,
+                eligible_shares FLOAT NOT NULL DEFAULT 0.0,
+                dividend_rate FLOAT NOT NULL DEFAULT 0.0,
+                expected_amount FLOAT NOT NULL DEFAULT 0.0,
+                currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+                source VARCHAR DEFAULT 'yfinance',
+                matched_transaction_id INTEGER REFERENCES transactions(transaction_id) ON DELETE SET NULL,
+                status VARCHAR NOT NULL DEFAULT 'UNMATCHED',
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        """))
+        await session.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uix_expected_dividend_asset_account_date ON expected_dividends(asset_id, account_id, ex_date)"))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_expected_dividends_asset_id ON expected_dividends(asset_id)"))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_expected_dividends_account_id ON expected_dividends(account_id)"))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_expected_dividends_ex_date ON expected_dividends(ex_date)"))
+        await session.commit()
 
-        try:
-            await session.execute(text("CREATE INDEX IF NOT EXISTS ix_expected_dividends_asset_id ON expected_dividends(asset_id)"))
-            await session.execute(text("CREATE INDEX IF NOT EXISTS ix_expected_dividends_account_id ON expected_dividends(account_id)"))
-            await session.execute(text("CREATE INDEX IF NOT EXISTS ix_expected_dividends_ex_date ON expected_dividends(ex_date)"))
-            await session.commit()
-        except Exception:
-            await session.rollback()
-
-        try:
+        tx_cols_res = await session.execute(text("PRAGMA table_info(transactions)"))
+        tx_cols = {row[1] for row in tx_cols_res.all()}
+        if "expected_dividend_id" not in tx_cols:
             await session.execute(text("ALTER TABLE transactions ADD COLUMN expected_dividend_id INTEGER REFERENCES expected_dividends(expected_dividend_id) ON DELETE SET NULL"))
             await session.commit()
-        except Exception:
-            await session.rollback()
 
-        try:
-            await session.execute(text("CREATE INDEX IF NOT EXISTS ix_transactions_expected_dividend_id ON transactions(expected_dividend_id)"))
-            await session.commit()
-        except Exception:
-            await session.rollback()
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_transactions_expected_dividend_id ON transactions(expected_dividend_id)"))
+        await session.commit()
 
         await mark_migration_applied(session, "v008_expected_dividends_table", "Create expected_dividends table and add expected_dividend_id to transactions")
         applied.add("v008_expected_dividends_table")
+
 

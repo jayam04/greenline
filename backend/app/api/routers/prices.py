@@ -58,6 +58,12 @@ async def add_manual_price(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    import math
+    if price_in.close_price is None or math.isnan(price_in.close_price) or math.isinf(price_in.close_price) or price_in.close_price <= 0:
+        raise HTTPException(status_code=400, detail="Close price must be a valid positive number.")
+    if price_in.close_price > 1_000_000_000:
+        raise HTTPException(status_code=400, detail="Close price exceeds maximum allowed financial limit.")
+
     # Upsert manual price
     stmt = select(PriceHistory).where(
         PriceHistory.asset_id == price_in.asset_id,
@@ -66,12 +72,18 @@ async def add_manual_price(
     res = await db.execute(stmt)
     ph = res.scalar_one_or_none()
     
-    if ph is None:
-        ph = PriceHistory(**price_in.model_dump())
-        db.add(ph)
-    else:
+    if ph is not None:
+        if ph.source in ["yfinance", "api"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Market price history already exists for this date. Custom valuation cannot overwrite market price history."
+            )
         ph.close_price = price_in.close_price
-        ph.source = price_in.source
+        ph.source = price_in.source or "manual"
+    else:
+        ph = PriceHistory(**price_in.model_dump())
+        ph.source = price_in.source or "manual"
+        db.add(ph)
         
     await db.commit()
     await db.refresh(ph)

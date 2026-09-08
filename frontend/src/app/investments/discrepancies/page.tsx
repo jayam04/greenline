@@ -134,6 +134,38 @@ export default function DiscrepanciesPage() {
     }
   };
 
+  const handleAutoLinkDefaults = async () => {
+    if (!data || data.auto_linkable_count === 0) return;
+    try {
+      setResolving(true);
+      const resolutions = data.unlinked_items
+        .filter((item) => item.suggested_funding_account_id)
+        .map((item) => {
+          const key = getRowKey(item);
+          return {
+            expected_dividend_id: item.expected_dividend_id || undefined,
+            transaction_id: item.transaction_id || undefined,
+            funding_account_id: item.suggested_funding_account_id!,
+            transaction_date: selectedDatePerTx[key] || item.transaction_date || undefined,
+            total_amount: item.total_amount,
+            taxes: item.taxes || 0.0,
+          };
+        });
+
+      if (resolutions.length > 0) {
+        await apiFetch("/discrepancies/resolve", {
+          method: "POST",
+          body: JSON.stringify({ resolutions }),
+        });
+        await loadData();
+      }
+    } catch (err: any) {
+      alert(err.message || "Failed to auto-link default bank accounts");
+    } finally {
+      setResolving(false);
+    }
+  };
+
   const handleResolveSingle = async (item: DiscrepancyItem, dematId: number) => {
     const key = getRowKey(item);
     const bankId = selectedBankPerTx[key];
@@ -280,6 +312,17 @@ export default function DiscrepanciesPage() {
 
         {/* Global Actions */}
         <div className="flex items-center gap-2">
+          {data && data.auto_linkable_count > 0 && (
+            <button
+              onClick={handleAutoLinkDefaults}
+              disabled={resolving}
+              className="btn-pill-black text-xs cursor-pointer flex items-center gap-1.5"
+              title="Auto-link all items that have default bank accounts configured"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>Auto-Link Defaults ({data.auto_linkable_count})</span>
+            </button>
+          )}
           <button
             onClick={handleSyncDividends}
             disabled={syncing}
@@ -538,7 +581,7 @@ export default function DiscrepanciesPage() {
                             disabled={resolving}
                             className="btn-pill-black text-[11px] px-3 py-1.5 cursor-pointer whitespace-nowrap"
                           >
-                            Link & Confirm
+                            Link Deposit
                           </button>
                           {item.expected_dividend_id && (
                             <button

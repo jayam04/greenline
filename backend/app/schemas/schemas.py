@@ -1,6 +1,6 @@
 import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # Auth Schemas
 class Token(BaseModel):
@@ -146,7 +146,7 @@ class LotSaleResponse(BaseModel):
 class PriceHistoryCreate(BaseModel):
     asset_id: int
     price_date: datetime.date
-    close_price: float
+    close_price: float = Field(..., gt=0, le=1_000_000_000)
     source: str = "manual"
 
 class PriceHistoryResponse(BaseModel):

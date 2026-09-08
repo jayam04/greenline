@@ -3,7 +3,7 @@ import datetime
 from typing import List, Tuple, Optional
 import yfinance as yf
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, asc
+from sqlalchemy import select, asc, func
 from app.db.models import Asset, Account, Transaction, CorporateAction
 from app.services.fifo_engine import recalculate_all_lots
 
@@ -43,27 +43,34 @@ async def calculate_shares_on_date(
     db: AsyncSession,
     asset_id: int,
     account_id: int,
-    target_date: datetime.date
+    target_date: datetime.date,
+    for_dividend_ex_date: bool = False
 ) -> float:
     """
     Computes exact split-adjusted share holdings for an asset in an account on target_date.
     Chronologically applies buy, sell transactions, and corporate action splits/bonuses.
+    When for_dividend_ex_date is True, only buy/sell transactions prior to target_date
+    are included (since purchasing on/after ex-date forfeits the dividend, and selling on
+    ex-date retains the dividend).
     """
-    # 1. Fetch buy/sell transactions on or before target_date
+    # 1. Fetch buy/sell transactions
+    tx_condition = (
+        Transaction.transaction_date < target_date
+        if for_dividend_ex_date
+        else Transaction.transaction_date <= target_date
+    )
     tx_stmt = (
         select(Transaction)
         .where(
             Transaction.asset_id == asset_id,
             Transaction.account_id == account_id,
-            Transaction.transaction_date <= target_date,
+            tx_condition,
             Transaction.transaction_type.in_(["buy", "sell"])
         )
         .order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
     )
     tx_res = await db.execute(tx_stmt)
     txs = tx_res.scalars().all()
-    if not txs:
-        return 0.0
 
     # 2. Fetch corporate actions on or before target_date
     ca_stmt = (
@@ -78,12 +85,16 @@ async def calculate_shares_on_date(
     ca_res = await db.execute(ca_stmt)
     actions = ca_res.scalars().all()
 
-    # Interleave events chronologically
+    if not txs and not actions:
+        return 0.0
+
+    # Interleave events chronologically:
+    # Corporate actions effective on a date take effect at market open before intraday trades (priority 0)
     events = []
-    for tx in txs:
-        events.append((tx.transaction_date, 0, tx))
     for ca in actions:
-        events.append((ca.action_date, 1, ca))
+        events.append((ca.action_date, 0, ca))
+    for tx in txs:
+        events.append((tx.transaction_date, 1, tx))
 
     events.sort(key=lambda x: (x[0], x[1]))
 
@@ -136,7 +147,7 @@ async def sync_dividends_for_asset(db: AsyncSession, asset_id: int) -> int:
     changes = 0
     for account in accounts:
         for ex_date, rate in dividends_list:
-            shares = await calculate_shares_on_date(db, asset_id, account.account_id, ex_date)
+            shares = await calculate_shares_on_date(db, asset_id, account.account_id, ex_date, for_dividend_ex_date=True)
             gross_amount = round(shares * rate, 2)
 
             exp_stmt = select(ExpectedDividend).where(
@@ -171,21 +182,26 @@ async def sync_dividends_for_asset(db: AsyncSession, asset_id: int) -> int:
                     changes += 1
                 else:
                     # Check if an existing confirmed dividend transaction in Table C matches
-                    existing_tx_stmt = select(Transaction).where(
-                        Transaction.asset_id == asset_id,
-                        Transaction.account_id == account.account_id,
-                        Transaction.transaction_type == "dividend",
-                        Transaction.funding_account_id.is_not(None),
-                        Transaction.transaction_date >= ex_date,
-                        Transaction.transaction_date <= ex_date + datetime.timedelta(days=90),
-                        Transaction.expected_dividend_id.is_(None)
+                    existing_tx_stmt = (
+                        select(Transaction)
+                        .where(
+                            Transaction.asset_id == asset_id,
+                            Transaction.account_id == account.account_id,
+                            Transaction.transaction_type == "dividend",
+                            Transaction.funding_account_id.is_not(None),
+                            Transaction.transaction_date >= ex_date,
+                            Transaction.transaction_date <= ex_date + datetime.timedelta(days=90),
+                            Transaction.expected_dividend_id.is_(None),
+                            func.abs(Transaction.total_amount - gross_amount) < 0.01
+                        )
+                        .order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
                     )
                     existing_tx = (await db.execute(existing_tx_stmt)).scalars().first()
 
                     matched_id = None
                     init_status = "UNMATCHED"
 
-                    if existing_tx and abs(float(existing_tx.total_amount or 0.0) - gross_amount) < 0.01:
+                    if existing_tx:
                         matched_id = existing_tx.transaction_id
                         init_status = "MATCHED"
 

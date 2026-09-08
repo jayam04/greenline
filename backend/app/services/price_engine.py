@@ -80,7 +80,7 @@ async def update_prices_for_assets(
                     )
                     db.add(ph)
                     count += 1
-                else:
+                elif ph.source != "manual":
                     ph.close_price = c_price
                     ph.source = "yfinance"
 

@@ -158,6 +158,10 @@ class ExpectedDividend(Base):
     account = relationship("Account")
     matched_transaction = relationship("Transaction", foreign_keys=[matched_transaction_id])
 
+    __table_args__ = (
+        UniqueConstraint("asset_id", "account_id", "ex_date", name="uix_expected_dividend_asset_account_date"),
+    )
+
 class CorporateAction(Base):
     __tablename__ = "corporate_actions"
     

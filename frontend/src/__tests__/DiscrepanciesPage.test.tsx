@@ -106,8 +106,8 @@ describe('DiscrepanciesPage Component (Layer 2B)', () => {
     // Verify candidate match suggestion is displayed
     expect(screen.getByText(/Match: Wells Fargo/i)).toBeInTheDocument();
 
-    // Verify Auto-Link Defaults button is NOT present (removed per Layer 2B rules)
-    expect(screen.queryByText(/Auto-Link Defaults/i)).not.toBeInTheDocument();
+    // Verify Auto-Link Defaults button is present when auto_linkable_count > 0
+    expect(screen.getByText(/Auto-Link Defaults/i)).toBeInTheDocument();
   });
 
   it('applies candidate match bank and credit date on 1-click selection and resolves with custom date and expected_dividend_id', async () => {
@@ -129,7 +129,7 @@ describe('DiscrepanciesPage Component (Layer 2B)', () => {
     fireEvent.click(matchBtn);
 
     // Find Link button for AAPL row and click it
-    const linkBtns = screen.getAllByRole('button', { name: /Link & Confirm/i });
+    const linkBtns = screen.getAllByRole('button', { name: /Link Deposit/i });
     fireEvent.click(linkBtns[0]);
 
     await waitFor(() => {

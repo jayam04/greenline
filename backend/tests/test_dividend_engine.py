@@ -189,3 +189,121 @@ async def test_sync_dividends_for_asset_auto_creation_and_orphan_cleanup():
         # May dividend should be auto-deleted from Table B because held shares = 0 and unlinked!
         assert len(exp_divs2) == 1
         assert exp_divs2[0].ex_date == datetime.date(2024, 2, 15)
+
+@pytest.mark.anyio
+async def test_calculate_shares_on_ex_date_boundary_and_deterministic_matching():
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        bank = Account(account_name="Bank 1", account_type="bank", currency="USD")
+        demat = Account(account_name="Demat 1", account_type="demat", currency="USD")
+        session.add_all([bank, demat])
+        await session.commit()
+        await session.refresh(bank)
+        await session.refresh(demat)
+
+        asset = Asset(symbol="GOOGL", name="Alphabet Inc.", asset_type="stock", currency="USD")
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+
+        # 1. Buy 100 shares on 2024-05-01
+        session.add(Transaction(
+            account_id=demat.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2024, 5, 1),
+            quantity=100.0,
+            price_per_unit=100.0,
+            total_amount=10000.0,
+            source="manual"
+        ))
+
+        # 2. On ex-date 2024-06-01:
+        # - Sell 50 shares
+        session.add(Transaction(
+            account_id=demat.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="sell",
+            transaction_date=datetime.date(2024, 6, 1),
+            quantity=50.0,
+            price_per_unit=110.0,
+            total_amount=5500.0,
+            source="manual"
+        ))
+        # - Buy 200 shares
+        session.add(Transaction(
+            account_id=demat.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2024, 6, 1),
+            quantity=200.0,
+            price_per_unit=110.0,
+            total_amount=22000.0,
+            source="manual"
+        ))
+        # - 2:1 Split effective on ex-date
+        session.add(CorporateAction(
+            asset_id=asset.asset_id,
+            action_type="split",
+            action_date=datetime.date(2024, 6, 1),
+            ratio="2:1"
+        ))
+
+        # 3. Add two existing transactions in Table C:
+        # tx1: $25 dividend on 2024-06-10 (unrelated amount)
+        tx_other = Transaction(
+            account_id=demat.account_id,
+            funding_account_id=bank.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="dividend",
+            transaction_date=datetime.date(2024, 6, 10),
+            quantity=25.0,
+            price_per_unit=1.0,
+            total_amount=25.0,
+            source="manual"
+        )
+        # tx2: $200 dividend on 2024-06-15 (matching amount: 200 shares * $1.00)
+        tx_match = Transaction(
+            account_id=demat.account_id,
+            funding_account_id=bank.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="dividend",
+            transaction_date=datetime.date(2024, 6, 15),
+            quantity=200.0,
+            price_per_unit=1.0,
+            total_amount=200.0,
+            source="manual"
+        )
+        session.add_all([tx_other, tx_match])
+        await session.commit()
+
+        # Check share calculations:
+        # Standard holdings at end of day 2024-06-01: (100 * 2) - 50 + 200 = 350.0
+        standard_shares = await calculate_shares_on_date(session, asset.asset_id, demat.account_id, datetime.date(2024, 6, 1))
+        assert standard_shares == 350.0
+
+        # Dividend eligible shares for ex-date 2024-06-01:
+        # Held prior to ex-date: 100 shares * 2 (split on ex-date) = 200.0 shares.
+        # Buys on ex-date not eligible; sells on ex-date do not disqualify.
+        eligible_shares = await calculate_shares_on_date(session, asset.asset_id, demat.account_id, datetime.date(2024, 6, 1), for_dividend_ex_date=True)
+        assert eligible_shares == 200.0
+
+        # Run dividend sync with rate $1.00 on 2024-06-01
+        with patch("app.services.dividend_engine.fetch_yfinance_dividends", return_value=[(datetime.date(2024, 6, 1), 1.0)]):
+            changes = await sync_dividends_for_asset(session, asset.asset_id)
+            assert changes >= 1
+
+        from app.db.models import ExpectedDividend
+        exp_res = await session.execute(select(ExpectedDividend).where(ExpectedDividend.asset_id == asset.asset_id))
+        exp = exp_res.scalar_one()
+
+        assert exp.eligible_shares == 200.0
+        assert exp.expected_amount == 200.0
+        # Deterministic match must match tx_match ($200), not tx_other ($25)
+        assert exp.matched_transaction_id == tx_match.transaction_id
+        assert exp.status == "MATCHED"

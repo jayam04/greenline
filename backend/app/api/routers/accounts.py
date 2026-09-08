@@ -140,6 +140,11 @@ async def create_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if account_in.default_dividend_account_id is not None:
+        bank_acc = await db.get(Account, account_in.default_dividend_account_id)
+        if not bank_acc or bank_acc.account_type != "bank":
+            raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account")
+
     account = Account(**account_in.model_dump())
     db.add(account)
     await db.commit()
@@ -148,6 +153,10 @@ async def create_account(
     resp.current_balance = 0.0
     resp.cash_balance = 0.0
     resp.securities_value = 0.0
+    if account.default_dividend_account_id:
+        def_acc = await db.get(Account, account.default_dividend_account_id)
+        if def_acc:
+            resp.default_dividend_account_name = def_acc.account_name
     return resp
 
 @router.get("/{account_id}", response_model=AccountResponse)
@@ -187,6 +196,14 @@ async def update_account(
         raise HTTPException(status_code=404, detail="Account not found")
 
     update_data = account_in.model_dump(exclude_unset=True)
+    if "default_dividend_account_id" in update_data and update_data["default_dividend_account_id"] is not None:
+        target_id = update_data["default_dividend_account_id"]
+        if target_id == account_id:
+            raise HTTPException(status_code=400, detail="Account cannot be its own default dividend account")
+        bank_acc = await db.get(Account, target_id)
+        if not bank_acc or bank_acc.account_type != "bank":
+            raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account")
+
     for field, val in update_data.items():
         setattr(account, field, val)
 

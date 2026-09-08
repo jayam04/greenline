@@ -148,3 +148,128 @@ async def test_discrepancy_credit_date_and_candidate_matching():
 
     finally:
         app.dependency_overrides.clear()
+
+@pytest.mark.anyio
+async def test_candidate_matching_currency_and_scoring():
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="score_user", password_hash="hash")
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        usd_bank = Account(account_name="USD Checking", account_type="bank", currency="USD")
+        eur_bank = Account(account_name="EUR Savings", account_type="bank", currency="EUR")
+        demat = Account(account_name="Demat Broker", account_type="demat", currency="USD")
+        session.add_all([usd_bank, eur_bank, demat])
+
+        cat = Category(name="Dividends", category_type="INCOME", default_label="INVESTMENT")
+        session.add(cat)
+        await session.commit()
+        await session.refresh(usd_bank)
+        await session.refresh(eur_bank)
+        await session.refresh(demat)
+        await session.refresh(cat)
+
+        asset = Asset(symbol="NVDA", name="NVIDIA Corp", asset_type="stock", currency="USD")
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+
+        # Expected dividend of $100 USD on 2026-06-01
+        from app.db.models import ExpectedDividend
+        exp = ExpectedDividend(
+            asset_id=asset.asset_id,
+            account_id=demat.account_id,
+            ex_date=datetime.date(2026, 6, 1),
+            eligible_shares=100.0,
+            dividend_rate=1.0,
+            expected_amount=100.0,
+            currency="USD",
+            source="yfinance",
+            status="UNMATCHED"
+        )
+        session.add(exp)
+        await session.flush()
+
+        # 1. Payment of 100 in EUR bank (Wrong currency: should NOT be a candidate match)
+        cf_eur = CashflowTransaction(
+            transaction_date=datetime.date(2026, 6, 5),
+            title="EUR Dividend 100",
+            total_amount=100.0,
+            currency="EUR",
+            transaction_kind="INCOME"
+        )
+        session.add(cf_eur)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf_eur.cashflow_id, account_id=eur_bank.account_id, amount=100.0))
+        session.add(CashflowItem(cashflow_id=cf_eur.cashflow_id, category_id=cat.category_id, amount=100.0, label="INVESTMENT"))
+
+        # 2. Payment of 95 in USD bank on 2026-06-15 (Tax-withheld candidate)
+        cf_usd_approx = CashflowTransaction(
+            transaction_date=datetime.date(2026, 6, 15),
+            title="USD Tax Withheld 95",
+            total_amount=95.0,
+            currency="USD",
+            transaction_kind="INCOME"
+        )
+        session.add(cf_usd_approx)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf_usd_approx.cashflow_id, account_id=usd_bank.account_id, amount=95.0))
+        session.add(CashflowItem(cashflow_id=cf_usd_approx.cashflow_id, category_id=cat.category_id, amount=95.0, label="INVESTMENT"))
+
+        # 3. Exact payment of 100 in USD bank on 2026-06-10 (Exact amount candidate - higher score than 95)
+        cf_usd_exact = CashflowTransaction(
+            transaction_date=datetime.date(2026, 6, 10),
+            title="USD Exact 100",
+            total_amount=100.0,
+            currency="USD",
+            transaction_kind="INCOME"
+        )
+        session.add(cf_usd_exact)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf_usd_exact.cashflow_id, account_id=usd_bank.account_id, amount=100.0))
+        session.add(CashflowItem(cashflow_id=cf_usd_exact.cashflow_id, category_id=cat.category_id, amount=100.0, label="INVESTMENT"))
+
+        await session.commit()
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            res = await ac.get("/api/v1/discrepancies/")
+            assert res.status_code == 200
+            data = res.json()
+            assert data["total_count"] == 1
+            item = data["unlinked_items"][0]
+            matches = item.get("candidate_matches", [])
+
+            # Must NOT include EUR bank payment
+            account_ids = [m["account_id"] for m in matches]
+            assert eur_bank.account_id not in account_ids
+
+            # Must include USD candidate matches
+            assert usd_bank.account_id in account_ids
+
+            # Exact match (100.0) must be ranked ahead of partial match (95.0)
+            assert len(matches) == 2
+            assert matches[0]["amount"] == 100.0
+            assert matches[0]["title"] == "USD Exact 100"
+            assert matches[1]["amount"] == 95.0
+    finally:
+        app.dependency_overrides.clear()
+

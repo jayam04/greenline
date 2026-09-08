@@ -58,97 +58,13 @@ async def list_discrepancies(
     res = await db.execute(stmt)
     rows = res.all()
 
-    # Pre-fetch all bank accounts for candidate matching
-    bank_stmt = select(Account.account_id, Account.account_name).where(Account.account_type == "bank")
+    # Pre-fetch all bank accounts with currency for candidate matching
+    bank_stmt = select(Account.account_id, Account.account_name, Account.currency).where(Account.account_type == "bank")
     bank_res = await db.execute(bank_stmt)
-    bank_map = {row[0]: row[1] for row in bank_res.all()}
+    bank_rows = bank_res.all()
+    bank_map = {row[0]: row[1] for row in bank_rows}
+    bank_currencies = {row[0]: (row[2] or "USD") for row in bank_rows}
     bank_ids = set(bank_map.keys())
-
-    unlinked_items: List[DiscrepancyItemResponse] = []
-    total_unlinked_amount = 0.0
-    auto_linkable_count = 0
-
-    for (
-        exp,
-        acc_name,
-        acc_curr,
-        def_acc_id,
-        symbol,
-        asset_name,
-        def_bank_name,
-        linked_tx_id,
-        linked_tx_amount,
-        linked_tx_taxes,
-        linked_funding_id
-    ) in rows:
-        gross_amt = float(exp.expected_amount or 0.0)
-        net_amt = round(gross_amt, 2)
-        total_unlinked_amount += net_amt
-
-        if def_acc_id is not None:
-            auto_linkable_count += 1
-
-        # Search for candidate bank matches within [exp.ex_date, exp.ex_date + 90 days]
-        candidate_matches: List[CandidateMatchItem] = []
-        if bank_ids and exp.ex_date:
-            start_d = exp.ex_date
-            end_d = exp.ex_date + datetime.timedelta(days=90)
-
-            # Check Cashflow income payments
-            cf_stmt = (
-                select(
-                    CashflowTransaction.cashflow_id,
-                    CashflowTransaction.transaction_date,
-                    CashflowTransaction.title,
-                    CashflowPayment.account_id,
-                    CashflowPayment.amount
-                )
-                .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
-                .where(
-                    CashflowPayment.account_id.in_(bank_ids),
-                    CashflowPayment.amount > 0,
-                    CashflowTransaction.transaction_date >= start_d,
-                    CashflowTransaction.transaction_date <= end_d,
-                    func.abs(CashflowPayment.amount - net_amt) < (net_amt * 0.35 + 0.01) # Match within 35% tax range or exact
-                )
-                .order_by(CashflowTransaction.transaction_date)
-            )
-            cf_res = await db.execute(cf_stmt)
-            for cf_id, cf_date, cf_title, b_id, b_amt in cf_res.all():
-                candidate_matches.append(CandidateMatchItem(
-                    match_id=cf_id,
-                    match_type="cashflow",
-                    account_id=b_id,
-                    account_name=bank_map.get(b_id, "Bank Account"),
-                    date=cf_date,
-                    amount=float(b_amt),
-                    title=cf_title or "Cashflow Income"
-                ))
-
-        unlinked_items.append(DiscrepancyItemResponse(
-            expected_dividend_id=exp.expected_dividend_id,
-            transaction_id=linked_tx_id,
-            account_id=exp.account_id,
-            account_name=acc_name or "",
-            asset_id=exp.asset_id,
-            asset_symbol=symbol or "",
-            asset_name=asset_name,
-            currency=acc_curr or "USD",
-            transaction_date=exp.ex_date,
-            quantity=float(exp.eligible_shares or 0.0),
-            price_per_unit=float(exp.dividend_rate or 0.0),
-            total_amount=gross_amt,
-            expected_amount=float(exp.expected_amount or 0.0),
-            linked_transaction_amount=float(linked_tx_amount) if linked_tx_amount is not None else None,
-            taxes=float(linked_tx_taxes or 0.0),
-            net_amount=net_amt,
-            source=exp.source or "yfinance",
-            status=exp.status or "UNMATCHED",
-            suggested_funding_account_id=def_acc_id,
-            suggested_funding_account_name=def_bank_name,
-            candidate_matches=candidate_matches,
-            notes=f"Expected dividend for {symbol} ({exp.eligible_shares} shares @ {exp.dividend_rate}/share)"
-        ))
 
     # 2. Also check any legacy unlinked Transaction rows in Table C (fallback)
     legacy_stmt = (
@@ -169,9 +85,132 @@ async def list_discrepancies(
             Transaction.funding_account_id.is_(None),
             Transaction.expected_dividend_id.is_(None)
         )
+        .order_by(desc(Transaction.transaction_date), desc(Transaction.transaction_id))
     )
     legacy_res = await db.execute(legacy_stmt)
-    for l_tx, acc_name, acc_curr, def_acc_id, symbol, asset_name, def_bank_name in legacy_res.all():
+    legacy_rows = legacy_res.all()
+
+    # Pre-fetch all candidate cashflow payments across the global date range in a single query (no N+1)
+    all_dates = []
+    for exp, *_ in rows:
+        if exp.ex_date:
+            all_dates.append(exp.ex_date)
+    for l_tx, *_ in legacy_rows:
+        if l_tx.transaction_date:
+            all_dates.append(l_tx.transaction_date)
+
+    candidate_payments = []
+    if bank_ids and all_dates:
+        min_date = min(all_dates)
+        max_date = max(all_dates) + datetime.timedelta(days=90)
+        cf_stmt = (
+            select(
+                CashflowTransaction.cashflow_id,
+                CashflowTransaction.transaction_date,
+                CashflowTransaction.title,
+                CashflowTransaction.currency.label("cf_currency"),
+                CashflowPayment.account_id,
+                CashflowPayment.amount
+            )
+            .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
+            .where(
+                CashflowPayment.account_id.in_(bank_ids),
+                CashflowPayment.amount > 0,
+                CashflowTransaction.transaction_date >= min_date,
+                CashflowTransaction.transaction_date <= max_date
+            )
+        )
+        cf_res = await db.execute(cf_stmt)
+        candidate_payments = cf_res.all()
+
+    unlinked_items: List[DiscrepancyItemResponse] = []
+    total_unlinked_amount = 0.0
+    auto_linkable_count = 0
+
+    for (
+        exp,
+        acc_name,
+        acc_curr,
+        def_acc_id,
+        symbol,
+        asset_name,
+        def_bank_name,
+        linked_tx_id,
+        linked_tx_amount,
+        linked_tx_taxes,
+        linked_funding_id
+    ) in rows:
+        gross_amt = float(exp.expected_amount or 0.0)
+        tax_amt = float(linked_tx_taxes or 0.0)
+        net_amt = round(gross_amt - tax_amt, 2)
+        total_unlinked_amount += net_amt
+
+        if def_acc_id is not None:
+            auto_linkable_count += 1
+
+        # Search for candidate bank matches within [exp.ex_date, exp.ex_date + 90 days]
+        candidate_matches: List[CandidateMatchItem] = []
+        target_currency = exp.currency or acc_curr or "USD"
+        if exp.ex_date:
+            start_d = exp.ex_date
+            end_d = exp.ex_date + datetime.timedelta(days=90)
+
+            for cf_id, cf_date, cf_title, cf_currency, b_id, b_amt in candidate_payments:
+                if start_d <= cf_date <= end_d:
+                    # Currency guard: bank account currency and cashflow currency must match expected dividend
+                    b_currency = bank_currencies.get(b_id, "USD")
+                    if b_currency != target_currency:
+                        continue
+                    if cf_currency and cf_currency != target_currency:
+                        continue
+                    # Match within 35% tax range or exact
+                    if abs(float(b_amt) - net_amt) < (net_amt * 0.35 + 0.01):
+                        candidate_matches.append(CandidateMatchItem(
+                            match_id=cf_id,
+                            match_type="cashflow",
+                            account_id=b_id,
+                            account_name=bank_map.get(b_id, "Bank Account"),
+                            date=cf_date,
+                            amount=float(b_amt),
+                            title=cf_title or "Cashflow Income"
+                        ))
+
+            # Deterministic ranking: exact amount difference ASC -> date proximity ASC -> match_id ASC
+            candidate_matches.sort(
+                key=lambda m: (
+                    round(abs(m.amount - net_amt), 4),
+                    abs((m.date - start_d).days) if m.date and start_d else 0,
+                    m.match_id
+                )
+            )
+
+        unlinked_items.append(DiscrepancyItemResponse(
+            expected_dividend_id=exp.expected_dividend_id,
+            transaction_id=linked_tx_id,
+            account_id=exp.account_id,
+            account_name=acc_name or "",
+            asset_id=exp.asset_id,
+            asset_symbol=symbol or "",
+            asset_name=asset_name,
+            currency=target_currency,
+            transaction_date=exp.ex_date,
+            quantity=float(exp.eligible_shares or 0.0),
+            price_per_unit=float(exp.dividend_rate or 0.0),
+            total_amount=gross_amt,
+            expected_amount=float(exp.expected_amount or 0.0),
+            linked_transaction_amount=float(linked_tx_amount) if linked_tx_amount is not None else None,
+            taxes=tax_amt,
+            net_amount=net_amt,
+            source=exp.source or "yfinance",
+            status=exp.status or "UNMATCHED",
+            suggested_funding_account_id=def_acc_id,
+            suggested_funding_account_name=def_bank_name,
+            candidate_matches=candidate_matches,
+            notes=f"Expected dividend for {symbol} ({exp.eligible_shares} shares @ {exp.dividend_rate}/share)"
+        ))
+
+    # Process legacy unlinked Transaction rows
+    for l_tx, acc_name, acc_curr, def_acc_id, symbol, asset_name, def_bank_name in legacy_rows:
         gross_amt = float(l_tx.total_amount or 0.0)
         tax_amt = float(l_tx.taxes or 0.0)
         net_amt = round(gross_amt - tax_amt, 2)
@@ -180,41 +219,37 @@ async def list_discrepancies(
         if def_acc_id is not None:
             auto_linkable_count += 1
 
-        # Search for candidate bank matches for legacy unlinked transaction
         l_matches: List[CandidateMatchItem] = []
-        if bank_ids and l_tx.transaction_date:
+        target_currency = acc_curr or "USD"
+        if l_tx.transaction_date:
             start_d = l_tx.transaction_date
             end_d = l_tx.transaction_date + datetime.timedelta(days=90)
 
-            cf_stmt = (
-                select(
-                    CashflowTransaction.cashflow_id,
-                    CashflowTransaction.transaction_date,
-                    CashflowTransaction.title,
-                    CashflowPayment.account_id,
-                    CashflowPayment.amount
+            for cf_id, cf_date, cf_title, cf_currency, b_id, b_amt in candidate_payments:
+                if start_d <= cf_date <= end_d:
+                    b_currency = bank_currencies.get(b_id, "USD")
+                    if b_currency != target_currency:
+                        continue
+                    if cf_currency and cf_currency != target_currency:
+                        continue
+                    if abs(float(b_amt) - net_amt) < 0.01 or abs(float(b_amt) - net_amt) < (net_amt * 0.35 + 0.01):
+                        l_matches.append(CandidateMatchItem(
+                            match_id=cf_id,
+                            match_type="cashflow",
+                            account_id=b_id,
+                            account_name=bank_map.get(b_id, "Bank Account"),
+                            date=cf_date,
+                            amount=float(b_amt),
+                            title=cf_title or "Cashflow Income"
+                        ))
+
+            l_matches.sort(
+                key=lambda m: (
+                    round(abs(m.amount - net_amt), 4),
+                    abs((m.date - start_d).days) if m.date and start_d else 0,
+                    m.match_id
                 )
-                .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
-                .where(
-                    CashflowPayment.account_id.in_(bank_ids),
-                    CashflowPayment.amount > 0,
-                    CashflowTransaction.transaction_date >= start_d,
-                    CashflowTransaction.transaction_date <= end_d,
-                    func.abs(CashflowPayment.amount - net_amt) < 0.01
-                )
-                .order_by(CashflowTransaction.transaction_date)
             )
-            cf_res = await db.execute(cf_stmt)
-            for cf_id, cf_date, cf_title, b_id, b_amt in cf_res.all():
-                l_matches.append(CandidateMatchItem(
-                    match_id=cf_id,
-                    match_type="cashflow",
-                    account_id=b_id,
-                    account_name=bank_map.get(b_id, "Bank Account"),
-                    date=cf_date,
-                    amount=float(b_amt),
-                    title=cf_title or "Cashflow Income"
-                ))
 
         unlinked_items.append(DiscrepancyItemResponse(
             expected_dividend_id=None,
@@ -224,7 +259,7 @@ async def list_discrepancies(
             asset_id=l_tx.asset_id,
             asset_symbol=symbol or "",
             asset_name=asset_name,
-            currency=acc_curr or "USD",
+            currency=target_currency,
             transaction_date=l_tx.transaction_date,
             quantity=float(l_tx.quantity or 0.0),
             price_per_unit=float(l_tx.price_per_unit or 0.0),
@@ -261,6 +296,12 @@ async def resolve_discrepancies(
         demat_id = payload.set_default_for_demat.get("demat_account_id")
         def_bank_id = payload.set_default_for_demat.get("default_dividend_account_id")
         if demat_id:
+            if def_bank_id and def_bank_id == demat_id:
+                raise HTTPException(status_code=400, detail="Account cannot be its own default dividend account")
+            if def_bank_id:
+                target_bank = await db.get(Account, def_bank_id)
+                if not target_bank or target_bank.account_type != "bank":
+                    raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account")
             acc_res = await db.execute(select(Account).where(Account.account_id == demat_id))
             acc = acc_res.scalar_one_or_none()
             if acc:
@@ -289,6 +330,8 @@ async def resolve_discrepancies(
                     exp.status = "MATCHED"
             else:
                 # Create a new real Transaction in Table C
+                asset = await db.get(Asset, exp.asset_id)
+                symbol = asset.symbol if asset else "Stock"
                 new_tx = Transaction(
                     account_id=exp.account_id,
                     funding_account_id=item.funding_account_id,
@@ -302,7 +345,7 @@ async def resolve_discrepancies(
                     taxes=tax_amt,
                     source="manual",
                     expected_dividend_id=exp.expected_dividend_id,
-                    notes=item.notes or f"Dividend for AAPL"
+                    notes=item.notes or f"Dividend for {symbol}"
                 )
                 db.add(new_tx)
                 await db.flush()

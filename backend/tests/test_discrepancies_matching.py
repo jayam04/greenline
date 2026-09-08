@@ -273,3 +273,122 @@ async def test_candidate_matching_currency_and_scoring():
     finally:
         app.dependency_overrides.clear()
 
+@pytest.mark.anyio
+async def test_candidate_matching_identical_scores_deterministic_ordering():
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="tie_user", password_hash="hash")
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        bank = Account(account_name="Tie Bank", account_type="bank", currency="USD")
+        demat = Account(account_name="Tie Demat", account_type="demat", currency="USD")
+        session.add_all([bank, demat])
+
+        cat = Category(name="Dividends", category_type="INCOME", default_label="INVESTMENT")
+        session.add(cat)
+        await session.commit()
+        await session.refresh(bank)
+        await session.refresh(demat)
+        await session.refresh(cat)
+
+        asset = Asset(symbol="MSFT", name="Microsoft", asset_type="stock", currency="USD")
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+
+        from app.db.models import ExpectedDividend
+        exp = ExpectedDividend(
+            asset_id=asset.asset_id,
+            account_id=demat.account_id,
+            ex_date=datetime.date(2026, 7, 1),
+            eligible_shares=10.0,
+            dividend_rate=5.0,
+            expected_amount=50.0,
+            currency="USD",
+            status="UNMATCHED"
+        )
+        session.add(exp)
+        await session.flush()
+
+        # Two candidate cashflows on the EXACT same date (2026-07-05) for the EXACT same amount ($50.0)
+        cf1 = CashflowTransaction(
+            transaction_date=datetime.date(2026, 7, 5),
+            title="Income Payment First",
+            total_amount=50.0,
+            currency="USD",
+            transaction_kind="INCOME"
+        )
+        session.add(cf1)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf1.cashflow_id, account_id=bank.account_id, amount=50.0))
+        session.add(CashflowItem(cashflow_id=cf1.cashflow_id, category_id=cat.category_id, amount=50.0, label="INVESTMENT"))
+
+        cf2 = CashflowTransaction(
+            transaction_date=datetime.date(2026, 7, 5),
+            title="Income Payment Second",
+            total_amount=50.0,
+            currency="USD",
+            transaction_kind="INCOME"
+        )
+        session.add(cf2)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf2.cashflow_id, account_id=bank.account_id, amount=50.0))
+        session.add(CashflowItem(cashflow_id=cf2.cashflow_id, category_id=cat.category_id, amount=50.0, label="INVESTMENT"))
+
+        # Third payment > 90 days after ex-date (2026-10-01)
+        cf_too_late = CashflowTransaction(
+            transaction_date=datetime.date(2026, 10, 1),
+            title="Payment After 90 Days",
+            total_amount=50.0,
+            currency="USD",
+            transaction_kind="INCOME"
+        )
+        session.add(cf_too_late)
+        await session.flush()
+        session.add(CashflowPayment(cashflow_id=cf_too_late.cashflow_id, account_id=bank.account_id, amount=50.0))
+        session.add(CashflowItem(cashflow_id=cf_too_late.cashflow_id, category_id=cat.category_id, amount=50.0, label="INVESTMENT"))
+
+        await session.commit()
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            res = await ac.get("/api/v1/discrepancies/")
+            assert res.status_code == 200
+            data = res.json()
+            assert data["total_count"] == 1
+            item = data["unlinked_items"][0]
+            matches = item.get("candidate_matches", [])
+
+            # The 91-day payment must NOT be included
+            match_titles = [m["title"] for m in matches]
+            assert "Payment After 90 Days" not in match_titles
+
+            # There must be exactly 2 matches
+            assert len(matches) == 2
+            # Deterministic ordering by match_id ASC
+            assert matches[0]["match_id"] == cf1.cashflow_id
+            assert matches[0]["title"] == "Income Payment First"
+            assert matches[1]["match_id"] == cf2.cashflow_id
+            assert matches[1]["title"] == "Income Payment Second"
+    finally:
+        app.dependency_overrides.clear()
+
+

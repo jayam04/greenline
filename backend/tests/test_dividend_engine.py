@@ -8,7 +8,6 @@ from app.db.models import Account, Asset, Transaction, CorporateAction, User
 from app.services.dividend_engine import (
     calculate_shares_on_date,
     sync_dividends_for_asset,
-    sync_all_dividends,
 )
 
 @pytest.mark.anyio
@@ -307,3 +306,196 @@ async def test_calculate_shares_on_ex_date_boundary_and_deterministic_matching()
         # Deterministic match must match tx_match ($200), not tx_other ($25)
         assert exp.matched_transaction_id == tx_match.transaction_id
         assert exp.status == "MATCHED"
+
+@pytest.mark.anyio
+async def test_dividend_processing_and_resolution_idempotency():
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.db.database import get_db
+    from app.api.deps import get_current_user
+    from app.db.models import ExpectedDividend
+
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="idem_user", password_hash="hash")
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        bank = Account(account_name="Idem Bank", account_type="bank", currency="USD")
+        demat = Account(account_name="Idem Demat", account_type="demat", currency="USD")
+        session.add_all([bank, demat])
+        await session.commit()
+        await session.refresh(bank)
+        await session.refresh(demat)
+
+        asset = Asset(symbol="IDEM_STK", name="Idempotent Stock", asset_type="stock", currency="USD")
+        session.add(asset)
+        await session.commit()
+        await session.refresh(asset)
+
+        # Buy 100 shares
+        buy_tx = Transaction(
+            account_id=demat.account_id,
+            funding_account_id=bank.account_id,
+            asset_id=asset.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2026, 1, 1),
+            quantity=100.0,
+            price_per_unit=50.0,
+            total_amount=5000.0,
+            source="manual"
+        )
+        session.add(buy_tx)
+        await session.commit()
+
+        # Step 1: Sync dividends 1st time
+        with patch("app.services.dividend_engine.fetch_yfinance_dividends", return_value=[(datetime.date(2026, 5, 1), 1.50)]):
+            changes1 = await sync_dividends_for_asset(session, asset.asset_id)
+            assert changes1 == 1
+
+        exp_q1 = await session.execute(select(ExpectedDividend).where(ExpectedDividend.asset_id == asset.asset_id))
+        exps1 = exp_q1.scalars().all()
+        assert len(exps1) == 1
+        exp_record = exps1[0]
+        assert exp_record.eligible_shares == 100.0
+        assert exp_record.dividend_rate == 1.50
+        assert exp_record.expected_amount == 150.0
+        assert exp_record.status == "UNMATCHED"
+
+        # Step 2: Sync dividends 2nd time (must be idempotent: no duplicates created)
+        with patch("app.services.dividend_engine.fetch_yfinance_dividends", return_value=[(datetime.date(2026, 5, 1), 1.50)]):
+            changes2 = await sync_dividends_for_asset(session, asset.asset_id)
+            # Existing row updated, no new rows added
+            assert changes2 == 1
+
+        exp_q2 = await session.execute(select(ExpectedDividend).where(ExpectedDividend.asset_id == asset.asset_id))
+        exps2 = exp_q2.scalars().all()
+        assert len(exps2) == 1
+        assert exps2[0].expected_dividend_id == exp_record.expected_dividend_id
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            # Step 3: Resolve discrepancy 1st time
+            res_resolve1 = await ac.post("/api/v1/discrepancies/resolve", json={
+                "resolutions": [
+                    {
+                        "expected_dividend_id": exp_record.expected_dividend_id,
+                        "funding_account_id": bank.account_id,
+                        "total_amount": 150.0,
+                        "taxes": 15.0
+                    }
+                ]
+            })
+            assert res_resolve1.status_code == 200
+
+            # Verify 1 real transaction created in Table C
+            async with TestSession() as session:
+                tx_q = await session.execute(
+                    select(Transaction).where(
+                        Transaction.asset_id == asset.asset_id,
+                        Transaction.transaction_type == "dividend"
+                    )
+                )
+                txs = tx_q.scalars().all()
+                assert len(txs) == 1
+                div_tx = txs[0]
+                assert div_tx.total_amount == 150.0
+                assert div_tx.taxes == 15.0
+                assert div_tx.funding_account_id == bank.account_id
+
+                exp_refreshed = await session.get(ExpectedDividend, exp_record.expected_dividend_id)
+                assert exp_refreshed.status == "MATCHED"
+                assert exp_refreshed.matched_transaction_id == div_tx.transaction_id
+
+            # Check bank balance: buy -5000 + dividend net +135 = -4865.0
+            res_acc1 = await ac.get(f"/api/v1/accounts/{bank.account_id}")
+            assert res_acc1.status_code == 200
+            assert res_acc1.json()["cash_balance"] == -4865.0
+
+            # Step 4: Resolve the EXACT SAME expected dividend 2nd time (must be idempotent!)
+            res_resolve2 = await ac.post("/api/v1/discrepancies/resolve", json={
+                "resolutions": [
+                    {
+                        "expected_dividend_id": exp_record.expected_dividend_id,
+                        "funding_account_id": bank.account_id,
+                        "total_amount": 150.0,
+                        "taxes": 15.0
+                    }
+                ]
+            })
+            assert res_resolve2.status_code == 200
+
+            # Verify STILL only 1 dividend transaction in Table C
+            async with TestSession() as session:
+                tx_q2 = await session.execute(
+                    select(Transaction).where(
+                        Transaction.asset_id == asset.asset_id,
+                        Transaction.transaction_type == "dividend"
+                    )
+                )
+                txs2 = tx_q2.scalars().all()
+                assert len(txs2) == 1
+                assert txs2[0].transaction_id == div_tx.transaction_id
+
+            # Verify bank balance is unchanged (no duplicate cash credit)
+            res_acc2 = await ac.get(f"/api/v1/accounts/{bank.account_id}")
+            assert res_acc2.status_code == 200
+            assert res_acc2.json()["cash_balance"] == -4865.0
+
+            # Step 5: Sync dividends 3rd time (remains MATCHED)
+            async with TestSession() as session:
+                with patch("app.services.dividend_engine.fetch_yfinance_dividends", return_value=[(datetime.date(2026, 5, 1), 1.50)]):
+                    await sync_dividends_for_asset(session, asset.asset_id)
+                exp_after = await session.get(ExpectedDividend, exp_record.expected_dividend_id)
+                assert exp_after.status == "MATCHED"
+
+            # Step 6: Unlink expected dividend
+            res_unlink = await ac.post("/api/v1/discrepancies/unlink", json={
+                "expected_dividend_ids": [exp_record.expected_dividend_id]
+            })
+            assert res_unlink.status_code == 200
+
+            async with TestSession() as session:
+                exp_unlinked = await session.get(ExpectedDividend, exp_record.expected_dividend_id)
+                assert exp_unlinked.status == "UNMATCHED"
+                assert exp_unlinked.matched_transaction_id is None
+                # Real cash transaction still exists in Table C
+                existing_tx = await session.get(Transaction, div_tx.transaction_id)
+                assert existing_tx is not None
+
+            # Step 7: Dismiss expected dividend
+            res_dismiss = await ac.post("/api/v1/discrepancies/dismiss", json={
+                "expected_dividend_ids": [exp_record.expected_dividend_id]
+            })
+            assert res_dismiss.status_code == 200
+
+            async with TestSession() as session:
+                exp_dismissed = await session.get(ExpectedDividend, exp_record.expected_dividend_id)
+                assert exp_dismissed.status == "DISMISSED"
+
+                # Re-sync dividends: dismissed expected dividend remains DISMISSED
+                with patch("app.services.dividend_engine.fetch_yfinance_dividends", return_value=[(datetime.date(2026, 5, 1), 1.50)]):
+                    await sync_dividends_for_asset(session, asset.asset_id)
+                exp_resync = await session.get(ExpectedDividend, exp_record.expected_dividend_id)
+                assert exp_resync.status == "DISMISSED"
+
+    finally:
+        app.dependency_overrides.clear()
+

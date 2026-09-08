@@ -1,8 +1,8 @@
 import datetime
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func, or_
+from sqlalchemy import select, desc
 from sqlalchemy.orm import aliased
 from app.db.database import get_db
 from app.db.models import Transaction, Account, Asset, ExpectedDividend, CashflowTransaction, CashflowPayment, User
@@ -308,13 +308,29 @@ async def resolve_discrepancies(
                 acc.default_dividend_account_id = def_bank_id
 
     for item in payload.resolutions:
+        if not item.expected_dividend_id and not item.transaction_id:
+            raise HTTPException(status_code=400, detail="Either expected_dividend_id or transaction_id must be provided")
+
+        funding_acc = await db.get(Account, item.funding_account_id)
+        if not funding_acc:
+            raise HTTPException(status_code=400, detail=f"Funding account {item.funding_account_id} not found")
+        if funding_acc.account_type != "bank":
+            raise HTTPException(status_code=400, detail="Funding account must be a bank account")
+
+        if item.total_amount is not None and float(item.total_amount) <= 0:
+            raise HTTPException(status_code=400, detail="Total amount must be greater than zero")
+        if item.taxes is not None and float(item.taxes) < 0:
+            raise HTTPException(status_code=400, detail="Taxes cannot be negative")
+
         if item.expected_dividend_id:
             exp = await db.get(ExpectedDividend, item.expected_dividend_id)
             if not exp:
-                continue
+                raise HTTPException(status_code=404, detail=f"Expected dividend {item.expected_dividend_id} not found")
 
             gross_amt = float(item.total_amount if item.total_amount is not None else exp.expected_amount)
             tax_amt = float(item.taxes if item.taxes is not None else 0.0)
+            if tax_amt > gross_amt:
+                raise HTTPException(status_code=400, detail="Taxes cannot exceed total amount")
             credit_date = item.transaction_date or exp.ex_date
 
             if exp.matched_transaction_id:
@@ -355,16 +371,23 @@ async def resolve_discrepancies(
 
         elif item.transaction_id:
             target_tx = await db.get(Transaction, item.transaction_id)
-            if target_tx:
-                target_tx.funding_account_id = item.funding_account_id
-                if item.transaction_date is not None:
-                    target_tx.transaction_date = item.transaction_date
-                if item.total_amount is not None:
-                    target_tx.total_amount = float(item.total_amount)
-                if item.taxes is not None:
-                    target_tx.taxes = float(item.taxes)
-                if item.notes is not None:
-                    target_tx.notes = item.notes
+            if not target_tx:
+                raise HTTPException(status_code=404, detail=f"Transaction {item.transaction_id} not found")
+
+            gross_amt = float(item.total_amount if item.total_amount is not None else (target_tx.total_amount or 0.0))
+            tax_amt = float(item.taxes if item.taxes is not None else (target_tx.taxes or 0.0))
+            if tax_amt > gross_amt:
+                raise HTTPException(status_code=400, detail="Taxes cannot exceed total amount")
+
+            target_tx.funding_account_id = item.funding_account_id
+            if item.transaction_date is not None:
+                target_tx.transaction_date = item.transaction_date
+            if item.total_amount is not None:
+                target_tx.total_amount = float(item.total_amount)
+            if item.taxes is not None:
+                target_tx.taxes = float(item.taxes)
+            if item.notes is not None:
+                target_tx.notes = item.notes
 
     await db.commit()
     await recalculate_all_lots(db)

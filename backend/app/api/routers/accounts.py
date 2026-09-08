@@ -1,7 +1,7 @@
 from typing import List, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
@@ -232,6 +232,11 @@ async def delete_account(
     account = res.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    await db.execute(
+        update(Account)
+        .where(Account.default_dividend_account_id == account_id)
+        .values(default_dividend_account_id=None)
+    )
     await db.delete(account)
     await db.commit()
     await recalculate_all_lots(db)

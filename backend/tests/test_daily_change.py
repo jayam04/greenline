@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from app.main import app
 from app.db.database import Base, get_db
 from app.api.deps import get_current_user
-from app.db.models import Account, Asset, Lot, PriceHistory, Transaction, User
+from app.db.models import Account, Asset, PriceHistory, Transaction, User
 from app.services.fifo_engine import process_transaction_event
 
 @pytest.mark.anyio
@@ -505,6 +505,182 @@ async def test_portfolio_summary_three_or_more_price_records():
             assert holding["change_1d"] == 5.0
             assert round(holding["change_1d_pct"], 2) == round(5.0 / 105.0 * 100.0, 2)
             assert holding["value_change_1d"] == 50.0
+    finally:
+        app.dependency_overrides.clear()
+
+@pytest.mark.anyio
+async def test_portfolio_summary_multiple_holdings_and_varied_quantities():
+    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        user = User(username="tester7", password_hash="hashed_pw")
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+
+        account = Account(account_name="Trading Demat", account_type="demat", currency="USD")
+        session.add(account)
+        await session.commit()
+        await session.refresh(account)
+
+        # Deposit funds into account
+        dep_tx = Transaction(
+            account_id=account.account_id,
+            transaction_type="deposit",
+            transaction_date=datetime.date(2026, 7, 1),
+            total_amount=50000.0
+        )
+        session.add(dep_tx)
+        await session.commit()
+        await session.refresh(dep_tx)
+        await process_transaction_event(session, dep_tx)
+
+        # Create 4 assets
+        aapl = Asset(symbol="AAPL", name="Apple Inc.", asset_type="stock", currency="USD")
+        msft = Asset(symbol="MSFT", name="Microsoft Corp.", asset_type="stock", currency="USD")
+        goog = Asset(symbol="GOOG", name="Alphabet Inc.", asset_type="stock", currency="USD")
+        amzn = Asset(symbol="AMZN", name="Amazon.com Inc.", asset_type="stock", currency="USD")
+        session.add_all([aapl, msft, goog, amzn])
+        await session.commit()
+        for a in [aapl, msft, goog, amzn]:
+            await session.refresh(a)
+
+        # Varied quantities (fractional and whole)
+        tx_aapl = Transaction(
+            account_id=account.account_id,
+            asset_id=aapl.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2026, 8, 1),
+            quantity=15.5,
+            price_per_unit=90.0,
+            total_amount=1395.0
+        )
+        tx_msft = Transaction(
+            account_id=account.account_id,
+            asset_id=msft.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2026, 8, 1),
+            quantity=5.0,
+            price_per_unit=200.0,
+            total_amount=1000.0
+        )
+        tx_goog = Transaction(
+            account_id=account.account_id,
+            asset_id=goog.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2026, 8, 1),
+            quantity=100.0,
+            price_per_unit=45.0,
+            total_amount=4500.0
+        )
+        tx_amzn = Transaction(
+            account_id=account.account_id,
+            asset_id=amzn.asset_id,
+            transaction_type="buy",
+            transaction_date=datetime.date(2026, 8, 1),
+            quantity=0.25,
+            price_per_unit=3000.0,
+            total_amount=750.0
+        )
+        session.add_all([tx_aapl, tx_msft, tx_goog, tx_amzn])
+        await session.commit()
+        for tx in [tx_aapl, tx_msft, tx_goog, tx_amzn]:
+            await session.refresh(tx)
+            await process_transaction_event(session, tx)
+        await session.commit()
+
+        # Price histories:
+        # AAPL: up from 100 to 110 (+10, +10%)
+        ph_aapl_1 = PriceHistory(asset_id=aapl.asset_id, price_date=datetime.date(2026, 8, 24), close_price=100.0, source="test")
+        ph_aapl_2 = PriceHistory(asset_id=aapl.asset_id, price_date=datetime.date(2026, 8, 25), close_price=110.0, source="test")
+
+        # MSFT: down from 200 to 180 (-20, -10%)
+        ph_msft_1 = PriceHistory(asset_id=msft.asset_id, price_date=datetime.date(2026, 8, 24), close_price=200.0, source="test")
+        ph_msft_2 = PriceHistory(asset_id=msft.asset_id, price_date=datetime.date(2026, 8, 25), close_price=180.0, source="test")
+
+        # GOOG: single price 50.0 (fallback: change = 0.0)
+        ph_goog_1 = PriceHistory(asset_id=goog.asset_id, price_date=datetime.date(2026, 8, 25), close_price=50.0, source="test")
+
+        # AMZN: no price history (safe fallback: 0.0)
+
+        session.add_all([ph_aapl_1, ph_aapl_2, ph_msft_1, ph_msft_2, ph_goog_1])
+        await session.commit()
+
+    async def override_get_db():
+        async with TestSession() as s:
+            yield s
+
+    async def override_get_current_user():
+        return user
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            res = await client.get("/api/v1/portfolio/summary")
+            assert res.status_code == 200
+            data = res.json()
+
+            assert len(data["top_holdings"]) == 4
+            h_map = {h["symbol"]: h for h in data["top_holdings"]}
+
+            # 1. AAPL: 15.5 shares, latest=110.0, prev=100.0 -> change=+10.0 (+10.0%), value_change=15.5 * 10 = +155.0
+            h_aapl = h_map["AAPL"]
+            assert h_aapl["quantity_held"] == 15.5
+            assert h_aapl["latest_price"] == 110.0
+            assert h_aapl["previous_price"] == 100.0
+            assert h_aapl["change_1d"] == 10.0
+            assert round(h_aapl["change_1d_pct"], 2) == 10.0
+            assert h_aapl["value_change_1d"] == 155.0
+
+            # 2. MSFT: 5.0 shares, latest=180.0, prev=200.0 -> change=-20.0 (-10.0%), value_change=5.0 * -20 = -100.0
+            h_msft = h_map["MSFT"]
+            assert h_msft["quantity_held"] == 5.0
+            assert h_msft["latest_price"] == 180.0
+            assert h_msft["previous_price"] == 200.0
+            assert h_msft["change_1d"] == -20.0
+            assert round(h_msft["change_1d_pct"], 2) == -10.0
+            assert h_msft["value_change_1d"] == -100.0
+
+            # 3. GOOG: 100.0 shares, latest=50.0, single price fallback: prev=50.0 -> change=0.0 (0.0%), value_change=0.0
+            h_goog = h_map["GOOG"]
+            assert h_goog["quantity_held"] == 100.0
+            assert h_goog["latest_price"] == 50.0
+            assert h_goog["previous_price"] == 50.0
+            assert h_goog["change_1d"] == 0.0
+            assert h_goog["change_1d_pct"] == 0.0
+            assert h_goog["value_change_1d"] == 0.0
+
+            # 4. AMZN: 0.25 shares, no price history -> latest=0.0, prev=0.0, change=0.0 (0.0%), value_change=0.0
+            h_amzn = h_map["AMZN"]
+            assert h_amzn["quantity_held"] == 0.25
+            assert h_amzn["latest_price"] == 0.0
+            assert h_amzn["previous_price"] == 0.0
+            assert h_amzn["change_1d"] == 0.0
+            assert h_amzn["change_1d_pct"] == 0.0
+            assert h_amzn["value_change_1d"] == 0.0
+
+            # Portfolio-level aggregation:
+            # total_value_change_1d = 155.0 - 100.0 + 0.0 + 0.0 = 55.0
+            assert data["total_value_change_1d"] == 55.0
+
+            # previous_holdings_value = (15.5 * 100.0) + (5.0 * 200.0) + (100.0 * 50.0) + (0.25 * 0.0) = 7550.0
+            # total_change_1d_pct = 55.0 / 7550.0 * 100.0 = 0.7284768...% -> 0.73%
+            expected_total_pct = 55.0 / 7550.0 * 100.0
+            assert round(data["total_change_1d_pct"], 2) == round(expected_total_pct, 2)
+
+            # Cash balance: 50000 - 1395 - 1000 - 4500 - 750 = 42355.0
+            assert data["cash_balance"] == 42355.0
+            # Current value of open holdings: (15.5 * 110) + (5.0 * 180) + (100 * 50) + 0 = 1705 + 900 + 5000 = 7605.0
+            assert data["total_current_value"] == 7605.0
+            # Net worth = current_value + cash = 7605 + 42355 = 49960.0
+            assert data["total_net_worth"] == 49960.0
     finally:
         app.dependency_overrides.clear()
 

@@ -370,9 +370,17 @@ async def get_portfolio_summary(
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)
     closed_holdings_list.sort(key=lambda h: abs(h.realized_pnl), reverse=True)
 
+    # 1D Portfolio Return represents the aggregate price movement of current open positions.
+    # Rather than deriving prior portfolio valuation via rollback from net worth (which would be distorted
+    # by cash, deposits, withdrawals, or new trades), we explicitly evaluate the prior day's valuation
+    # of currently open holdings using each holding's previous_price.
     total_value_change_1d = sum(h.value_change_1d for h in holdings_list)
-    base_val = total_current_value - total_value_change_1d
-    total_change_1d_pct = (total_value_change_1d / base_val * 100.0) if base_val > 0 else 0.0
+    previous_holdings_value = sum(h.quantity_held * h.previous_price for h in holdings_list)
+    total_change_1d_pct = (
+        (total_value_change_1d / previous_holdings_value * 100.0)
+        if previous_holdings_value > 0
+        else 0.0
+    )
     
     return PortfolioSummaryResponse(
         total_net_worth=total_net_worth,

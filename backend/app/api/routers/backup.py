@@ -5,7 +5,7 @@ from typing import Dict, Optional, List, Any
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from app.db.database import get_db
 from app.db.models import (
     Account, Asset, Transaction, PriceHistory, CorporateAction, 
@@ -17,13 +17,12 @@ from app.schemas.schemas import (
     BackupItemResponse, BackupCreateRequest
 )
 from app.api.deps import get_current_user
-from app.services.fifo_engine import recalculate_all_lots
-from app.services.price_engine import update_prices_for_assets
-from app.services.snapshot_engine import recalculate_past_snapshots
 from app.services.backup_service import (
     get_autobackup_config, update_autobackup_config, list_backups,
-    create_backup, restore_from_backup, delete_backup, ensure_backup_dir
+    create_backup, restore_from_backup, restore_from_json_data, 
+    delete_backup, validate_and_resolve_backup_path
 )
+from app.scheduler import reschedule_autobackup_job
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
@@ -32,7 +31,7 @@ async def get_backup_configuration(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Returns the current auto-backup configuration and active database information."""
+    """Returns current auto-backup configuration and active database information."""
     return await get_autobackup_config(db)
 
 @router.put("/config", response_model=BackupConfigResponse)
@@ -42,12 +41,17 @@ async def update_backup_configuration(
     current_user: User = Depends(get_current_user)
 ):
     """Updates auto-backup interval, retention max copies, and enabled state."""
-    return await update_autobackup_config(
+    cfg = await update_autobackup_config(
         db,
         enabled=payload.autobackup_enabled,
         interval_hours=payload.autobackup_interval_hours,
         max_copies=payload.autobackup_max_copies
     )
+    reschedule_autobackup_job(
+        interval_hours=cfg["autobackup_interval_hours"],
+        enabled=cfg["autobackup_enabled"]
+    )
+    return cfg
 
 @router.get("/list", response_model=BackupListResponse)
 async def list_stored_backups(
@@ -76,10 +80,12 @@ async def download_backup_file(
     filename: str,
     current_user: User = Depends(get_current_user)
 ):
-    """Downloads a specific backup file."""
-    backup_dir = ensure_backup_dir()
-    filepath = os.path.join(backup_dir, filename)
-    if not os.path.exists(filepath):
+    """Downloads a specific backup file after path traversal validation."""
+    try:
+        filepath = validate_and_resolve_backup_path(filename, must_exist=True)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid backup filename.")
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Backup file not found.")
 
     return FileResponse(
@@ -98,10 +104,12 @@ async def restore_database_from_file(
     try:
         res = await restore_from_backup(filename, db)
         return res
-    except FileNotFoundError as fe:
-        raise HTTPException(status_code=404, detail=str(fe))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database restore failed: {str(e)}")
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Backup file not found.")
+    except Exception:
+        raise HTTPException(status_code=500, detail="Database restore failed.")
 
 @router.delete("/{filename}")
 async def delete_backup_snapshot(
@@ -109,10 +117,17 @@ async def delete_backup_snapshot(
     current_user: User = Depends(get_current_user)
 ):
     """Deletes a specific backup snapshot from storage."""
-    deleted = delete_backup(filename)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Backup file not found.")
-    return {"status": "success", "deleted_file": filename}
+    try:
+        deleted = delete_backup(filename)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Backup file not found.")
+        return {"status": "success", "deleted_file": filename}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid backup filename.")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to delete backup.")
 
 @router.get("/export")
 async def export_all_portfolio_data(
@@ -269,3 +284,29 @@ async def export_all_portfolio_data(
             "Content-Disposition": f"attachment; filename=greenline_full_backup_{datetime.date.today().isoformat()}.json"
         }
     )
+
+@router.post("/import", status_code=status.HTTP_200_OK)
+async def import_portfolio_data(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Imports portfolio data from an uploaded JSON file and recalculates lots & historical snapshots.
+    Validates all data and foreign keys before mutating the database.
+    """
+    try:
+        contents = await file.read()
+        data = json.loads(contents.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON backup file.")
+
+    try:
+        res = await restore_from_json_data(data, db)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Portfolio restore failed.")

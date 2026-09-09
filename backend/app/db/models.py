@@ -22,11 +22,13 @@ class Account(Base):
     broker_name = Column(String, nullable=True)
     account_type = Column(String, nullable=False) # demat, mutual_fund, pf, nps, crypto_exchange, bank
     currency = Column(String(3), default="USD")
+    default_dividend_account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(Date, default=datetime.date.today)
 
     transactions = relationship("Transaction", back_populates="account", foreign_keys="[Transaction.account_id]", cascade="all, delete-orphan")
     lots = relationship("Lot", back_populates="account", cascade="all, delete-orphan")
     dividends = relationship("Dividend", back_populates="account", cascade="all, delete-orphan")
+    default_dividend_account = relationship("Account", foreign_keys=[default_dividend_account_id], remote_side="Account.account_id")
 
 class Asset(Base):
     __tablename__ = "assets"
@@ -61,7 +63,9 @@ class Transaction(Base):
     total_amount = Column(Float, nullable=False) # quantity * price +- charges
     fees = Column(Float, default=0.0)
     taxes = Column(Float, default=0.0)
+    source = Column(String, default="manual") # manual, yfinance_auto, csv_import
     notes = Column(Text, nullable=True)
+    expected_dividend_id = Column(Integer, ForeignKey("expected_dividends.expected_dividend_id", ondelete="SET NULL"), nullable=True, index=True)
 
     account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])
     funding_account = relationship("Account", foreign_keys=[funding_account_id])
@@ -131,6 +135,32 @@ class Dividend(Base):
 
     asset = relationship("Asset", back_populates="dividends")
     account = relationship("Account", back_populates="dividends")
+
+class ExpectedDividend(Base):
+    __tablename__ = "expected_dividends"
+    
+    expected_dividend_id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False, index=True)
+    ex_date = Column(Date, nullable=False, index=True)
+    pay_date = Column(Date, nullable=True)
+    eligible_shares = Column(Float, nullable=False, default=0.0)
+    dividend_rate = Column(Float, nullable=False, default=0.0)
+    expected_amount = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(3), nullable=False, default="USD")
+    source = Column(String, default="yfinance")
+    matched_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String, nullable=False, default="UNMATCHED") # UNMATCHED, MATCHED, AMOUNT_MISMATCH, DISMISSED, ORPHAN
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    asset = relationship("Asset")
+    account = relationship("Account")
+    matched_transaction = relationship("Transaction", foreign_keys=[matched_transaction_id])
+
+    __table_args__ = (
+        UniqueConstraint("asset_id", "account_id", "ex_date", name="uix_expected_dividend_asset_account_date"),
+    )
 
 class CorporateAction(Base):
     __tablename__ = "corporate_actions"

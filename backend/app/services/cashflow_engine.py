@@ -71,6 +71,8 @@ def compute_transaction_cash_movement(tx: Any, valid_account_ids: Optional[Set[i
         trade_cash = (qty * ppu - fees - taxes) if (qty > 0 and ppu > 0) else (amt - fees - taxes)
         return cash_acc_id, trade_cash
     elif ttype == "dividend":
+        if not funding_id:
+            return None, 0.0
         trade_cash = amt - taxes
         return cash_acc_id, trade_cash
     elif ttype == "interest":

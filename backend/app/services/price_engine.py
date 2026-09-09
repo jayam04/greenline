@@ -80,11 +80,18 @@ async def update_prices_for_assets(
                     )
                     db.add(ph)
                     count += 1
-                else:
+                elif ph.source != "manual":
                     ph.close_price = c_price
                     ph.source = "yfinance"
 
             await db.commit()
+
+            # Also sync dividends for this asset
+            try:
+                from app.services.dividend_engine import sync_dividends_for_asset
+                await sync_dividends_for_asset(db, asset.asset_id)
+            except Exception as de:
+                print(f"Error syncing dividends for symbol {symbol}: {de}")
         except Exception as e:
             await db.rollback()
             print(f"Error fetching price for symbol {symbol}: {e}")
@@ -97,3 +104,37 @@ async def fetch_asset_price_history(db: AsyncSession, asset_id: int, symbol: str
     Helper function to initialize price history for a newly added asset.
     """
     return await update_prices_for_assets(db, asset_ids=[asset_id])
+
+async def cleanup_orphan_transaction_prices(db: AsyncSession, asset_id: Optional[int] = None) -> int:
+    """
+    Deletes any PriceHistory records where source == 'transaction' that no longer have
+    any active Transaction with price_per_unit > 0 on that (asset_id, price_date).
+    Preserves manual/yfinance price points.
+    """
+    from app.db.models import Transaction
+
+    stmt = select(PriceHistory).where(PriceHistory.source == "transaction")
+    if asset_id is not None:
+        stmt = stmt.where(PriceHistory.asset_id == asset_id)
+
+    res = await db.execute(stmt)
+    candidates = res.scalars().all()
+    deleted_count = 0
+
+    for ph in candidates:
+        tx_check = select(Transaction).where(
+            Transaction.asset_id == ph.asset_id,
+            Transaction.transaction_date == ph.price_date,
+            Transaction.price_per_unit.is_not(None),
+            Transaction.price_per_unit > 0
+        ).limit(1)
+        tx_res = await db.execute(tx_check)
+        if tx_res.scalar_one_or_none() is None:
+            await db.delete(ph)
+            deleted_count += 1
+
+    if deleted_count > 0:
+        await db.flush()
+
+    return deleted_count
+

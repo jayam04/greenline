@@ -197,6 +197,47 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
         ]),
       });
     });
+
+    await page.route('*/**/api/v1/discrepancies*', async (route) => {
+      if (route.request().method() === 'POST') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ status: 'success', resolved_count: 1 }),
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            total_count: 1,
+            total_unlinked_amount: 150.0,
+            auto_linkable_count: 1,
+            unlinked_items: [
+              {
+                transaction_id: 301,
+                account_id: 2,
+                account_name: 'Zerodha Trading Demat',
+                asset_id: 4,
+                asset_symbol: 'GROWW.BO',
+                asset_name: 'Billionbrains Garage Ventures Limited',
+                currency: 'INR',
+                transaction_date: '2026-08-20',
+                quantity: 186.0,
+                price_per_unit: 0.85,
+                total_amount: 158.10,
+                taxes: 8.10,
+                net_amount: 150.0,
+                source: 'yfinance_auto',
+                suggested_funding_account_id: 1,
+                suggested_funding_account_name: 'Main Checking Bank',
+                notes: 'Auto dividend',
+              }
+            ],
+          }),
+        });
+      }
+    });
   });
 
   test('Journey 1: Dashboard loads with net worth and account breakdown (Cash + Securities)', async ({ page }) => {
@@ -273,5 +314,21 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
     await privacyBtn.click();
     await expect(privacyBtn).toContainText(/Hide/i);
     await expect(page.getByRole('table').getByText('Main Checking Bank')).toBeVisible();
+  });
+
+  test('Journey 5: Discrepancies page renders unlinked dividends and resolves deposit linking', async ({ page }) => {
+    await page.goto('/investments/discrepancies');
+    await expect(page.locator('h1')).toContainText(/Investments Discrepancies/i);
+
+    // Check discrepancy item
+    await expect(page.getByText('GROWW.BO')).toBeVisible();
+    await expect(page.getByText('Zerodha Trading Demat')).toBeVisible();
+    await expect(page.getByText('Default: Main Checking Bank')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Auto-Link Defaults/i })).toBeVisible();
+
+    // Click Link Deposit
+    const linkBtn = page.getByRole('button', { name: /Link Deposit/i }).first();
+    await expect(linkBtn).toBeVisible();
+    await linkBtn.click();
   });
 });

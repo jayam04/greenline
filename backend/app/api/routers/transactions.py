@@ -8,6 +8,8 @@ from app.db.models import Transaction, Account, Asset, User, PriceHistory
 from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import recalculate_past_snapshots
+from app.services.dividend_engine import sync_dividends_for_asset
+from app.services.price_engine import cleanup_orphan_transaction_prices
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -150,6 +152,13 @@ async def create_transaction(
     
     # Recalculate past snapshots from transaction date to today
     await recalculate_past_snapshots(db, start_date=tx.transaction_date)
+
+    # Sync dividends for asset if it's a buy/sell trade
+    if tx.asset_id and tx.transaction_type in ["buy", "sell"]:
+        try:
+            await sync_dividends_for_asset(db, tx.asset_id)
+        except Exception as de:
+            print(f"[Dividend Sync Error on Create] {de}")
     
     # Format response
     stmt = select(
@@ -192,10 +201,19 @@ async def update_transaction(
 
     # Auto-populate price history for transaction date if missing
     await _ensure_price_history_for_tx(db, tx)
+    if tx.asset_id:
+        await cleanup_orphan_transaction_prices(db, tx.asset_id)
+        await db.commit()
     
     # Recalculate derived state
     await recalculate_all_lots(db)
     await recalculate_past_snapshots(db, start_date=tx.transaction_date)
+
+    if tx.asset_id and tx.transaction_type in ["buy", "sell"]:
+        try:
+            await sync_dividends_for_asset(db, tx.asset_id)
+        except Exception as de:
+            print(f"[Dividend Sync Error on Update] {de}")
 
     stmt_resp = select(
         Transaction, 
@@ -227,10 +245,22 @@ async def delete_transaction(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    target_asset_id = tx.asset_id
+    is_trade = tx.transaction_type in ["buy", "sell"]
     tx_date = tx.transaction_date
     await db.delete(tx)
     await db.commit()
 
+    if target_asset_id:
+        await cleanup_orphan_transaction_prices(db, target_asset_id)
+        await db.commit()
+
     # Recalculate derived state
     await recalculate_all_lots(db)
     await recalculate_past_snapshots(db, start_date=tx_date)
+
+    if target_asset_id and is_trade:
+        try:
+            await sync_dividends_for_asset(db, target_asset_id)
+        except Exception as de:
+            print(f"[Dividend Sync Error on Delete] {de}")

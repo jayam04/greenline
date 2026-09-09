@@ -12,7 +12,7 @@ from app.scheduler import start_scheduler
 from app.api.routers import (
     auth, accounts, assets, transactions, portfolio, 
     snapshots, prices, corporate_actions, benchmarks, backup,
-    categories, cashflow, settings as app_settings_router
+    categories, cashflow, settings as app_settings_router, discrepancies
 )
 
 from app.services.fifo_engine import recalculate_all_lots
@@ -75,7 +75,13 @@ app = FastAPI(
 # CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,6 +102,7 @@ app.include_router(backup.router, prefix=settings.API_V1_STR)
 app.include_router(categories.router, prefix=settings.API_V1_STR)
 app.include_router(cashflow.router, prefix=settings.API_V1_STR)
 app.include_router(app_settings_router.router, prefix=settings.API_V1_STR)
+app.include_router(discrepancies.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():

@@ -204,9 +204,9 @@ export default function CashflowTransactionsPage() {
         } else if (isDiv) {
           paymentsList.push({
             account_id: t.funding_account_id || t.account_id,
-            account_name: fundingName,
+            account_name: t.funding_account_name ? t.funding_account_name : `${holdingName} (Unlinked)`,
             account_currency: t.funding_account_currency || t.account_currency || "USD",
-            amount: netTotal
+            amount: t.funding_account_id ? netTotal : 0
           });
         } else {
           paymentsList.push({
@@ -228,7 +228,9 @@ export default function CashflowTransactionsPage() {
         } else if (isSell && t.quantity && t.price_per_unit) {
           tradeDesc = `Sold x${t.quantity} at ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`;
         } else if (isDiv) {
-          tradeDesc = `Dividend Payout`;
+          tradeDesc = t.quantity && t.price_per_unit
+            ? `Dividend: ${t.quantity} shares @ ${formatCurrency(t.price_per_unit, t.account_currency || "USD")}`
+            : `Dividend Payout`;
         }
 
         const itemsList = [

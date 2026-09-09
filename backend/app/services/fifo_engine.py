@@ -181,7 +181,7 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             )
             db.add(div)
             
-            net_dividend = abs(tx.total_amount) - tx.taxes
+            net_dividend = abs(float(tx.total_amount or 0.0)) - float(tx.taxes or 0.0)
             db.add(CashFlow(
                 scope_type="portfolio",
                 scope_id=None,

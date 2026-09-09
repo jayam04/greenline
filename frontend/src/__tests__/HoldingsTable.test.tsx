@@ -247,4 +247,37 @@ describe('Holdings Production Page Component (src/app/holdings/page.tsx)', () =>
     expect(screen.getByText('999%+')).toBeInTheDocument();
     expect(screen.queryByText('1542.0%')).not.toBeInTheDocument();
   });
+
+  it('correctly calculates 1D value change KPI in USD without double conversion', async () => {
+    const singleHoldingSummary = {
+      ...mockSummary,
+      top_holdings: [
+        {
+          ...mockSummary.top_holdings[1], // AAPL: currency USD
+          value_change_1d: 100.0,
+          current_value: 2000.0,
+        }
+      ]
+    };
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/portfolio/summary') return singleHoldingSummary;
+      if (endpoint === '/settings') return { master_currency: 'USD' };
+      return {};
+    });
+
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Positions & Holdings')).toBeInTheDocument();
+    });
+
+    // Switch to 1D view
+    fireEvent.click(screen.getByText('1-Day Return (1D)'));
+
+    // In KPI card, should display exactly $100.00, NOT $108.70 from double conversion
+    const kpiCard = screen.getByText('1D Value Change').closest('.getquin-card') as HTMLElement;
+    expect(within(kpiCard).getByText('$100.00')).toBeInTheDocument();
+    expect(screen.queryByText('$108.70')).not.toBeInTheDocument();
+  });
 });

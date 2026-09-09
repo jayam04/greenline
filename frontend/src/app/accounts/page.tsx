@@ -60,32 +60,37 @@ export default function AccountsPage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [accountOrder, setAccountOrder] = useState<number[]>([]);
+
   useEffect(() => {
     document.title = "Accounts · greenline";
-    loadData();
-  }, []);
-
-  const orderedAccounts = useMemo(() => {
-    const list = [...accounts];
     try {
       const rawLayout = typeof window !== "undefined" ? localStorage.getItem("greenline_account_layout") : null;
       if (rawLayout) {
         const parsed = JSON.parse(rawLayout);
         if (Array.isArray(parsed.order) && parsed.order.length > 0) {
-          const orderMap = new Map<number, number>();
-          parsed.order.forEach((id: number, idx: number) => orderMap.set(id, idx));
-          list.sort((a, b) => {
-            const orderA = orderMap.has(a.account_id) ? orderMap.get(a.account_id)! : 9999;
-            const orderB = orderMap.has(b.account_id) ? orderMap.get(b.account_id)! : 9999;
-            return orderA - orderB;
-          });
+          setAccountOrder(parsed.order);
         }
       }
     } catch (e) {
       console.error("Failed to load account order in accounts page:", e);
     }
+    loadData();
+  }, []);
+
+  const orderedAccounts = useMemo(() => {
+    const list = [...accounts];
+    if (accountOrder.length > 0) {
+      const orderMap = new Map<number, number>();
+      accountOrder.forEach((id: number, idx: number) => orderMap.set(id, idx));
+      list.sort((a, b) => {
+        const orderA = orderMap.has(a.account_id) ? orderMap.get(a.account_id)! : 9999;
+        const orderB = orderMap.has(b.account_id) ? orderMap.get(b.account_id)! : 9999;
+        return orderA - orderB;
+      });
+    }
     return list;
-  }, [accounts]);
+  }, [accounts, accountOrder]);
 
   const loadData = async () => {
     try {

@@ -151,15 +151,15 @@ export default function HoldingsPage() {
   const totalNetPnLEUR = totalRealizedEUR + totalUnrealizedEUR;
 
   // 1-Day Change Metrics
-  const totalValueChange1dEUR = useMemo(() => {
+  const totalValueChange1dMaster = useMemo(() => {
     return holdings.reduce(
       (acc, h) => acc + convertCurrency(h.value_change_1d || 0, h.currency || "EUR", masterCurrency),
       0
     );
   }, [holdings, masterCurrency]);
-  const totalValueChange1dMaster = convertCurrency(totalValueChange1dEUR, "EUR", masterCurrency);
-  const totalChange1dPct = totalValueEUR - totalValueChange1dEUR > 0
-    ? (totalValueChange1dEUR / (totalValueEUR - totalValueChange1dEUR)) * 100
+  const previousTotalValueMaster = totalValueEUR - totalValueChange1dMaster;
+  const totalChange1dPct = previousTotalValueMaster > 0
+    ? (totalValueChange1dMaster / previousTotalValueMaster) * 100
     : 0;
 
   // Sorted holdings

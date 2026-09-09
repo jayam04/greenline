@@ -9,6 +9,7 @@ import {
   convertCurrencyToEUR, 
   convertCurrency, 
   getMasterCurrency,
+  formatXirr,
   SUPPORTED_CURRENCIES
 } from '@/lib/format';
 
@@ -117,6 +118,29 @@ describe('Format Library (src/lib/format.ts)', () => {
 
     it('retrieves default master currency when localStorage is empty', () => {
       expect(getMasterCurrency()).toBe('EUR');
+    });
+  });
+
+  describe('formatXirr', () => {
+    it('formats positive and negative annualized returns with proper percentage and precision', () => {
+      expect(formatXirr(0.185)).toBe('18.5%');
+      expect(formatXirr(0.1856, 2)).toBe('18.56%');
+      expect(formatXirr(-0.062)).toBe('6.2%');
+      expect(formatXirr(-0.0624, 2)).toBe('6.24%');
+      expect(formatXirr(0)).toBe('0.0%');
+    });
+
+    it('caps extreme annualized returns above 1000% to 999%+', () => {
+      expect(formatXirr(12.5)).toBe('999%+');
+      expect(formatXirr(-15.0)).toBe('999%+');
+    });
+
+    it('handles null, undefined, NaN, and non-finite values safely', () => {
+      expect(formatXirr(null)).toBe('-');
+      expect(formatXirr(undefined)).toBe('-');
+      expect(formatXirr(NaN)).toBe('-');
+      expect(formatXirr(Infinity)).toBe('-');
+      expect(formatXirr(-Infinity)).toBe('-');
     });
   });
 });

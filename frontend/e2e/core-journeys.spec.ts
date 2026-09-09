@@ -263,7 +263,7 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
     await expect(page.getByText('Total Cost')).toBeVisible();
     await expect(page.getByText('Current Value')).toBeVisible();
     await expect(page.getByText('Net P&L', { exact: true })).toBeVisible();
-    await expect(page.getByText('XIRR')).toBeVisible();
+    await expect(page.getByText('XIRR', { exact: true })).toBeVisible();
 
     // Verify holding data
     await expect(page.getByText('GROWW.BO')).toBeVisible();
@@ -289,7 +289,7 @@ test.describe('Greenline Core End-to-End User Journeys', () => {
     await expect(page.getByText('(+186 GROWW.BO)')).toBeVisible();
     await expect(page.getByText('Stock & ETF Purchases')).toBeVisible();
     await expect(page.getByText('Investment Fees & Charges')).toBeVisible();
-    await expect(page.getByText('Taxes & Duties')).toBeVisible();
+    await expect(page.getByText('Taxes & Duties', { exact: true })).toBeVisible();
   });
 
   test('Journey 4: Privacy Mode Toggle deterministically masks and unmasks balances', async ({ page }) => {

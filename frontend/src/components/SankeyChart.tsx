@@ -42,13 +42,6 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredLink, setHoveredLink] = useState<{ source: string; target: string; value: number } | null>(null);
 
-  // Layout Dimensions
-  const width = 1000;
-  const height = 480;
-  const paddingX = 60;
-  const paddingY = 40;
-  const nodeWidth = 20;
-
   // Compute Layout Positions
   const layout = useMemo(() => {
     if (!data || !data.nodes.length || !data.links.length) {
@@ -68,7 +61,17 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
     const levels = Object.keys(levelMap)
       .map(Number)
       .sort((a, b) => a - b);
-    const numLevels = levels.length;
+    const numLevels = Math.max(levels.length, 1);
+
+    // Dynamic width scaling based on number of columns to prevent text crowding
+    const width = Math.max(1000, 220 * numLevels);
+    const height = 480;
+    const paddingX = 80;
+    const paddingY = 40;
+    const nodeWidth = 20;
+
+    const hubNode = nodes.find((n) => n.id.includes("cash_inflow") || n.name === "Total Inflow Pool");
+    const hubLevel = hubNode ? hubNode.level : Math.ceil(numLevels / 2);
 
     // 2. Compute total throughput value per node
     const nodeValues: { [id: string]: number } = {};
@@ -182,6 +185,9 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
     return {
       nodes: Object.values(computedNodes),
       links: computedLinks,
+      width,
+      height,
+      hubLevel,
     };
   }, [data]);
 
@@ -211,7 +217,7 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
   }
 
   return (
-    <div className="relative w-full overflow-hidden select-none">
+    <div className="relative w-full overflow-x-auto select-none custom-scrollbar pb-2">
       {/* Tooltip Overlay */}
       {hoveredLink && (
         <div className="absolute top-3 right-4 z-20 bg-[#0F172A] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2 border border-slate-700 pointer-events-none">
@@ -225,8 +231,9 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
       )}
 
       <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="w-full h-auto max-h-[500px]"
+        viewBox={`0 0 ${layout.width} ${layout.height}`}
+        style={{ minWidth: `${Math.min(layout.width, 1400)}px` }}
+        className="w-full h-auto max-h-[520px]"
         preserveAspectRatio="xMidYMid meet"
       >
         {/* Gradients */}
@@ -284,8 +291,9 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
         <g className="nodes">
           {layout.nodes.map(({ x, y, width: nw, height: nh, value, node }) => {
             const isHovered = hoveredNode === node.id;
-            const isLeft = x < width / 3;
-            const isRight = x > (width * 2) / 3;
+            const isLeft = (node.level || 1) < layout.hubLevel;
+            const isHub = (node.level || 1) === layout.hubLevel;
+            const isRight = (node.level || 1) > layout.hubLevel;
             const nodeColor = node.color || (node.category_type === "INCOME" ? "#10B981" : "#EF4444");
 
             return (
@@ -311,7 +319,7 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
                 {/* Node Label Text */}
                 <text
                   x={isLeft ? x - 8 : isRight ? x + nw + 8 : x + nw / 2}
-                  y={y + nh / 2 - 3}
+                  y={isHub ? Math.max(16, y - 16) : y + nh / 2 - 3}
                   textAnchor={isLeft ? "end" : isRight ? "start" : "middle"}
                   dominantBaseline="central"
                   fill={isDark ? "#F8FAFC" : "#0F172A"}
@@ -325,7 +333,7 @@ export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyC
                 {/* Amount Under Label */}
                 <text
                   x={isLeft ? x - 8 : isRight ? x + nw + 8 : x + nw / 2}
-                  y={y + nh / 2 + 10}
+                  y={isHub ? Math.max(28, y - 4) : y + nh / 2 + 10}
                   textAnchor={isLeft ? "end" : isRight ? "start" : "middle"}
                   dominantBaseline="central"
                   fill={isDark ? "#94A3B8" : "#64748B"}

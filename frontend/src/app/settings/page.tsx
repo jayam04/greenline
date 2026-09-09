@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { apiFetch, removeAuthToken } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { 
-  Settings, User, Link as LinkIcon, ShieldCheck, 
+  Settings, User, ShieldCheck, 
   Coins, CheckCircle2, AlertCircle, LogOut, ArrowRight,
   HelpCircle, Sliders, Database, Check, Calendar, Download,
   RefreshCw, Trash2, RotateCcw, Clock, HardDrive, FileJson, AlertTriangle
@@ -58,7 +58,6 @@ interface BackupItem {
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [linkBrokerage, setLinkBrokerage] = useState(false);
   const [masterCurrency, setMasterCurrency] = useState("EUR");
   const [fiscalYearStart, setFiscalYearStart] = useState("01-01");
   const [loading, setLoading] = useState(true);
@@ -82,7 +81,6 @@ export default function SettingsPage() {
       setLoading(true);
       const [res, bConfig, bList] = await Promise.all([
         apiFetch<{ 
-          link_brokerage_with_bank: boolean; 
           master_currency: string;
           fiscal_year_start?: string;
         }>("/settings"),
@@ -91,10 +89,6 @@ export default function SettingsPage() {
       ]);
       
       if (res) {
-        if (typeof res.link_brokerage_with_bank === "boolean") {
-          setLinkBrokerage(res.link_brokerage_with_bank);
-          localStorage.setItem("greenline_link_brokerage_with_bank", String(res.link_brokerage_with_bank));
-        }
         if (res.master_currency) {
           const curr = res.master_currency.trim().toUpperCase();
           setMasterCurrency(curr);
@@ -111,10 +105,8 @@ export default function SettingsPage() {
       if (bList) setBackupsList(bList.backups || []);
     } catch (e) {
       console.error("Failed to load settings from server, using localStorage:", e);
-      const localLink = localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
       const localCurr = localStorage.getItem("greenline_master_currency") || "EUR";
       const localFy = localStorage.getItem("greenline_fiscal_year_start") || "01-01";
-      setLinkBrokerage(localLink);
       setMasterCurrency(localCurr);
       setFiscalYearStart(localFy);
     } finally {
@@ -122,25 +114,19 @@ export default function SettingsPage() {
     }
   };
 
-  const handleToggleLinkBrokerage = async (newValue: boolean) => {
-    setLinkBrokerage(newValue);
-    localStorage.setItem("greenline_link_brokerage_with_bank", String(newValue));
-    saveSettings({ link_brokerage_with_bank: newValue, master_currency: masterCurrency, fiscal_year_start: fiscalYearStart });
-  };
-
   const handleChangeMasterCurrency = async (newCurrency: string) => {
     setMasterCurrency(newCurrency);
     localStorage.setItem("greenline_master_currency", newCurrency);
-    saveSettings({ link_brokerage_with_bank: linkBrokerage, master_currency: newCurrency, fiscal_year_start: fiscalYearStart });
+    saveSettings({ master_currency: newCurrency, fiscal_year_start: fiscalYearStart });
   };
 
   const handleChangeFiscalYearStart = async (newFy: string) => {
     setFiscalYearStart(newFy);
     localStorage.setItem("greenline_fiscal_year_start", newFy);
-    saveSettings({ link_brokerage_with_bank: linkBrokerage, master_currency: masterCurrency, fiscal_year_start: newFy });
+    saveSettings({ master_currency: masterCurrency, fiscal_year_start: newFy });
   };
 
-  const saveSettings = async (payload: { link_brokerage_with_bank: boolean; master_currency: string; fiscal_year_start: string }) => {
+  const saveSettings = async (payload: { master_currency: string; fiscal_year_start: string }) => {
     setSaving(true);
     setSavedMessage("");
 

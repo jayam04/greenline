@@ -87,22 +87,14 @@ export default function CashflowPage() {
 
   const loadAllData = async () => {
     try {
-      let includeInvestments = true;
       let activeCurrency = "EUR";
       try {
-        const settingsRes = await apiFetch<{ link_brokerage_with_bank: boolean; master_currency: string }>("/settings");
-        if (settingsRes) {
-          if (typeof settingsRes.link_brokerage_with_bank === "boolean") {
-            includeInvestments = !settingsRes.link_brokerage_with_bank;
-          }
-          if (settingsRes.master_currency) {
-            activeCurrency = settingsRes.master_currency.trim().toUpperCase();
-            setMasterCurrency(activeCurrency);
-          }
+        const settingsRes = await apiFetch<{ master_currency: string }>("/settings");
+        if (settingsRes && settingsRes.master_currency) {
+          activeCurrency = settingsRes.master_currency.trim().toUpperCase();
+          setMasterCurrency(activeCurrency);
         }
       } catch {
-        const localVal = typeof window !== "undefined" && localStorage.getItem("greenline_link_brokerage_with_bank") === "true";
-        includeInvestments = !localVal;
         activeCurrency = (typeof window !== "undefined" && localStorage.getItem("greenline_master_currency")) || "EUR";
         setMasterCurrency(activeCurrency);
       }
@@ -110,11 +102,11 @@ export default function CashflowPage() {
       const queryParams = new URLSearchParams();
       if (startDate) queryParams.append("start_date", startDate);
       if (endDate) queryParams.append("end_date", endDate);
-      queryParams.append("include_investments", String(includeInvestments));
+      queryParams.append("include_investments", "true");
       queryParams.append("master_currency", activeCurrency);
 
       const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
-      const sankeyQs = `?depth=${sankeyDepth}&include_investments=${includeInvestments}&master_currency=${activeCurrency}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
+      const sankeyQs = `?depth=${sankeyDepth}&include_investments=true&master_currency=${activeCurrency}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
 
       const [sumRes, sankeyRes, cfRes, tradeRes] = await Promise.all([
         apiFetch<CashflowSummary>(`/cashflow/summary${qs}`),

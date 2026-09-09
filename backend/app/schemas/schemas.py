@@ -187,6 +187,10 @@ class HoldingSummary(BaseModel):
     total_cost: float
     latest_price: float
     latest_price_date: Optional[datetime.date] = None
+    previous_price: float = 0.0
+    change_1d: float = 0.0
+    change_1d_pct: float = 0.0
+    value_change_1d: float = 0.0
     current_value: float
     unrealized_pnl: float
     unrealized_pnl_pct: float
@@ -207,6 +211,8 @@ class PortfolioSummaryResponse(BaseModel):
     cash_balance: float
     total_realized_pnl: float
     total_unrealized_pnl: float
+    total_value_change_1d: float = 0.0
+    total_change_1d_pct: float = 0.0
     total_fees: float = 0.0
     total_taxes: float = 0.0
     portfolio_xirr: Optional[float] = None

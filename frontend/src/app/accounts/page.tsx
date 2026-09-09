@@ -60,9 +60,37 @@ export default function AccountsPage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [accountOrder, setAccountOrder] = useState<number[]>([]);
+
   useEffect(() => {
+    document.title = "Accounts · greenline";
+    try {
+      const rawLayout = typeof window !== "undefined" ? localStorage.getItem("greenline_account_layout") : null;
+      if (rawLayout) {
+        const parsed = JSON.parse(rawLayout);
+        if (Array.isArray(parsed.order) && parsed.order.length > 0) {
+          setAccountOrder(parsed.order);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load account order in accounts page:", e);
+    }
     loadData();
   }, []);
+
+  const orderedAccounts = useMemo(() => {
+    const list = [...accounts];
+    if (accountOrder.length > 0) {
+      const orderMap = new Map<number, number>();
+      accountOrder.forEach((id: number, idx: number) => orderMap.set(id, idx));
+      list.sort((a, b) => {
+        const orderA = orderMap.has(a.account_id) ? orderMap.get(a.account_id)! : 9999;
+        const orderB = orderMap.has(b.account_id) ? orderMap.get(b.account_id)! : 9999;
+        return orderA - orderB;
+      });
+    }
+    return list;
+  }, [accounts, accountOrder]);
 
   const loadData = async () => {
     try {
@@ -260,9 +288,9 @@ export default function AccountsPage() {
         </div>
 
         {/* Accounts Cards Grid */}
-        {accounts.length > 0 ? (
+        {orderedAccounts.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-            {accounts.map((acc) => (
+            {orderedAccounts.map((acc) => (
               <div
                 key={acc.account_id}
                 className="bg-white dark:bg-[#121824] rounded-xl border border-slate-200/80 dark:border-slate-800 p-3 hover:shadow-xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex items-center justify-between gap-3 group"

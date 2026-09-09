@@ -8,12 +8,13 @@ import {
 } from "@/lib/format";
 import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
 import { AllocationChart } from "@/components/AllocationChart";
+import { AccountCustomizationModal } from "@/components/AccountCustomizationModal";
 import { 
   TrendingUp, Wallet, Landmark, Building2, Coins, Briefcase, Plus, 
   ArrowUpRight, ArrowDownRight, Eye, EyeOff, RefreshCw, Settings, 
   Calendar, DollarSign, Check, Layers, ExternalLink, ShieldCheck, 
   BarChart2, AlertCircle, ArrowLeftRight, PiggyBank, Receipt, ChevronRight,
-  ArrowRight, X
+  ArrowRight, X, SlidersHorizontal
 } from "lucide-react";
 import Link from "next/link";
 
@@ -108,10 +109,46 @@ export default function NetWorthDashboardPage() {
   const [benchmarksDataMap, setBenchmarksDataMap] = useState<Record<string, BenchmarkRawData>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isEditAccountsModalOpen, setIsEditAccountsModalOpen] = useState(false);
+  const [accountOrder, setAccountOrder] = useState<number[]>([]);
+  const [hiddenAccountIds, setHiddenAccountIds] = useState<number[]>([]);
+  const [hideZeroBalance, setHideZeroBalance] = useState(false);
 
   useEffect(() => {
+    document.title = "Overview · greenline";
     loadSettingsAndAccounts();
+    loadSavedLayout();
   }, []);
+
+  const loadSavedLayout = () => {
+    try {
+      const rawLayout = typeof window !== "undefined" ? localStorage.getItem("greenline_account_layout") : null;
+      if (rawLayout) {
+        const parsed = JSON.parse(rawLayout);
+        if (Array.isArray(parsed.order)) setAccountOrder(parsed.order);
+        if (Array.isArray(parsed.hidden)) setHiddenAccountIds(parsed.hidden);
+        if (typeof parsed.hideZeroBalance === "boolean") setHideZeroBalance(parsed.hideZeroBalance);
+      }
+    } catch (err) {
+      console.error("Failed to load account layout:", err);
+    }
+  };
+
+  const handleSaveAccountLayout = (newOrder: number[], newHidden: number[], newHideZero: boolean) => {
+    setAccountOrder(newOrder);
+    setHiddenAccountIds(newHidden);
+    setHideZeroBalance(newHideZero);
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          "greenline_account_layout",
+          JSON.stringify({ order: newOrder, hidden: newHidden, hideZeroBalance: newHideZero })
+        );
+      }
+    } catch (err) {
+      console.error("Failed to save account layout:", err);
+    }
+  };
 
   useEffect(() => {
     loadData(selectedAccount, fiscalYearStart, masterCurrency);
@@ -362,12 +399,45 @@ export default function NetWorthDashboardPage() {
     return map;
   }, [totalCashMaster, totalStocksValuationMaster]);
 
+  // Master ordered accounts list
+  const orderedAccounts = useMemo(() => {
+    const list = [...accounts];
+    if (accountOrder.length > 0) {
+      const orderMap = new Map<number, number>();
+      accountOrder.forEach((id, idx) => orderMap.set(id, idx));
+
+      list.sort((a, b) => {
+        const orderA = orderMap.has(a.account_id) ? orderMap.get(a.account_id)! : 9999;
+        const orderB = orderMap.has(b.account_id) ? orderMap.get(b.account_id)! : 9999;
+        return orderA - orderB;
+      });
+    }
+    return list;
+  }, [accounts, accountOrder]);
+
   // Filtered accounts list for the table
   const filteredAccounts = useMemo(() => {
-    if (accountTypeFilter === "bank") return bankAccounts;
-    if (accountTypeFilter === "demat") return dematAccounts;
-    return accounts;
-  }, [accounts, bankAccounts, dematAccounts, accountTypeFilter]);
+    let list = orderedAccounts;
+    if (accountTypeFilter === "bank") list = list.filter((a) => a.account_type === "bank");
+    else if (accountTypeFilter === "demat") list = list.filter((a) => a.account_type !== "bank");
+
+    // Filter out hidden accounts
+    if (hiddenAccountIds.length > 0) {
+      const hiddenSet = new Set(hiddenAccountIds);
+      list = list.filter((a) => !hiddenSet.has(a.account_id));
+    }
+
+    // Filter out 0 balance accounts if hideZeroBalance is active
+    if (hideZeroBalance) {
+      list = list.filter((a) => {
+        const nativeBal = a.current_balance || 0;
+        const secVal = a.securities_value || 0;
+        return Math.abs(nativeBal) > 0.0001 || Math.abs(secVal) > 0.0001;
+      });
+    }
+
+    return list;
+  }, [orderedAccounts, accountTypeFilter, hiddenAccountIds, hideZeroBalance]);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
@@ -410,7 +480,7 @@ export default function NetWorthDashboardPage() {
               </div>
             </div>
 
-            {/* Header Row 2: Account Tabs (Wraps to new lines when many accounts) */}
+            {/* Header Row 2: Account Tabs (Consistent order with Accounts master) */}
             <div className="pt-2.5 pb-2 flex items-center gap-1.5 flex-wrap text-xs border-b border-[#F1F5F9]">
               <button
                 onClick={() => setSelectedAccount("all")}
@@ -422,7 +492,7 @@ export default function NetWorthDashboardPage() {
               >
                 Aggregated
               </button>
-              {accounts.map((acc) => (
+              {orderedAccounts.map((acc) => (
                 <button
                   key={acc.account_id}
                   onClick={() => setSelectedAccount(acc.account_id.toString())}
@@ -616,19 +686,21 @@ export default function NetWorthDashboardPage() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditAccountsModalOpen(true)}
+                  className="px-2.5 py-1 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Customize accounts layout and visibility"
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>Edit</span>
+                </button>
                 <Link
                   href="/cashflow"
                   className="btn-pill-black text-[11px] cursor-pointer"
                 >
                   <ArrowLeftRight className="w-3.5 h-3.5" />
                   <span>Record Spend / Income</span>
-                </Link>
-                <Link
-                  href="/accounts"
-                  className="px-2.5 py-1 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 font-bold rounded-lg text-xs transition-colors flex items-center gap-1"
-                >
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>Manage</span>
                 </Link>
               </div>
             </div>
@@ -1013,6 +1085,24 @@ export default function NetWorthDashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Account Customization & Reordering Modal */}
+      <AccountCustomizationModal
+        isOpen={isEditAccountsModalOpen}
+        accounts={accounts.map((a) => ({
+          account_id: a.account_id,
+          account_name: a.account_name,
+          account_type: a.account_type,
+          broker_name: a.broker_name,
+          currency: a.currency,
+          current_balance: a.current_balance || 0,
+        }))}
+        initialOrder={accountOrder}
+        initialHidden={hiddenAccountIds}
+        initialHideZeroBalance={hideZeroBalance}
+        onClose={() => setIsEditAccountsModalOpen(false)}
+        onSave={handleSaveAccountLayout}
+      />
     </div>
   );
 }

@@ -170,3 +170,26 @@ export function getMasterCurrency(): string {
   }
   return "EUR";
 }
+
+/**
+ * Formats annualized XIRR percentage:
+ * - If XIRR >= 10.0 (1000%), capped to "999%+"
+ * - If XIRR <= -10.0 (-1000%), capped to "-999%+" (or "999%+" if preserveSign is false)
+ * - If preserveSign is false (default for arrow UI), returns absolute magnitude formatted with %
+ * - Otherwise formatted with sign and % suffix
+ */
+export function formatXirr(
+  val: number | null | undefined,
+  decimals: number = 1,
+  preserveSign: boolean = false
+): string {
+  if (val === null || val === undefined || isNaN(val)) return "-";
+  const num = Number(val);
+  const absNum = Math.abs(num);
+  const sign = num < 0 && preserveSign ? "-" : "";
+  if (absNum >= 10.0) {
+    return `${sign}999%+`;
+  }
+  const pct = absNum * 100;
+  return `${sign}${pct.toFixed(decimals)}%`;
+}

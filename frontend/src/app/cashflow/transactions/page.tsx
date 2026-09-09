@@ -17,8 +17,6 @@ interface Account {
   account_type: string;
 }
 
-type ViewMode = "DAY_TO_DAY" | "INVESTMENTS" | "BOTH";
-
 interface UnifiedRowItem {
   key: string;
   source: "cashflow" | "investment";
@@ -32,6 +30,7 @@ interface UnifiedRowItem {
     account_name: string;
     account_currency: string;
     amount: number;
+    holding_delta?: string;
   }[];
   items: {
     category_name: string;
@@ -47,7 +46,6 @@ interface UnifiedRowItem {
 }
 
 export default function CashflowTransactionsPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>("DAY_TO_DAY");
   const [cashflowTxs, setCashflowTxs] = useState<CashflowTransactionItem[]>([]);
   const [tradeTxs, setTradeTxs] = useState<TransactionItem[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -66,6 +64,7 @@ export default function CashflowTransactionsPage() {
   const [editingTradeTx, setEditingTradeTx] = useState<TransactionItem | null>(null);
 
   useEffect(() => {
+    document.title = "Cashflow Transactions · greenline";
     loadData();
   }, []);
 
@@ -112,42 +111,39 @@ export default function CashflowTransactionsPage() {
     const rows: UnifiedRowItem[] = [];
 
     // 1. Day-to-Day Cashflow
-    if (viewMode === "DAY_TO_DAY" || viewMode === "BOTH") {
-      cashflowTxs.forEach((cf) => {
-        const isTransfer = cf.transaction_kind === "TRANSFER" || cf.items.some((i) => i.category_type === "TRANSFER");
-        const isIncome = !isTransfer && cf.items.some((i) => i.category_type === "INCOME");
+    cashflowTxs.forEach((cf) => {
+      const isTransfer = cf.transaction_kind === "TRANSFER" || cf.items.some((i) => i.category_type === "TRANSFER");
+      const isIncome = !isTransfer && cf.items.some((i) => i.category_type === "INCOME");
 
-        rows.push({
-          key: `cf-${cf.cashflow_id}`,
-          source: "cashflow",
-          rawCashflow: cf,
-          date: cf.transaction_date,
-          title: cf.title,
-          notes: cf.notes,
-          payments: cf.payments.map((p) => ({
-            account_id: p.account_id,
-            account_name: p.account_name || "Account",
-            account_currency: p.account_currency || cf.currency || "EUR",
-            amount: p.amount
-          })),
-          items: cf.items.map((i) => ({
-            category_name: i.category_name || "Uncategorized",
-            category_type: i.category_type,
-            description: i.description,
-            effective_label: i.effective_label || i.label || "DISCRETIONARY",
-            amount: i.amount
-          })),
-          isTransfer,
-          isIncome,
-          totalAmount: cf.total_amount,
-          currency: cf.currency || "EUR"
-        });
+      rows.push({
+        key: `cf-${cf.cashflow_id}`,
+        source: "cashflow",
+        rawCashflow: cf,
+        date: cf.transaction_date,
+        title: cf.title,
+        notes: cf.notes,
+        payments: cf.payments.map((p) => ({
+          account_id: p.account_id,
+          account_name: p.account_name || "Account",
+          account_currency: p.account_currency || cf.currency || "EUR",
+          amount: p.amount
+        })),
+        items: cf.items.map((i) => ({
+          category_name: i.category_name || "Uncategorized",
+          category_type: i.category_type,
+          description: i.description,
+          effective_label: i.effective_label || i.label || "DISCRETIONARY",
+          amount: i.amount
+        })),
+        isTransfer,
+        isIncome,
+        totalAmount: cf.total_amount,
+        currency: cf.currency || "EUR"
       });
-    }
+    });
 
     // 2. Investment Trades
-    if (viewMode === "INVESTMENTS" || viewMode === "BOTH") {
-      tradeTxs.forEach((t) => {
+    tradeTxs.forEach((t) => {
         const ttype = (t.transaction_type || "").toLowerCase();
         const isBuy = ttype === "buy";
         const isSell = ttype === "sell";
@@ -177,18 +173,40 @@ export default function CashflowTransactionsPage() {
         const signedPaymentAmt = isIncome ? netTotal : -netTotal;
 
         const paymentsList = [];
-        if (fundingName !== holdingName) {
+        if (isBuy && t.quantity) {
           paymentsList.push({
             account_id: t.account_id,
             account_name: `${holdingName} (Holding)`,
             account_currency: t.account_currency || "USD",
-            amount: 0
+            amount: 0,
+            holding_delta: `+${t.quantity} ${t.asset_symbol || "shares"}`
           });
+          paymentsList.push({
+            account_id: t.funding_account_id || t.account_id,
+            account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
+            account_currency: t.funding_account_currency || t.account_currency || "USD",
+            amount: -netTotal
+          });
+        } else if (isSell && t.quantity) {
+          paymentsList.push({
+            account_id: t.account_id,
+            account_name: `${holdingName} (Holding)`,
+            account_currency: t.account_currency || "USD",
+            amount: 0,
+            holding_delta: `-${t.quantity} ${t.asset_symbol || "shares"}`
+          });
+          paymentsList.push({
+            account_id: t.funding_account_id || t.account_id,
+            account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
+            account_currency: t.funding_account_currency || t.account_currency || "USD",
+            amount: netTotal
+          });
+        } else if (isDiv) {
           paymentsList.push({
             account_id: t.funding_account_id || t.account_id,
             account_name: fundingName,
             account_currency: t.funding_account_currency || t.account_currency || "USD",
-            amount: signedPaymentAmt
+            amount: netTotal
           });
         } else {
           paymentsList.push({
@@ -258,10 +276,9 @@ export default function CashflowTransactionsPage() {
           currency: t.account_currency || "USD"
         });
       });
-    }
 
     return rows.sort((a, b) => b.date.localeCompare(a.date));
-  }, [cashflowTxs, tradeTxs, viewMode]);
+  }, [cashflowTxs, tradeTxs]);
 
   // Filtered rows
   const filteredRows = useMemo(() => {
@@ -357,45 +374,6 @@ export default function CashflowTransactionsPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* 3-Way Mode Selector */}
-            <div className="inline-flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
-              <button
-                onClick={() => setViewMode("DAY_TO_DAY")}
-                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === "DAY_TO_DAY"
-                    ? "bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white"
-                }`}
-              >
-                <ShoppingBag className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Day-to-Day</span>
-              </button>
-
-              <button
-                onClick={() => setViewMode("INVESTMENTS")}
-                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === "INVESTMENTS"
-                    ? "bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white"
-                }`}
-              >
-                <Briefcase className="w-3.5 h-3.5 text-blue-400" />
-                <span>Investments</span>
-              </button>
-
-              <button
-                onClick={() => setViewMode("BOTH")}
-                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === "BOTH"
-                    ? "bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] shadow-xs"
-                    : "text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white"
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5 text-purple-400" />
-                <span>Combined (Both)</span>
-              </button>
-            </div>
-
             {/* Search Input */}
             <div className="relative flex items-center">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
@@ -489,24 +467,37 @@ export default function CashflowTransactionsPage() {
                         <div className="flex flex-col gap-1">
                           {tx.payments.map((p, pIdx) => {
                             const pCurr = p.account_currency || tx.currency || "EUR";
-                            const isCredit = p.amount > 0;
-                            const dotColor = isCredit ? "bg-emerald-500" : p.amount < 0 ? "bg-rose-500" : "bg-blue-500";
+                            const isHoldingCredit = p.holding_delta?.startsWith("+");
+                            const isHoldingDebit = p.holding_delta?.startsWith("-");
+                            const isCredit = p.amount > 0 || Boolean(isHoldingCredit);
+                            const isDebit = p.amount < 0 || Boolean(isHoldingDebit);
+                            const dotColor = tx.source === "investment"
+                              ? "bg-blue-500"
+                              : isCredit
+                              ? "bg-emerald-500"
+                              : isDebit
+                              ? "bg-rose-500"
+                              : "bg-blue-500";
                             const textColor = isCredit 
                               ? "text-emerald-600 dark:text-emerald-400" 
-                              : p.amount < 0 
+                              : isDebit 
                               ? "text-rose-600 dark:text-rose-400" 
                               : "text-slate-400";
-                            const signPrefix = isCredit ? "+" : p.amount < 0 ? "-" : "";
+                            const signPrefix = p.amount > 0 ? "+" : p.amount < 0 ? "-" : "";
 
                             return (
                               <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                                 <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
                                 <span>{p.account_name}</span>
-                                {p.amount !== 0 && (
+                                {p.holding_delta ? (
+                                  <span className={`tabular-nums font-bold ${textColor}`}>
+                                    ({p.holding_delta})
+                                  </span>
+                                ) : p.amount !== 0 ? (
                                   <span className={`tabular-nums font-bold ${textColor}`}>
                                     ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
                                   </span>
-                                )}
+                                ) : null}
                               </div>
                             );
                           })}

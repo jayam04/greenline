@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import HoldingsPage from '@/app/holdings/page';
+import HoldingsPage from '@/app/investments/holdings/page';
 import * as api from '@/lib/api';
 
 vi.mock('@/lib/api', () => ({
@@ -15,6 +15,8 @@ const mockSummary = {
   cash_balance: 500.0,
   total_realized_pnl: 1000.0,
   total_unrealized_pnl: 7500.0,
+  total_value_change_1d: 850.0,
+  total_change_1d_pct: 2.2,
   total_fees: 602.64,
   total_taxes: 113.0,
   portfolio_xirr: 0.245,
@@ -31,6 +33,10 @@ const mockSummary = {
       total_cost: 30847.64,        // All-in cost basis: (186 * 162 = 30,132) + 602.64 fees + 113.0 taxes = 30,847.64
       latest_price: 203.35,        // Latest market quote
       latest_price_date: "2026-08-25",
+      previous_price: 198.50,
+      change_1d: 4.85,
+      change_1d_pct: 2.44,
+      value_change_1d: 902.10,
       current_value: 37823.10,     // 186 * 203.35 = 37,823.10
       unrealized_pnl: 6975.46,     // 37,823.10 - 30,847.64 = +6,975.46
       unrealized_pnl_pct: 22.61,   // (+6,975.46 / 30,847.64) * 100 = +22.61%
@@ -64,6 +70,10 @@ const mockSummary = {
       total_cost: 1500.0,
       latest_price: 180.0,
       latest_price_date: "2026-08-25",
+      previous_price: 185.0,
+      change_1d: -5.0,
+      change_1d_pct: -2.7,
+      value_change_1d: -50.0,
       current_value: 1800.0,
       unrealized_pnl: 300.0,
       unrealized_pnl_pct: 20.0,
@@ -139,6 +149,34 @@ describe('Holdings Production Page Component (src/app/holdings/page.tsx)', () =>
     expect(tableWithin.getByText('$400.00')).toBeInTheDocument();
   });
 
+  it('toggles between All-Time P&L and 1-Day Return (1D) view modes', async () => {
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Positions & Holdings')).toBeInTheDocument();
+    });
+
+    // Default mode: All-Time P&L
+    expect(screen.getByText('All-Time P&L')).toBeInTheDocument();
+    expect(screen.getByText('1-Day Return (1D)')).toBeInTheDocument();
+    expect(screen.getAllByText('Unrealized P&L').length).toBe(2);
+
+    // Click 1-Day Return button
+    fireEvent.click(screen.getByText('1-Day Return (1D)'));
+
+    // Header column should switch to 1D Change
+    expect(screen.getByText('1D Change')).toBeInTheDocument();
+    expect(screen.queryAllByText('Unrealized P&L').length).toBe(0);
+
+    // Card should switch to 1D Value Change
+    expect(screen.getByText('1D Value Change')).toBeInTheDocument();
+    expect(screen.getByText('1D Return %')).toBeInTheDocument();
+
+    // Should display 1D value change for GROWW.BO (₹902.10) and AAPL ($50.00)
+    expect(screen.getByText('₹902.10')).toBeInTheDocument();
+    expect(screen.getByText('$50.00')).toBeInTheDocument();
+  });
+
   it('expands and collapses open FIFO lot details upon row click in real page', async () => {
     render(<HoldingsPage />);
 
@@ -179,5 +217,67 @@ describe('Holdings Production Page Component (src/app/holdings/page.tsx)', () =>
     // Verify both items remain present and sorted
     const rows = screen.getAllByRole('row');
     expect(rows.length).toBeGreaterThan(2);
+  });
+
+  it('caps XIRR exceeding 1000% to 999%+', async () => {
+    const summaryWithExtremeXirr = {
+      ...mockSummary,
+      top_holdings: [
+        {
+          ...mockSummary.top_holdings[0],
+          symbol: "MOON.BO",
+          xirr: 15.42, // 1542%
+        },
+      ],
+    };
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/portfolio/summary') return summaryWithExtremeXirr;
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return {};
+    });
+
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('MOON.BO')).toBeInTheDocument();
+    });
+
+    // Should display 999%+ instead of 1542.0%
+    expect(screen.getByText('999%+')).toBeInTheDocument();
+    expect(screen.queryByText('1542.0%')).not.toBeInTheDocument();
+  });
+
+  it('correctly calculates 1D value change KPI in USD without double conversion', async () => {
+    const singleHoldingSummary = {
+      ...mockSummary,
+      top_holdings: [
+        {
+          ...mockSummary.top_holdings[1], // AAPL: currency USD
+          value_change_1d: 100.0,
+          current_value: 2000.0,
+        }
+      ]
+    };
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/portfolio/summary') return singleHoldingSummary;
+      if (endpoint === '/settings') return { master_currency: 'USD' };
+      return {};
+    });
+
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Positions & Holdings')).toBeInTheDocument();
+    });
+
+    // Switch to 1D view
+    fireEvent.click(screen.getByText('1-Day Return (1D)'));
+
+    // In KPI card, should display exactly $100.00, NOT $108.70 from double conversion
+    const kpiCard = screen.getByText('1D Value Change').closest('.getquin-card') as HTMLElement;
+    expect(within(kpiCard).getByText('$100.00')).toBeInTheDocument();
+    expect(screen.queryByText('$108.70')).not.toBeInTheDocument();
   });
 });

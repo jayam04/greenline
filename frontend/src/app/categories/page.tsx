@@ -45,6 +45,7 @@ export default function CategoriesPage() {
   const [parentPresetId, setParentPresetId] = useState<number | null>(null);
 
   useEffect(() => {
+    document.title = "Categories · greenline";
     loadCategoryData();
   }, []);
 

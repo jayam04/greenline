@@ -38,29 +38,55 @@ async def get_portfolio_summary(
     asset_allocation: Dict[str, float] = {}
     sector_allocation: Dict[str, float] = {}
     
-    # Pre-fetch latest prices for these assets in a single batch query
+    # Pre-fetch latest and previous prices for these assets in a single batch query
     asset_prices: Dict[int, float] = {aid: 0.0 for aid in asset_ids}
+    asset_previous_prices: Dict[int, float] = {aid: 0.0 for aid in asset_ids}
     asset_price_dates: Dict[int, Optional[datetime.date]] = {aid: None for aid in asset_ids}
     if asset_ids:
-        latest_date_subq = (
-            select(PriceHistory.asset_id, func.max(PriceHistory.price_date).label("max_date"))
+        rn_col = func.row_number().over(
+            partition_by=PriceHistory.asset_id,
+            order_by=[desc(PriceHistory.price_date), desc(PriceHistory.price_id)]
+        ).label("rn")
+
+        ranked_ph = (
+            select(
+                PriceHistory.asset_id,
+                PriceHistory.close_price,
+                PriceHistory.price_date,
+                rn_col
+            )
             .where(PriceHistory.asset_id.in_(asset_ids))
-            .group_by(PriceHistory.asset_id)
             .subquery()
         )
+
         ph_stmt = (
-            select(PriceHistory.asset_id, PriceHistory.close_price, PriceHistory.price_date)
-            .join(
-                latest_date_subq,
-                (PriceHistory.asset_id == latest_date_subq.c.asset_id) &
-                (PriceHistory.price_date == latest_date_subq.c.max_date)
+            select(
+                ranked_ph.c.asset_id,
+                ranked_ph.c.close_price,
+                ranked_ph.c.price_date,
+                ranked_ph.c.rn
             )
+            .where(ranked_ph.c.rn <= 2)
+            .order_by(ranked_ph.c.asset_id, ranked_ph.c.rn)
         )
         ph_res = await db.execute(ph_stmt)
-        for aid, close_px, pdate in ph_res.all():
+
+        has_previous_price: Dict[int, bool] = {aid: False for aid in asset_ids}
+        for aid, close_px, pdate, rn in ph_res.all():
             if close_px is not None:
-                asset_prices[aid] = float(close_px)
-                asset_price_dates[aid] = pdate
+                px = float(close_px)
+                if rn == 1:
+                    asset_prices[aid] = px
+                    asset_price_dates[aid] = pdate
+                elif rn == 2:
+                    asset_previous_prices[aid] = px
+                    has_previous_price[aid] = True
+
+        for aid in asset_ids:
+            # Fallback semantics: if only one price exists (no rn == 2 record), fallback previous_price to latest_price
+            if not has_previous_price[aid] and asset_price_dates[aid] is not None:
+                asset_previous_prices[aid] = asset_prices[aid]
+
 
     # Pre-fetch assets metadata
     assets_map: Dict[int, Asset] = {}
@@ -101,6 +127,11 @@ async def get_portfolio_summary(
         avg_cost = cost_sum / qty_held if qty_held > 0 else 0.0
         
         latest_price = asset_prices.get(aid, 0.0)
+        previous_price = asset_previous_prices.get(aid, latest_price)
+        change_1d = latest_price - previous_price
+        change_1d_pct = (change_1d / previous_price * 100.0) if previous_price > 0 else 0.0
+        value_change_1d = qty_held * change_1d
+
         curr_val = qty_held * latest_price
         unrealized = curr_val - cost_sum
         unrealized_pct = (unrealized / cost_sum * 100.0) if cost_sum > 0 else 0.0
@@ -123,7 +154,7 @@ async def get_portfolio_summary(
         asset_taxes = fees_entry[1]
         total_asset_fees_taxes = asset_fees + asset_taxes
 
-        # Net PnL = Realized PnL + Unrealized PnL
+        # Net PnL = Realized PnL + Unrealized PnL (fees/taxes already embedded in FIFO cost basis and sale proceeds)
         net_pnl_for_asset = realized_pnl_for_asset + unrealized
         total_basis = cost_sum + cost_basis_sold_for_asset
         net_pnl_pct_for_asset = (net_pnl_for_asset / total_basis * 100.0) if total_basis > 0 else 0.0
@@ -175,6 +206,10 @@ async def get_portfolio_summary(
             total_cost=cost_sum,
             latest_price=latest_price,
             latest_price_date=asset_price_dates.get(aid, None),
+            previous_price=previous_price,
+            change_1d=change_1d,
+            change_1d_pct=change_1d_pct,
+            value_change_1d=value_change_1d,
             current_value=curr_val,
             unrealized_pnl=unrealized,
             unrealized_pnl_pct=unrealized_pct,
@@ -334,6 +369,18 @@ async def get_portfolio_summary(
     # Sort top holdings by current value
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)
     closed_holdings_list.sort(key=lambda h: abs(h.realized_pnl), reverse=True)
+
+    # 1D Portfolio Return represents the aggregate price movement of current open positions.
+    # Rather than deriving prior portfolio valuation via rollback from net worth (which would be distorted
+    # by cash, deposits, withdrawals, or new trades), we explicitly evaluate the prior day's valuation
+    # of currently open holdings using each holding's previous_price.
+    total_value_change_1d = sum(h.value_change_1d for h in holdings_list)
+    previous_holdings_value = sum(h.quantity_held * h.previous_price for h in holdings_list)
+    total_change_1d_pct = (
+        (total_value_change_1d / previous_holdings_value * 100.0)
+        if previous_holdings_value > 0
+        else 0.0
+    )
     
     return PortfolioSummaryResponse(
         total_net_worth=total_net_worth,
@@ -342,6 +389,8 @@ async def get_portfolio_summary(
         cash_balance=cash_balance,
         total_realized_pnl=total_realized_pnl,
         total_unrealized_pnl=total_unrealized_pnl,
+        total_value_change_1d=total_value_change_1d,
+        total_change_1d_pct=total_change_1d_pct,
         total_fees=total_fees,
         total_taxes=total_taxes,
         portfolio_xirr=portfolio_xirr,

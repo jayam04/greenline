@@ -49,6 +49,7 @@ export default function TransactionsPage() {
   const [filterType, setFilterType] = useState<string>("all");
 
   useEffect(() => {
+    document.title = "Transactions · greenline";
     loadTransactions();
   }, []);
 

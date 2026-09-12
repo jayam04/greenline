@@ -8,7 +8,7 @@ import { useTheme } from "@/components/ThemeProvider";
 import { 
   Search, TrendingUp, Briefcase, 
   Building2, LogOut, User, ChevronDown,
-  ArrowLeftRight, Settings,
+  ArrowLeftRight, Settings, Sparkles,
   Sun, Moon, Laptop
 } from "lucide-react";
 
@@ -41,6 +41,7 @@ export function Navbar() {
   const isInvestmentsActive = pathname.startsWith("/investments");
   const isCashflowActive = pathname.startsWith("/cashflow") || pathname === "/categories";
   const isAccountsActive = pathname === "/accounts";
+  const isImportActive = pathname.startsWith("/import");
 
   const handleLogout = () => {
     setIsProfileOpen(false);
@@ -126,6 +127,20 @@ export function Navbar() {
             >
               <Building2 className="w-3.5 h-3.5" />
               <span>Accounts & Master</span>
+            </Link>
+
+            {/* 5. AI Import */}
+            <Link
+              href="/import"
+              data-testid="nav-ai-import"
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                isImportActive
+                  ? "text-[#0F172A] dark:text-white bg-slate-100 dark:bg-slate-800 font-extrabold"
+                  : "text-slate-500 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/60"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>AI Import</span>
             </Link>
           </nav>
 

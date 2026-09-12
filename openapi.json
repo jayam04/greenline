@@ -1,0 +1,775 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Greenline MCP & Cashflow API",
+    "description": "Dedicated AI Agent and MCP API for Greenline Personal Finance. Strictly manages cashflow transactions (single/bulk create, update, delete), statement retrieval with filters, and category/account lookups.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://lark-unvented-festivity.ngrok-free.dev",
+      "description": "Production Ngrok Gateway"
+    }
+  ],
+  "paths": {
+    "/api/v1/mcp/categories": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Get Mcp Categories",
+        "description": "Fetch valid categories and accounts. AI MUST call this first to obtain category_id and valid account_name before recording expenses or income.",
+        "operationId": "getCategories",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPCategoriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/cashflow": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Read Mcp Cashflow",
+        "description": "Read cashflow statements with signed amounts (+ for income, - for expense) and filters by month (YYYY-MM), bank_account, category_id, or merchant.",
+        "operationId": "readCashflows",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Month in YYYY-MM format, e.g. 2026-09"
+            },
+            "description": "Month in YYYY-MM format, e.g. 2026-09"
+          },
+          {
+            "name": "bank_account",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Account name or ID to filter by"
+            },
+            "description": "Account name or ID to filter by"
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "Exact category ID to filter by"
+            },
+            "description": "Exact category ID to filter by"
+          },
+          {
+            "name": "merchant",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Search term for merchant name"
+            },
+            "description": "Search term for merchant name"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPCashflowReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Mutate Mcp Cashflow",
+        "description": "Bulk or single mutate cashflows (create, update, delete). Requires exact merchant, strict category_id, valid account_name, signed amounts, and balanced double-entry (sum of payments == sum of items).",
+        "operationId": "mutateCashflows",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPCashflowMutateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPCashflowMutateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MCPAvailableAccount": {
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "account_type": {
+            "type": "string",
+            "title": "Account Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "account_name",
+          "currency",
+          "account_type"
+        ],
+        "title": "MCPAvailableAccount"
+      },
+      "MCPCashflowItemInput": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id",
+            "description": "Strict category ID from GET /api/v1/mcp/categories"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount",
+            "description": "Signed item amount. Negative (-) for expense/outflow, positive (+) for income/inflow"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Detailed line item or item name, e.g. '1x Milk'"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Optional classification: ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "amount"
+        ],
+        "title": "MCPCashflowItemInput"
+      },
+      "MCPCashflowItemResponse": {
+        "properties": {
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "category_name": {
+            "type": "string",
+            "title": "Category Name"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "category_name",
+          "amount"
+        ],
+        "title": "MCPCashflowItemResponse"
+      },
+      "MCPCashflowMutateRequest": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowOperation"
+            },
+            "type": "array",
+            "title": "Operations",
+            "description": "List of cashflow operations to create, update, or delete. For a single transaction, provide an array containing 1 operation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "title": "MCPCashflowMutateRequest"
+      },
+      "MCPCashflowMutateResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowStatement"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "message"
+        ],
+        "title": "MCPCashflowMutateResponse"
+      },
+      "MCPCashflowOperation": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Operation action: 'create', 'update', or 'delete'",
+            "default": "create"
+          },
+          "cashflow_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashflow Id",
+            "description": "Required for 'update' or 'delete'"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date",
+            "description": "Transaction date (YYYY-MM-DD). Defaults to today if creating"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant",
+            "description": "Counterparty or merchant name only (e.g. 'Tesco', 'Employer Ltd'). Generic titles like 'Expense' are rejected"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "description": "Currency code",
+            "default": "EUR"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Optional transaction notes"
+          },
+          "payments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MCPCashflowPaymentInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payments",
+            "description": "List of payment methods and amounts"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MCPCashflowItemInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items",
+            "description": "List of category items and amounts"
+          }
+        },
+        "type": "object",
+        "title": "MCPCashflowOperation"
+      },
+      "MCPCashflowPaymentInput": {
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id",
+            "description": "ID of the bank or wallet account"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name",
+            "description": "Exact name of the bank/wallet account (strictly matched against existing accounts)"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount",
+            "description": "Signed payment amount. Negative (-) for expense/outflow, positive (+) for income/inflow"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency",
+            "description": "Currency code (EUR, USD, etc.)",
+            "default": "EUR"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "MCPCashflowPaymentInput"
+      },
+      "MCPCashflowPaymentResponse": {
+        "properties": {
+          "payment_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Id"
+          },
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "EUR"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "account_name",
+          "amount"
+        ],
+        "title": "MCPCashflowPaymentResponse"
+      },
+      "MCPCashflowReadResponse": {
+        "properties": {
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowStatement"
+            },
+            "type": "array",
+            "title": "Statements"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "statements",
+          "total_count"
+        ],
+        "title": "MCPCashflowReadResponse"
+      },
+      "MCPCashflowStatement": {
+        "properties": {
+          "cashflow_id": {
+            "type": "integer",
+            "title": "Cashflow Id"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "merchant": {
+            "type": "string",
+            "title": "Merchant"
+          },
+          "total_amount": {
+            "type": "number",
+            "title": "Total Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "transaction_kind": {
+            "type": "string",
+            "title": "Transaction Kind"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowPaymentResponse"
+            },
+            "type": "array",
+            "title": "Payments",
+            "default": []
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowItemResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "cashflow_id",
+          "date",
+          "merchant",
+          "total_amount",
+          "currency",
+          "transaction_kind"
+        ],
+        "title": "MCPCashflowStatement"
+      },
+      "MCPCategoriesResponse": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCategoryItem"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "available_accounts": {
+            "items": {
+              "$ref": "#/components/schemas/MCPAvailableAccount"
+            },
+            "type": "array",
+            "title": "Available Accounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "categories",
+          "available_accounts"
+        ],
+        "title": "MCPCategoriesResponse"
+      },
+      "MCPCategoryItem": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "full_path": {
+            "type": "string",
+            "title": "Full Path"
+          },
+          "category_type": {
+            "type": "string",
+            "title": "Category Type"
+          },
+          "default_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "full_path",
+          "category_type"
+        ],
+        "title": "MCPCategoryItem"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "gl_mcp_...",
+        "description": "Greenline API Key (gl_mcp_...) or Bearer JWT token."
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ]
+}

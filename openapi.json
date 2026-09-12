@@ -67,64 +67,41 @@
           {
             "name": "month",
             "in": "query",
-            "required": false,
+            "description": "Month in YYYY-MM format, e.g. 2026-09",
             "schema": {
-              "type": "string",
-              "description": "Month in YYYY-MM format, e.g. 2026-09"
-            },
-            "description": "Month in YYYY-MM format, e.g. 2026-09"
+              "type": "string"
+            }
           },
           {
             "name": "bank_account",
             "in": "query",
-            "required": false,
+            "description": "Account name or ID to filter by",
             "schema": {
-              "type": "string",
-              "description": "Account name or ID to filter by"
-            },
-            "description": "Account name or ID to filter by"
+              "type": "string"
+            }
           },
           {
             "name": "category_id",
             "in": "query",
-            "required": false,
+            "description": "Exact category ID to filter by",
             "schema": {
-              "type": "integer",
-              "description": "Exact category ID to filter by"
-            },
-            "description": "Exact category ID to filter by"
+              "type": "integer"
+            }
           },
           {
             "name": "merchant",
             "in": "query",
-            "required": false,
+            "description": "Search term for merchant name",
             "schema": {
-              "type": "string",
-              "description": "Search term for merchant name"
-            },
-            "description": "Search term for merchant name"
+              "type": "string"
+            }
           },
           {
             "name": "limit",
             "in": "query",
-            "required": false,
+            "description": "Max number of statements to return (default 50)",
             "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
+              "type": "integer"
             }
           }
         ],

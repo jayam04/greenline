@@ -81,6 +81,22 @@ async def test_api_key_crud_and_multi_auth(mcp_test_env):
     cat_res_bearer = await client.get("/api/v1/mcp/categories", headers={"Authorization": f"Bearer {raw_key}"})
     assert cat_res_bearer.status_code == 200
 
+    # 5a. Double bearer header (common ChatGPT Actions copy-paste artifact)
+    res_double_bearer = await client.get("/api/v1/mcp/categories", headers={"Authorization": f"Bearer Bearer {raw_key}"})
+    assert res_double_bearer.status_code == 200
+
+    # 5b. Raw key in Authorization header without Bearer prefix
+    res_raw_auth = await client.get("/api/v1/mcp/categories", headers={"Authorization": raw_key})
+    assert res_raw_auth.status_code == 200
+
+    # 5c. Quoted or whitespace-padded key
+    res_padded = await client.get("/api/v1/mcp/categories", headers={"Authorization": f'Bearer "{raw_key}"'})
+    assert res_padded.status_code == 200
+
+    # 5d. Lowercase bearer with whitespace
+    res_lower = await client.get("/api/v1/mcp/categories", headers={"Authorization": f"bearer   {raw_key}  "})
+    assert res_lower.status_code == 200
+
     # 6. Revoke API key
     del_res = await client.delete(f"/api/v1/auth/api-keys/{key_id}", headers=jwt_headers)
     assert del_res.status_code == 204

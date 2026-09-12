@@ -1,13 +1,13 @@
 import datetime
 import calendar
 from typing import List, Optional, Any, Union
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, or_, func
 from sqlalchemy.orm import selectinload, aliased
 
-from app.db.database import get_db
+from app.db.database import get_db, AsyncSessionLocal
 from app.db.models import CashflowTransaction, CashflowPayment, CashflowItem, Account, Category, User, Transaction, Asset
 from app.schemas.mcp_schemas import (
     MCPCashflowOperation, MCPCashflowMutateRequest, MCPCashflowMutateResponse,
@@ -20,7 +20,7 @@ from app.schemas.mcp_stock_schemas import (
 )
 from app.services.cashflow_engine import build_category_lineage_map
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import recalculate_past_snapshots
+from app.services.snapshot_engine import recalculate_past_snapshots, generate_daily_snapshot
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.api.routers.transactions import _ensure_price_history_for_tx, cleanup_orphan_transaction_prices
 from app.api.deps import get_current_user
@@ -540,27 +540,33 @@ async def read_mcp_stocks(
     if transaction_type:
         stmt = stmt.where(Transaction.transaction_type == transaction_type.strip().lower())
 
-    res = await db.execute(stmt)
+    if account:
+        ac_clean = account.strip()
+        if ac_clean.isdigit():
+            stmt = stmt.where(or_(Transaction.account_id == int(ac_clean), func.lower(Account.account_name) == ac_clean.lower()))
+        else:
+            stmt = stmt.where(func.lower(Account.account_name) == ac_clean.lower())
+
+    if asset:
+        as_clean = asset.strip()
+        if as_clean.isdigit():
+            stmt = stmt.where(or_(Transaction.asset_id == int(as_clean), func.upper(Asset.symbol) == as_clean.upper(), func.lower(Asset.name) == as_clean.lower()))
+        else:
+            stmt = stmt.where(or_(func.upper(Asset.symbol) == as_clean.upper(), func.lower(Asset.name) == as_clean.lower()))
+
+    # Count total matching rows via fast subquery count
+    count_subq = stmt.with_only_columns(Transaction.transaction_id).order_by(None).subquery()
+    count_stmt = select(func.count()).select_from(count_subq)
+    total_count_res = await db.execute(count_stmt)
+    total_count = total_count_res.scalar() or 0
+
+    paged_stmt = stmt.limit(limit)
+    res = await db.execute(paged_stmt)
     rows = res.all()
 
-    # Filter by account and asset
-    filtered = []
-    for tx, acc_name, acc_curr, symbol, asset_name, f_acc_name in rows:
-        if account:
-            ac_str = account.strip().lower()
-            if str(tx.account_id) != ac_str and (acc_name or "").lower() != ac_str:
-                continue
-        if asset:
-            as_str = asset.strip().lower()
-            if str(tx.asset_id) != as_str and (symbol or "").lower() != as_str:
-                continue
-        filtered.append((tx, acc_name, acc_curr, symbol, asset_name, f_acc_name))
-
-    total_count = len(filtered)
-    paged = filtered[:limit]
     tx_responses = [
         _build_stock_response(tx, acc_name or f"Account #{tx.account_id}", acc_curr or "USD", symbol, asset_name, f_acc_name)
-        for tx, acc_name, acc_curr, symbol, asset_name, f_acc_name in paged
+        for tx, acc_name, acc_curr, symbol, asset_name, f_acc_name in rows
     ]
 
     return MCPStockReadResponse(
@@ -597,6 +603,7 @@ async def mutate_mcp_stocks(
         {"account_id": a.account_id, "account_name": a.account_name, "account_type": a.account_type, "currency": a.currency}
         for a in all_accounts
     ]
+
 
     # Cache assets
     asset_res = await db.execute(select(Asset))
@@ -805,10 +812,11 @@ async def mutate_mcp_stocks(
 
     # Recalculate derived state
     await recalculate_all_lots(db)
-    await recalculate_past_snapshots(db, start_date=earliest_date)
+    await generate_daily_snapshot(db, datetime.date.today())
 
     return MCPStockMutateResponse(
         results=results,
         message=f"Successfully processed {len(operations)} stock operation(s)."
     )
+
 

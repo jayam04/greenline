@@ -231,3 +231,33 @@ async def test_mcp_stocks_workflow_and_validation(mcp_stocks_env):
     filter_data = filter_res.json()
     assert filter_data["total_count"] == 2 # 1 buy, 1 sell for AAPL
     assert all(tx["asset_symbol"] == "AAPL" for tx in filter_data["transactions"])
+
+    # 9. Query GET /api/v1/mcp/stocks with account filter
+    acc_filter_res = await client.get("/api/v1/mcp/stocks?account=Zerodha", headers=auth_headers)
+    assert acc_filter_res.status_code == 200
+    acc_data = acc_filter_res.json()
+    assert all(tx["account_name"] == "Zerodha" for tx in acc_data["transactions"])
+
+    # 10. Performance check: Backdated transaction (600+ days ago) must return within 3 seconds
+    import time
+    backdated_payload = {
+        "operations": [
+            {
+                "action": "create",
+                "account_name": "Zerodha",
+                "symbol": "AAPL",
+                "transaction_type": "buy",
+                "date": "2024-01-15",
+                "quantity": 2,
+                "price_per_unit": 140.0,
+                "fees": 1.0,
+                "taxes": 0.5
+            }
+        ]
+    }
+    t_start = time.time()
+    backdated_res = await client.post("/api/v1/mcp/stocks", headers=auth_headers, json=backdated_payload)
+    elapsed = time.time() - t_start
+    assert backdated_res.status_code == 200
+    assert elapsed < 3.0, f"Backdated transaction took {elapsed:.2f}s, exceeding 3.0s limit"
+

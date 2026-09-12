@@ -580,10 +580,9 @@ async def mutate_mcp_stocks(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Mutate stock transactions (buy, sell, dividend, bonus, split, deposit, withdrawal).
-    AI MUST call GET /api/v1/mcp/stocks first to obtain exact account_name and check available_assets.
-    If the asset does not exist in available_assets, set force_create_asset=true to create it automatically.
-    Creating accounts is strictly forbidden.
+    Mutate stock transactions (create, update, delete).
+    AI MUST call GET /api/v1/mcp/stocks first for valid accounts and assets.
+    If an asset is missing, set force_create_asset=true. Creating accounts is strictly forbidden.
     """
     operations = payload.operations
     if not operations:

@@ -58,11 +58,11 @@ def build_mcp_openapi_spec(server_url: Optional[str] = None) -> dict:
         ),
         ("/api/v1/mcp/stocks", "get"): (
             "readStockTransactions",
-            "Fetch existing stocks, valid investment accounts, and recent transactions. AI MUST call this endpoint first before executing any buy/sell/dividend trade to look up valid account names, check if the asset already exists, and obtain asset_id or symbol."
+            "Fetch existing stocks, valid investment accounts, and recent transactions. AI MUST call this endpoint first to verify account names and existing assets before executing trades."
         ),
         ("/api/v1/mcp/stocks", "post"): (
             "mutateStockTransactions",
-            "Mutate stock transactions (buy, sell, dividend, bonus, split, deposit, withdrawal). AI MUST call GET /api/v1/mcp/stocks first to obtain exact account_name and check available_assets. If the asset does not exist in available_assets, set force_create_asset=true to create it automatically. Creating accounts is strictly forbidden."
+            "Mutate stock transactions (create, update, delete). AI MUST call GET /api/v1/mcp/stocks first for valid accounts and assets. If an asset is missing, set force_create_asset=true. Creating accounts is strictly forbidden."
         ),
     }
 
@@ -101,7 +101,7 @@ def build_mcp_openapi_spec(server_url: Optional[str] = None) -> dict:
                         cleaned_params.append({
                             "name": p_name,
                             "in": "query",
-                            "description": desc,
+                            "description": desc[:300] if desc else "",
                             "schema": {
                                 "type": param_type
                             }
@@ -119,7 +119,10 @@ def build_mcp_openapi_spec(server_url: Optional[str] = None) -> dict:
                 if key in op_map:
                     op_id, op_desc = op_map[key]
                     op["operationId"] = op_id
-                    op["description"] = op_desc
+                    op["description"] = op_desc[:300]
+                elif "description" in op and len(op["description"]) > 300:
+                    op["description"] = op["description"][:297] + "..."
 
     spec["paths"] = filtered_paths
     return spec
+

@@ -207,7 +207,7 @@
           "mcp"
         ],
         "summary": "Read Mcp Stocks",
-        "description": "Fetch existing stocks, valid investment accounts, and recent transactions. AI MUST call this endpoint first before executing any buy/sell/dividend trade to look up valid account names, check if the asset already exists, and obtain asset_id or symbol.",
+        "description": "Fetch existing stocks, valid investment accounts, and recent transactions. AI MUST call this endpoint first to verify account names and existing assets before executing trades.",
         "operationId": "readStockTransactions",
         "security": [
           {
@@ -292,7 +292,7 @@
           "mcp"
         ],
         "summary": "Mutate Mcp Stocks",
-        "description": "Mutate stock transactions (buy, sell, dividend, bonus, split, deposit, withdrawal). AI MUST call GET /api/v1/mcp/stocks first to obtain exact account_name and check available_assets. If the asset does not exist in available_assets, set force_create_asset=true to create it automatically. Creating accounts is strictly forbidden.",
+        "description": "Mutate stock transactions (create, update, delete). AI MUST call GET /api/v1/mcp/stocks first for valid accounts and assets. If an asset is missing, set force_create_asset=true. Creating accounts is strictly forbidden.",
         "operationId": "mutateStockTransactions",
         "security": [
           {

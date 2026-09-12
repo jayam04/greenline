@@ -61,6 +61,14 @@ async def test_public_mcp_openapi_endpoint_no_auth(mcp_stocks_env):
     assert spec_root["openapi"] == "3.1.0"
     assert "/api/v1/mcp/stocks" in spec_root["paths"]
 
+    # 3. Assert all operation descriptions adhere to ChatGPT Actions 300-char limit
+    for p_path, p_item in spec["paths"].items():
+        for m_method, op in p_item.items():
+            if m_method in ["get", "post", "put", "delete"]:
+                desc = op.get("description", "")
+                assert len(desc) <= 300, f"Operation {op.get('operationId')} description length ({len(desc)}) exceeds 300 chars: '{desc}'"
+
+
 @pytest.mark.anyio
 async def test_mcp_stocks_workflow_and_validation(mcp_stocks_env):
     client, session_factory, user = mcp_stocks_env

@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func
 from app.config import settings
@@ -110,3 +110,8 @@ app.include_router(mcp_router.router, prefix=settings.API_V1_STR)
 @app.get("/")
 def root():
     return {"message": "Investment Tracker API is running", "docs": "/docs"}
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_root_mcp_openapi(request: Request):
+    from app.api.routers.mcp_router import get_mcp_openapi_json
+    return await get_mcp_openapi_json(request)

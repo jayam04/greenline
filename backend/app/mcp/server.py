@@ -324,6 +324,227 @@ async def mutate_cashflow(
         await session.commit()
         return {"results": results, "status": "success"}
 
+@mcp.tool()
+async def read_stock_transactions(
+    account: Optional[str] = None,
+    asset: Optional[str] = None,
+    transaction_type: Optional[str] = None,
+    month: Optional[str] = None,
+    limit: int = 50
+) -> Dict[str, Any]:
+    """
+    Fetch existing stocks, valid investment accounts, and recent transactions.
+    AI MUST call this tool first before executing any buy/sell/dividend trade to look up
+    valid account names, check if the asset already exists, and obtain asset_id or symbol.
+    """
+    import calendar
+    from app.db.models import Transaction, Asset
+    from sqlalchemy.orm import aliased
+
+    async with AsyncSessionLocal() as session:
+        # Accounts
+        acc_res = await session.execute(select(Account).order_by(Account.account_name))
+        all_accounts = [
+            {"account_id": a.account_id, "account_name": a.account_name, "currency": a.currency, "type": a.account_type}
+            for a in acc_res.scalars().all()
+        ]
+
+        # Assets
+        asset_res = await session.execute(select(Asset).order_by(Asset.symbol))
+        all_assets = [
+            {"asset_id": a.asset_id, "symbol": a.symbol, "name": a.name, "type": a.asset_type, "currency": a.currency, "exchange": a.exchange}
+            for a in asset_res.scalars().all()
+        ]
+
+        # Transactions
+        FundingAccount = aliased(Account)
+        stmt = (
+            select(Transaction, Account.account_name, Asset.symbol, Asset.name, FundingAccount.account_name)
+            .outerjoin(Account, Transaction.account_id == Account.account_id)
+            .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)
+            .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)
+            .order_by(desc(Transaction.transaction_date), desc(Transaction.transaction_id))
+        )
+
+        if month:
+            parts = month.strip().split("-")
+            year, m_num = int(parts[0]), int(parts[1])
+            start_d = datetime.date(year, m_num, 1)
+            _, last_day = calendar.monthrange(year, m_num)
+            end_d = datetime.date(year, m_num, last_day)
+            stmt = stmt.where(Transaction.transaction_date >= start_d, Transaction.transaction_date <= end_d)
+
+        if transaction_type:
+            stmt = stmt.where(Transaction.transaction_type == transaction_type.strip().lower())
+
+        res = await session.execute(stmt)
+        rows = res.all()
+
+        filtered = []
+        for tx, acc_name, symbol, asset_name, f_acc in rows:
+            if account:
+                ac_str = account.strip().lower()
+                if str(tx.account_id) != ac_str and (acc_name or "").lower() != ac_str:
+                    continue
+            if asset:
+                as_str = asset.strip().lower()
+                if str(tx.asset_id) != as_str and (symbol or "").lower() != as_str:
+                    continue
+            filtered.append({
+                "transaction_id": tx.transaction_id,
+                "account_id": tx.account_id,
+                "account_name": acc_name,
+                "asset_id": tx.asset_id,
+                "asset_symbol": symbol,
+                "asset_name": asset_name,
+                "transaction_type": tx.transaction_type,
+                "date": str(tx.transaction_date),
+                "quantity": tx.quantity,
+                "price_per_unit": tx.price_per_unit,
+                "fees": tx.fees or 0.0,
+                "taxes": tx.taxes or 0.0,
+                "total_amount": tx.total_amount,
+                "notes": tx.notes
+            })
+
+        return {
+            "available_assets": all_assets,
+            "available_accounts": all_accounts,
+            "transactions": filtered[:limit],
+            "total_count": len(filtered)
+        }
+
+@mcp.tool()
+async def mutate_stock_transactions(
+    operations: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Mutate stock transactions (buy, sell, dividend, bonus, split, deposit, withdrawal).
+    AI MUST call read_stock_transactions first to obtain exact account_name and check available_assets.
+    If the asset does not exist in available_assets, set force_create_asset=true to create it automatically.
+    Creating accounts is strictly forbidden.
+    """
+    from app.db.models import Transaction, Asset
+    from app.services.fifo_engine import recalculate_all_lots
+    from app.services.snapshot_engine import recalculate_past_snapshots
+    from app.api.routers.transactions import _ensure_price_history_for_tx, cleanup_orphan_transaction_prices
+
+    async with AsyncSessionLocal() as session:
+        acc_res = await session.execute(select(Account))
+        all_accounts = acc_res.scalars().all()
+        acc_by_id = {a.account_id: a for a in all_accounts}
+        acc_by_name = {a.account_name.strip().lower(): a for a in all_accounts}
+        acc_summary = [{"id": a.account_id, "name": a.account_name} for a in all_accounts]
+
+        asset_res = await session.execute(select(Asset))
+        all_assets = list(asset_res.scalars().all())
+        asset_by_id = {a.asset_id: a for a in all_assets}
+        asset_by_symbol = {a.symbol.strip().upper(): a for a in all_assets if a.symbol}
+
+        results = []
+        earliest_date = datetime.date.today()
+
+        for op in operations:
+            action = (op.get("action") or "create").strip().lower()
+            if action == "delete":
+                tid = op.get("transaction_id")
+                if tid:
+                    dtx = (await session.execute(select(Transaction).where(Transaction.transaction_id == tid))).scalar_one_or_none()
+                    if dtx:
+                        if dtx.transaction_date < earliest_date:
+                            earliest_date = dtx.transaction_date
+                        t_asset = dtx.asset_id
+                        await session.delete(dtx)
+                        await session.commit()
+                        if t_asset:
+                            await cleanup_orphan_transaction_prices(session, t_asset)
+                            await session.commit()
+                continue
+
+            # Resolve Account
+            acc = None
+            if op.get("account_id"):
+                acc = acc_by_id.get(op["account_id"])
+            elif op.get("account_name"):
+                acc = acc_by_name.get(op["account_name"].strip().lower())
+            if not acc:
+                raise ValueError(f"Account '{op.get('account_name') or op.get('account_id')}' not found. Valid accounts: {acc_summary}. Creating accounts is forbidden.")
+
+            # Resolve Asset
+            target_asset = None
+            if op.get("asset_id"):
+                target_asset = asset_by_id.get(op["asset_id"])
+            elif op.get("symbol"):
+                target_asset = asset_by_symbol.get(op["symbol"].strip().upper())
+
+            t_type = (op.get("transaction_type") or "buy").strip().lower()
+            if t_type in ["buy", "sell", "dividend", "bonus", "split"] and not target_asset:
+                if op.get("force_create_asset"):
+                    sym = (op.get("symbol") or "UNKNOWN").strip().upper()
+                    target_asset = Asset(
+                        symbol=sym,
+                        name=op.get("asset_name") or sym,
+                        asset_type=op.get("asset_type") or "stock",
+                        currency=op.get("asset_currency") or acc.currency or "USD",
+                        exchange=op.get("exchange")
+                    )
+                    session.add(target_asset)
+                    await session.flush()
+                    asset_by_id[target_asset.asset_id] = target_asset
+                    asset_by_symbol[sym] = target_asset
+                else:
+                    known = [{"id": a.asset_id, "symbol": a.symbol} for a in all_assets]
+                    raise ValueError(f"Asset '{op.get('symbol')}' not found. Available assets: {known}. Set force_create_asset=true to create it automatically.")
+
+            # Date & amounts
+            tx_d_str = op.get("date")
+            tx_date = datetime.date.fromisoformat(tx_d_str) if tx_d_str else datetime.date.today()
+            if tx_date < earliest_date:
+                earliest_date = tx_date
+
+            qty = float(op["quantity"]) if op.get("quantity") is not None else None
+            price = float(op["price_per_unit"]) if op.get("price_per_unit") is not None else None
+            fees = float(op.get("fees") or 0.0)
+            taxes = float(op.get("taxes") or 0.0)
+
+            if op.get("total_amount") is not None:
+                tot_amt = round(float(op["total_amount"]), 2)
+            elif qty is not None and price is not None:
+                base = qty * price
+                tot_amt = round(base + fees + taxes if t_type == "buy" else (base - fees - taxes if t_type == "sell" else base), 2)
+            else:
+                tot_amt = round(fees + taxes, 2)
+
+            new_tx = Transaction(
+                account_id=acc.account_id,
+                asset_id=target_asset.asset_id if target_asset else None,
+                transaction_type=t_type,
+                transaction_date=tx_date,
+                quantity=qty,
+                price_per_unit=price,
+                fees=fees,
+                taxes=taxes,
+                total_amount=tot_amt,
+                notes=op.get("notes"),
+                source="mcp_ai"
+            )
+            session.add(new_tx)
+            await session.flush()
+            await _ensure_price_history_for_tx(session, new_tx)
+            results.append({
+                "transaction_id": new_tx.transaction_id,
+                "account": acc.account_name,
+                "asset": target_asset.symbol if target_asset else None,
+                "type": t_type,
+                "amount": tot_amt
+            })
+
+        await session.commit()
+        await recalculate_all_lots(session)
+        await recalculate_past_snapshots(session, start_date=earliest_date)
+        return {"results": results, "status": "success"}
+
 if __name__ == "__main__":
     mcp.run()
+
 

@@ -9,6 +9,7 @@ import {
 import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowModal";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
 import { formatCurrency } from "@/lib/format";
+import { TransactionLedger, UnifiedRowItem } from "@/components/TransactionLedger";
 
 interface Account {
   account_id: number;
@@ -17,41 +18,6 @@ interface Account {
   account_type: string;
 }
 
-interface UnifiedRowItem {
-  key: string;
-  source: "cashflow" | "investment";
-  rawCashflow?: CashflowTransactionItem;
-  rawTrade?: TransactionItem;
-  date: string;
-  title: string;
-  notes?: string | null;
-  payments: {
-    account_id: number;
-    account_name: string;
-    account_currency: string;
-    amount: number;
-    holding_delta?: string;
-    running_balance_after?: number;
-  }[];
-  items: {
-    category_name: string;
-    category_type?: string;
-    description?: string | null;
-    effective_label?: string | null;
-    amount: number;
-  }[];
-  isTransfer: boolean;
-  isIncome: boolean;
-  totalAmount: number;
-  currency: string;
-  runningBalancesAfter: Record<number, number>;
-  primaryBalanceAfter?: {
-    account_id: number;
-    account_name: string;
-    currency: string;
-    balance: number;
-  };
-}
 
 export default function CashflowTransactionsPage() {
   const [cashflowTxs, setCashflowTxs] = useState<CashflowTransactionItem[]>([]);
@@ -426,8 +392,8 @@ export default function CashflowTransactionsPage() {
     if (!acc) return null;
 
     // Latest balance across all unified rows
-    const latestRowWithAccount = unifiedRows.find((r) => r.runningBalancesAfter[aid] !== undefined);
-    const currentBal = latestRowWithAccount ? latestRowWithAccount.runningBalancesAfter[aid] : 0;
+    const latestRowWithAccount = unifiedRows.find((r) => r.runningBalancesAfter?.[aid] !== undefined);
+    const currentBal = latestRowWithAccount ? latestRowWithAccount.runningBalancesAfter?.[aid] || 0 : 0;
     return {
       name: acc.account_name,
       currency: acc.currency,
@@ -556,168 +522,22 @@ export default function CashflowTransactionsPage() {
         </div>
 
         {/* Ledger Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-                <th className="pb-2.5 font-bold">Date</th>
-                <th className="pb-2.5 font-bold">Title / Merchant</th>
-                <th className="pb-2.5 font-bold">Payment Method(s)</th>
-                <th className="pb-2.5 font-bold">Category & Description</th>
-                <th className="pb-2.5 font-bold text-right">Amount</th>
-                <th className="pb-2.5 font-bold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-                    Loading transactions ledger...
-                  </td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-medium text-xs">
-                    No cashflow transactions recorded for this period.
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((r) => (
-                  <tr key={r.key} data-testid="transaction-row" className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
-                    {/* Date */}
-                    <td className="py-3 font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
-                      {r.date}
-                    </td>
-
-                    {/* Title */}
-                    <td className="py-3 font-bold text-[#0F172A] dark:text-white">
-                      <div className="flex items-center gap-1.5">
-                        {r.source === "investment" && (
-                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" title="Investment Trade" />
-                        )}
-                        <span>{r.title}</span>
-                      </div>
-                      {r.notes && (
-                        <div className="text-[11px] font-normal text-slate-400 line-clamp-1">{r.notes}</div>
-                      )}
-                    </td>
-
-                    {/* Payments */}
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {r.payments.map((p, idx) => (
-                          <span
-                            key={idx}
-                            data-testid="payment-badge"
-                            data-account-id={p.account_id}
-                            data-amount={p.amount}
-                            data-running-balance={p.running_balance_after}
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60"
-                          >
-                            <span>{p.account_name}</span>
-                            {p.holding_delta ? (
-                              <span className="text-blue-600 dark:text-blue-400 font-extrabold">({p.holding_delta})</span>
-                            ) : (
-                              <>
-                                <span className={p.amount >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                                  {p.amount >= 0 ? `+${formatCurrency(p.amount, p.account_currency)}` : formatCurrency(p.amount, p.account_currency)}
-                                </span>
-                                {p.running_balance_after !== undefined && (
-                                  <span className="text-[9px] text-slate-400 font-semibold pl-0.5 border-l border-slate-300 dark:border-slate-700">
-                                    Bal: {formatCurrency(p.running_balance_after, p.account_currency)}
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-
-                    {/* Items */}
-                    <td className="py-3">
-                      <div className="space-y-1">
-                        {r.items.map((i, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-xs">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{i.category_name}</span>
-                            {i.description && (
-                              <span className="text-[11px] text-slate-400 line-clamp-1 font-normal">• {i.description}</span>
-                            )}
-                            {i.effective_label && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                {i.effective_label}
-                              </span>
-                            )}
-                            {r.items.length > 1 && (
-                              <span className="text-[10px] text-slate-400 font-semibold ml-auto">
-                                {formatCurrency(i.amount, r.currency)}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-
-                    {/* Total Amount */}
-                    <td className="py-3 text-right font-bold tabular-nums">
-                      <span className={r.isTransfer ? "text-blue-600 dark:text-blue-400" : r.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                        {r.isIncome ? "+" : "-"}{formatCurrency(r.totalAmount, r.currency)}
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3 text-right whitespace-nowrap">
-                      {r.source === "cashflow" && r.rawCashflow && (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingCashflowTx(r.rawCashflow!);
-                              setIsCashflowModalOpen(true);
-                            }}
-                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                            title="Edit Cashflow"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCashflow(r.rawCashflow!.cashflow_id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                            title="Delete Cashflow"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {r.source === "investment" && r.rawTrade && (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingTradeTx(r.rawTrade!);
-                              setIsTradeModalOpen(true);
-                            }}
-                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                            title="Edit Trade Transaction"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTrade(r.rawTrade!.transaction_id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                            title="Delete Trade"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <TransactionLedger
+          transactions={filteredRows}
+          loading={loading}
+          showRunningBalance={true}
+          selectedAccountId={selectedAccountId}
+          onEditCashflow={(tx) => {
+            setEditingCashflowTx(tx);
+            setIsCashflowModalOpen(true);
+          }}
+          onDeleteCashflow={handleDeleteCashflow}
+          onEditTrade={(tx) => {
+            setEditingTradeTx(tx);
+            setIsTradeModalOpen(true);
+          }}
+          onDeleteTrade={handleDeleteTrade}
+        />
       </div>
 
       {/* Cashflow Modal */}

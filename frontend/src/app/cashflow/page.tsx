@@ -12,6 +12,7 @@ import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateU
 import { SankeyChart, SankeyDataResponse } from "@/components/SankeyChart";
 import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowModal";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
+import { TransactionLedger, UnifiedRowItem } from "@/components/TransactionLedger";
 
 interface CashflowSummary {
   total_income: number;
@@ -23,33 +24,6 @@ interface CashflowSummary {
   top_expense_categories: { category: string; amount: number; pct: number }[];
 }
 
-interface UnifiedRowItem {
-  key: string;
-  source: "cashflow" | "investment";
-  rawCashflow?: CashflowTransactionItem;
-  rawTrade?: TransactionItem;
-  date: string;
-  title: string;
-  notes?: string | null;
-  payments: {
-    account_id: number;
-    account_name: string;
-    account_currency: string;
-    amount: number;
-    holding_delta?: string;
-  }[];
-  items: {
-    category_name: string;
-    category_type?: string;
-    description?: string | null;
-    effective_label?: string | null;
-    amount: number;
-  }[];
-  isTransfer: boolean;
-  isIncome: boolean;
-  totalAmount: number;
-  currency: string;
-}
 
 export default function CashflowPage() {
   const [summary, setSummary] = useState<CashflowSummary | null>(null);
@@ -595,210 +569,22 @@ export default function CashflowPage() {
         </div>
 
         {/* Ledger Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-                <th className="pb-2.5 font-bold">Date</th>
-                <th className="pb-2.5 font-bold">Title / Merchant</th>
-                <th className="pb-2.5 font-bold">Payment Method(s)</th>
-                <th className="pb-2.5 font-bold">Category & Description</th>
-                <th className="pb-2.5 font-bold text-right">Total Amount</th>
-                <th className="pb-2.5 font-bold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredTransactions.map((tx) => {
-                return (
-                  <tr key={tx.key} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 font-semibold text-slate-500 tabular-nums whitespace-nowrap">
-                      {tx.date}
-                    </td>
-
-                    <td className="py-3 font-bold text-[#0F172A]">
-                      <div className="flex items-center gap-1.5">
-                        <span>{tx.title}</span>
-                        {tx.source === "investment" && (
-                          <span className="px-1.5 py-0.2 bg-blue-50 text-blue-700 text-[9px] font-bold rounded">
-                            Trade
-                          </span>
-                        )}
-                      </div>
-                      {tx.notes && <div className="text-[10px] text-slate-400 font-normal mt-0.5">{tx.notes}</div>}
-                    </td>
-
-                    {/* Payment Method(s) with Inflow/Outflow / Trade Dots */}
-                    <td className="py-3">
-                      <div className="flex flex-col gap-1">
-                        {tx.payments.map((p, pIdx) => {
-                          const pCurr = p.account_currency || tx.currency || "EUR";
-                          const isHoldingCredit = p.holding_delta?.startsWith("+");
-                          const isHoldingDebit = p.holding_delta?.startsWith("-");
-                          const isCredit = p.amount > 0 || Boolean(isHoldingCredit);
-                          const isDebit = p.amount < 0 || Boolean(isHoldingDebit);
-                          const dotColor = tx.source === "investment"
-                            ? "bg-blue-500"
-                            : isCredit
-                            ? "bg-emerald-500"
-                            : isDebit
-                            ? "bg-rose-500"
-                            : "bg-blue-500";
-                          const textColor = isCredit 
-                            ? "text-emerald-600 dark:text-emerald-400" 
-                            : isDebit 
-                            ? "text-rose-600 dark:text-rose-400" 
-                            : "text-slate-400";
-                          const signPrefix = p.amount > 0 ? "+" : p.amount < 0 ? "-" : "";
-
-                          return (
-                            <div key={pIdx} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-                              <span>{p.account_name}</span>
-                              {p.holding_delta ? (
-                                <span className={`tabular-nums font-bold ${textColor}`}>
-                                  ({p.holding_delta})
-                                </span>
-                              ) : p.amount !== 0 ? (
-                                <span className={`tabular-nums font-bold ${textColor}`}>
-                                  ({signPrefix}{formatCurrency(Math.abs(p.amount), pCurr)})
-                                </span>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-
-                    {/* Category & Description */}
-                    <td className="py-3">
-                      <div className="flex flex-col gap-1.5">
-                        {tx.isTransfer ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-slate-800 text-xs">
-                              Account Transfers & FX
-                            </span>
-                            {tx.items.find((i) => i.category_name?.includes("Fee")) && (
-                              <span className="text-slate-400 text-[11px]">
-                                • Transfer Fee
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          tx.items.map((itm, iIdx) => {
-                            const lbl = itm.effective_label || "DISCRETIONARY";
-                            const badgeLetter = lbl === "LUXURY" ? "L" : lbl.charAt(0).toUpperCase();
-                            const badgeColor =
-                              lbl === "ESSENTIAL"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : lbl === "LUXURY"
-                                ? "bg-pink-50 text-pink-700 border-pink-200"
-                                : lbl === "INVESTMENT"
-                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                : "bg-amber-50 text-amber-700 border-amber-200";
-
-                            return (
-                              <div key={iIdx} className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-slate-800 text-xs">
-                                  {itm.category_name}
-                                </span>
-                                {itm.description && (
-                                  <span className="text-slate-400 text-[11px]">
-                                    • {itm.description}
-                                  </span>
-                                )}
-                                <span 
-                                  title={lbl}
-                                  className={`w-4 h-4 flex items-center justify-center text-[9px] font-extrabold uppercase rounded-md border ${badgeColor}`}
-                                >
-                                  {badgeLetter}
-                                </span>
-                                {tx.items.length > 1 && (
-                                  <span className={`font-bold text-[11px] tabular-nums ${itm.amount < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
-                                    {itm.amount < 0
-                                      ? `- ${formatCurrency(Math.abs(itm.amount), tx.currency || "EUR")} (${tx.isIncome ? "Adjustment" : "Reimbursement"})`
-                                      : formatCurrency(itm.amount, tx.currency || "EUR")}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Total Amount Column */}
-                    <td className="py-3 text-right font-bold tabular-nums">
-                      <div className={tx.isTransfer ? "text-[#0F172A] text-xs" : tx.isIncome ? "text-emerald-600 text-xs" : "text-rose-600 text-xs"}>
-                        {formatCurrency(Math.abs(tx.totalAmount), tx.currency || "EUR")}
-                      </div>
-                      {tx.currency && tx.currency !== masterCurrency && (
-                        <div className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                          ≈ {formatCurrency(convertCurrency(Math.abs(tx.totalAmount), tx.currency, masterCurrency), masterCurrency)}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1">
-                        {tx.source === "cashflow" && tx.rawCashflow && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setEditingTransaction(tx.rawCashflow || null);
-                                setIsModalOpen(true);
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
-                              title="Edit Cashflow"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTransaction(tx.rawCashflow!.cashflow_id)}
-                              className="p-1.5 text-rose-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
-                              title="Delete Cashflow"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                        {tx.source === "investment" && tx.rawTrade && (
-                          <>
-                            <button
-                              onClick={() => {
-                                setEditingTradeTx(tx.rawTrade || null);
-                                setIsTradeModalOpen(true);
-                              }}
-                              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
-                              title="Edit Trade"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTrade(tx.rawTrade!.transaction_id)}
-                              className="p-1.5 text-rose-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
-                              title="Delete Trade"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredTransactions.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400 font-medium text-xs">
-                    No transactions recorded for this period.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <TransactionLedger
+          transactions={filteredTransactions}
+          loading={loading}
+          masterCurrency={masterCurrency}
+          showRunningBalance={false}
+          onEditCashflow={(tx) => {
+            setEditingTransaction(tx);
+            setIsModalOpen(true);
+          }}
+          onDeleteCashflow={handleDeleteTransaction}
+          onEditTrade={(tx) => {
+            setEditingTradeTx(tx);
+            setIsTradeModalOpen(true);
+          }}
+          onDeleteTrade={handleDeleteTrade}
+        />
       </div>
 
       {/* Cashflow Transaction Entry & Edit Modal */}

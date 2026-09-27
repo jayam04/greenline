@@ -3,10 +3,11 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: var(--font-general-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-current-sans, var(--font-general-sans)), ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
 :root {
+  --font-current-sans: var(--font-general-sans);
   --background: #F3F4F6;
   --foreground: #0F172A;
   --card-bg: #FFFFFF;
@@ -16,6 +17,18 @@
   --accent-red: #DC2626;
   --slate-subtle: #F8F9FA;
   --text-muted: #64748B;
+}
+
+html[data-font="inter"],
+body[data-font="inter"],
+.font-inter {
+  --font-current-sans: var(--font-inter);
+}
+
+html[data-font="general-sans"],
+body[data-font="general-sans"],
+.font-general-sans {
+  --font-current-sans: var(--font-general-sans);
 }
 
 .dark {
@@ -33,7 +46,7 @@
 html, body {
   background-color: var(--background);
   color: var(--foreground);
-  font-family: var(--font-general-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-current-sans, var(--font-general-sans)), ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -0.01em;
 }
 

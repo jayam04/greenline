@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { FontProvider } from "@/components/FontProvider";
 
 const generalSans = localFont({
   src: [
@@ -17,6 +19,12 @@ const generalSans = localFont({
     },
   ],
   variable: "--font-general-sans",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
   display: "swap",
 });
 
@@ -34,15 +42,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={generalSans.variable} suppressHydrationWarning>
+    <html lang="en" className={`${generalSans.variable} ${inter.variable}`} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
                 try {
-                  var saved = localStorage.getItem('greenline_theme') || 'system';
-                  var isDark = saved === 'dark' || (saved === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                  var savedTheme = localStorage.getItem('greenline_theme') || 'system';
+                  var isDark = savedTheme === 'dark' || (savedTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
                   if (isDark) {
                     document.documentElement.classList.add('dark');
                     document.documentElement.classList.remove('light');
@@ -50,19 +58,31 @@ export default function RootLayout({
                     document.documentElement.classList.remove('dark');
                     document.documentElement.classList.add('light');
                   }
+
+                  var savedFont = localStorage.getItem('greenline_font') || 'general-sans';
+                  document.documentElement.setAttribute('data-font', savedFont);
+                  if (savedFont === 'inter') {
+                    document.documentElement.classList.add('font-inter');
+                    document.documentElement.classList.remove('font-general-sans');
+                  } else {
+                    document.documentElement.classList.add('font-general-sans');
+                    document.documentElement.classList.remove('font-inter');
+                  }
                 } catch (e) {}
               })();
             `,
           }}
         />
       </head>
-      <body className={`${generalSans.className} bg-[#F3F4F6] dark:bg-[#0B0F17] text-[#0F172A] dark:text-[#F8FAFC] min-h-screen flex flex-col font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150`}>
+      <body className="bg-[#F3F4F6] dark:bg-[#0B0F17] text-[#0F172A] dark:text-[#F8FAFC] min-h-screen flex flex-col font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
         <ThemeProvider>
-          <Navbar />
-          <Breadcrumb />
-          <main className="flex-1 w-full px-4 md:px-8 pb-8 pt-2">
-            {children}
-          </main>
+          <FontProvider>
+            <Navbar />
+            <Breadcrumb />
+            <main className="flex-1 w-full px-4 md:px-8 pb-8 pt-2">
+              {children}
+            </main>
+          </FontProvider>
         </ThemeProvider>
       </body>
     </html>

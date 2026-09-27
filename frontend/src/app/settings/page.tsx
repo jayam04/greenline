@@ -8,9 +8,29 @@ import {
   Coins, CheckCircle2, AlertCircle, LogOut, ArrowRight,
   HelpCircle, Sliders, Database, Check, Calendar, Download,
   RefreshCw, Trash2, RotateCcw, Clock, HardDrive, FileJson, AlertTriangle,
-  Key, Copy
+  Key, Copy, Type
 } from "lucide-react";
 import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
+import { useFont, AppFont, FONT_STORAGE_KEY } from "@/components/FontProvider";
+
+const FONT_PRESETS = [
+  {
+    id: "general-sans" as const,
+    label: "General Sans",
+    tag: "Default",
+    description: "Modern geometric sans-serif with distinct character and punchy numbers",
+    preview: "The quick brown fox jumps over 134.50 EUR",
+    fontFamily: "var(--font-general-sans)",
+  },
+  {
+    id: "inter" as const,
+    label: "Inter",
+    tag: "Clean UI",
+    description: "Precision neo-grotesque typeface optimized for high-density screen legibility",
+    preview: "The quick brown fox jumps over 134.50 EUR",
+    fontFamily: "var(--font-inter)",
+  },
+];
 
 const FISCAL_YEAR_PRESETS = [
   { label: "January 1st (Calendar Year)", value: "01-01", description: "Standard calendar year (Global/US)" },
@@ -68,6 +88,7 @@ interface ApiKeyItem {
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { font, setFont } = useFont();
   const [masterCurrency, setMasterCurrency] = useState("EUR");
   const [fiscalYearStart, setFiscalYearStart] = useState("01-01");
   const [loading, setLoading] = useState(true);
@@ -101,6 +122,7 @@ export default function SettingsPage() {
         apiFetch<{ 
           master_currency: string;
           fiscal_year_start?: string;
+          app_font?: string;
         }>("/settings"),
         apiFetch<BackupConfig>("/backup/config").catch(() => null),
         apiFetch<{ total_count: number; backups: BackupItem[] }>("/backup/list").catch(() => ({ total_count: 0, backups: [] }))
@@ -117,6 +139,10 @@ export default function SettingsPage() {
           setFiscalYearStart(fy);
           localStorage.setItem("greenline_fiscal_year_start", fy);
         }
+        if (res.app_font) {
+          const normFont: AppFont = res.app_font.trim().toLowerCase() === "inter" ? "inter" : "general-sans";
+          setFont(normFont);
+        }
       }
 
       if (bConfig) setBackupConfig(bConfig);
@@ -126,8 +152,10 @@ export default function SettingsPage() {
       console.error("Failed to load settings from server, using localStorage:", e);
       const localCurr = localStorage.getItem("greenline_master_currency") || "EUR";
       const localFy = localStorage.getItem("greenline_fiscal_year_start") || "01-01";
+      const localFont = (localStorage.getItem(FONT_STORAGE_KEY) || "general-sans") as AppFont;
       setMasterCurrency(localCurr);
       setFiscalYearStart(localFy);
+      setFont(localFont);
     } finally {
       setLoading(false);
     }
@@ -136,9 +164,11 @@ export default function SettingsPage() {
   const loadApiKeys = async () => {
     try {
       const keys = await apiFetch<ApiKeyItem[]>("/auth/api-keys");
-      if (keys) setApiKeys(keys);
+      if (keys && Array.isArray(keys)) setApiKeys(keys);
+      else setApiKeys([]);
     } catch (e) {
       console.error("Failed to load API keys:", e);
+      setApiKeys([]);
     }
   };
 
@@ -180,27 +210,34 @@ export default function SettingsPage() {
     setTimeout(() => setCopiedKey(false), 2500);
   };
 
+  const handleChangeFont = async (newFont: AppFont) => {
+    setFont(newFont);
+    saveSettings({ master_currency: masterCurrency, fiscal_year_start: fiscalYearStart, app_font: newFont });
+  };
 
   const handleChangeMasterCurrency = async (newCurrency: string) => {
     setMasterCurrency(newCurrency);
     localStorage.setItem("greenline_master_currency", newCurrency);
-    saveSettings({ master_currency: newCurrency, fiscal_year_start: fiscalYearStart });
+    saveSettings({ master_currency: newCurrency, fiscal_year_start: fiscalYearStart, app_font: font });
   };
 
   const handleChangeFiscalYearStart = async (newFy: string) => {
     setFiscalYearStart(newFy);
     localStorage.setItem("greenline_fiscal_year_start", newFy);
-    saveSettings({ master_currency: masterCurrency, fiscal_year_start: newFy });
+    saveSettings({ master_currency: masterCurrency, fiscal_year_start: newFy, app_font: font });
   };
 
-  const saveSettings = async (payload: { master_currency: string; fiscal_year_start: string }) => {
+  const saveSettings = async (payload: { master_currency: string; fiscal_year_start: string; app_font?: string }) => {
     setSaving(true);
     setSavedMessage("");
 
     try {
       await apiFetch("/settings", {
         method: "PUT",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          app_font: payload.app_font || font,
+        }),
       });
       setSavedMessage("Settings saved successfully!");
       setTimeout(() => setSavedMessage(""), 3500);
@@ -433,7 +470,73 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Card 3: MCP & AI Agent API Keys */}
+          {/* Card 3: Interface Typography */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 rounded-xl">
+                <Type className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                  Interface Typography
+                </h2>
+                <p className="text-[11px] font-medium text-slate-400">
+                  Select between the default geometric font (General Sans) and high-density screen font (Inter)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {FONT_PRESETS.map((preset) => {
+                const isSelected = font === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleChangeFont(preset.id)}
+                    disabled={loading || saving}
+                    className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer space-y-2.5 ${
+                      isSelected
+                        ? "border-[#0F172A] dark:border-white bg-[#0F172A]/5 dark:bg-white/10"
+                        : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-[#151D2B]"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between w-full">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="text-xs font-bold text-[#0F172A] dark:text-white"
+                          style={{ fontFamily: preset.fontFamily }}
+                        >
+                          {preset.label}
+                        </span>
+                        <span className="px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                          {preset.tag}
+                        </span>
+                      </div>
+                      {isSelected && (
+                        <div className="w-4 h-4 rounded-full bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] flex items-center justify-center shrink-0">
+                          <Check className="w-2.5 h-2.5" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                      {preset.description}
+                    </div>
+
+                    <div
+                      className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800/80 text-[11px] text-slate-700 dark:text-slate-300 truncate"
+                      style={{ fontFamily: preset.fontFamily }}
+                    >
+                      {preset.preview}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Card 4: MCP & AI Agent API Keys */}
           <div className="getquin-card p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -756,6 +859,13 @@ export default function SettingsPage() {
                 <span className="font-semibold text-slate-500">Year Baseline</span>
                 <span className="font-bold text-purple-700 dark:text-purple-400">
                   {activeFiscalPreset.value} ({activeFiscalPreset.label.split(" (")[0]})
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="font-semibold text-slate-500">Interface Font</span>
+                <span className="font-bold text-indigo-700 dark:text-indigo-400">
+                  {font === "inter" ? "Inter" : "General Sans"}
                 </span>
               </div>
 

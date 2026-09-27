@@ -134,13 +134,13 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
 
     // Verify cashflow records exist directly
     expect(screen.getByText('Monthly Salary')).toBeInTheDocument();
-    expect(screen.getByText('Base Salary')).toBeInTheDocument();
+    expect(screen.getAllByText('Base Salary')[0]).toBeInTheDocument();
     expect(screen.getByText('Whole Foods Market')).toBeInTheDocument();
-    expect(screen.getByText('Groceries')).toBeInTheDocument();
+    expect(screen.getAllByText('Groceries')[0]).toBeInTheDocument();
 
     // Verify buy trade record with positive holding delta (+186 GROWW.BO)
     expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
-    expect(screen.getByText('Stock & ETF Purchases')).toBeInTheDocument();
+    expect(screen.getAllByText('Stock & ETF Purchases')[0]).toBeInTheDocument();
     expect(screen.getByText(/Bought x186 at/i)).toBeInTheDocument();
     expect(screen.getByText('(+186 GROWW.BO)')).toBeInTheDocument();
 

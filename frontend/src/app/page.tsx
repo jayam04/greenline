@@ -16,6 +16,7 @@ import {
   BarChart2, AlertCircle, ArrowLeftRight, PiggyBank, Receipt, ChevronRight,
   ArrowRight, X, SlidersHorizontal
 } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 
 interface Account {
@@ -446,7 +447,7 @@ export default function NetWorthDashboardPage() {
         {/* LEFT COLUMN: Net Worth Hero & Accounts/Balances Table (~68% width) */}
         <div className="lg:col-span-8 space-y-5">
           {/* Card 1: Global Net Worth Hero Card */}
-          <div className="getquin-card p-5">
+          <Card className="p-5 shadow-sm">
             {/* Header Row 1: Title on Left, Action Buttons on Right */}
             <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-2">
@@ -641,10 +642,10 @@ export default function NetWorthDashboardPage() {
               <span>CHART BY</span>
               <span className="bg-[#99EF2E] text-[#0F172A] px-1.5 py-0.2 rounded-xs font-black lowercase text-[10px]">greenline</span>
             </div>
-          </div>
+          </Card>
 
           {/* Card 2: Accounts & Balances Table (Replaced Holdings) */}
-          <div className="getquin-card p-5">
+          <Card className="p-5 shadow-sm">
             {/* Header: Title, Type Tabs, Action Button */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-2 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-4 flex-wrap">
@@ -829,13 +830,13 @@ export default function NetWorthDashboardPage() {
                 Open Full Investment Portfolio Dashboard →
               </Link>
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* RIGHT COLUMN: Net Worth Across Entities Donut & Full Year Snapshot (~32% width) */}
         <div className="lg:col-span-4 space-y-5">
           {/* Card 1: Net Worth Across Entities Donut Chart (Replaced Allocation) */}
-          <div className="getquin-card p-5">
+          <Card className="p-5 shadow-sm">
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-[#0F172A]">Net Worth Across Entities</h3>
@@ -890,10 +891,10 @@ export default function NetWorthDashboardPage() {
                 </span>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Card 2: Full Year Snapshot (Replaced Performance) */}
-          <div className="getquin-card p-5">
+          <Card className="p-5 shadow-sm">
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-purple-600" />
@@ -1009,7 +1010,7 @@ export default function NetWorthDashboardPage() {
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
-          </div>
+          </Card>
         </div>
       </div>
 

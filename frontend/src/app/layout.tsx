@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Inter } from "next/font/google";
+import { Inter, Figtree } from "next/font/google";
 import "./globals.css";
-import { Navbar } from "@/components/Navbar";
+import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { FontProvider } from "@/components/FontProvider";
+import { cn } from "@/lib/utils";
+
+const figtreeHeading = Figtree({subsets:['latin'],variable:'--font-heading'});
 
 const generalSans = localFont({
   src: [
@@ -42,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${generalSans.variable} ${inter.variable}`} suppressHydrationWarning>
+    <html lang="en" className={cn(generalSans.variable, inter.variable, figtreeHeading.variable)} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -74,14 +77,18 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="bg-[#F3F4F6] dark:bg-[#0B0F17] text-[#0F172A] dark:text-[#F8FAFC] min-h-screen flex flex-col font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
+      <body className="bg-[#F3F4F6] dark:bg-[#0B0F17] text-[#0F172A] dark:text-[#F8FAFC] min-h-screen font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
         <ThemeProvider>
           <FontProvider>
-            <Navbar />
-            <Breadcrumb />
-            <main className="flex-1 w-full px-4 md:px-8 pb-8 pt-2">
-              {children}
-            </main>
+            <div className="flex min-h-screen">
+              <Sidebar />
+              <div className="flex-1 flex flex-col lg:pl-64 w-full">
+                <Breadcrumb />
+                <main className="flex-1 w-full px-4 md:px-8 pb-8 pt-2">
+                  {children}
+                </main>
+              </div>
+            </div>
           </FontProvider>
         </ThemeProvider>
       </body>

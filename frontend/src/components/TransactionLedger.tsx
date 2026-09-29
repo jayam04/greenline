@@ -157,29 +157,29 @@ export function TransactionLedger({
                   <button
                     key={tx.key}
                     onClick={() => setSelectedTxKey(tx.key)}
-                    className={`flex items-center gap-3 p-3 text-left transition-colors hover:bg-white dark:hover:bg-slate-800 ${
-                      isSelected ? "bg-white dark:bg-slate-800 shadow-sm relative" : ""
+                    className={`flex items-center gap-3 p-3 text-left transition-colors hover:bg-accent/50 dark:hover:bg-accent/40 ${
+                      isSelected ? "bg-card shadow-sm relative" : ""
                     }`}
                   >
                     {isSelected && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-r-full" />
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
                     )}
                     
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0 ${iconColor}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center bg-muted shrink-0 ${iconColor}`}>
                       <Icon className="w-4 h-4" />
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
+                      <div className="text-sm font-semibold text-foreground truncate">
                         {tx.title}
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                      <div className="text-xs text-muted-foreground truncate">
                         {tx.items[0]?.category_name || "Uncategorized"}
                       </div>
                     </div>
                     
                     <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${
-                      tx.isTransfer ? "text-slate-700 dark:text-slate-300" : tx.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-slate-900 dark:text-slate-100"
+                      tx.isTransfer ? "text-muted-foreground" : tx.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
                     }`}>
                       {tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
                     </div>
@@ -192,12 +192,12 @@ export function TransactionLedger({
       </div>
 
       {/* RIGHT PANE: Detail (2/3 width) */}
-      <div className="w-full md:w-2/3 flex flex-col bg-white dark:bg-slate-900 max-h-[700px]">
+      <div className="w-full md:w-2/3 flex flex-col bg-card text-card-foreground border-l border-border max-h-[700px]">
         {selectedTx ? (
           <div className="flex flex-col h-full">
-            <div className="flex items-start justify-between p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+            <div className="flex items-start justify-between p-6 border-b border-border shrink-0">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-800 shrink-0">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-muted shrink-0">
                   {selectedTx.source === "investment" ? <Briefcase className="w-6 h-6 text-blue-500" /> : selectedTx.isTransfer ? <ArrowRightLeft className="w-6 h-6 text-slate-500" /> : selectedTx.isIncome ? <ShoppingBag className="w-6 h-6 text-emerald-500" /> : <ShoppingBag className="w-6 h-6 text-slate-500" />}
                 </div>
                 <div>

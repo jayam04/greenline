@@ -479,13 +479,13 @@ export default function CashflowTransactionsPage() {
                 placeholder="Search merchant, account..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[#F3F4F6] dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:bg-white dark:focus:bg-slate-900 focus:outline-none w-48"
+                className="bg-secondary text-xs font-semibold text-foreground placeholder:text-muted-foreground pl-8 pr-3 py-1.5 rounded-lg border border-input focus:border-ring focus:bg-background focus:outline-none w-48"
               />
             </div>
 
             {/* Account Multi-Select Popover */}
             <Popover>
-              <PopoverTrigger className="flex items-center justify-between bg-[#F1F5F9] dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg w-40">
+              <PopoverTrigger className="flex items-center justify-between bg-secondary hover:bg-secondary/80 text-xs font-bold text-secondary-foreground border border-border px-3 py-1.5 rounded-lg w-40">
                   <span className="truncate">
                     {selectedAccountIds.length === 0 
                       ? "All Accounts" 
@@ -527,7 +527,7 @@ export default function CashflowTransactionsPage() {
 
             {/* Label Filter Select */}
             <Select value={selectedLabelFilter} onValueChange={(v) => setSelectedLabelFilter(v || "ALL")}>
-              <SelectTrigger className="w-[140px] h-8 text-xs font-bold bg-[#F1F5F9] border-none">
+              <SelectTrigger className="w-[140px] h-8 text-xs font-bold bg-secondary text-secondary-foreground border border-border">
                 <SelectValue placeholder="All Labels" />
               </SelectTrigger>
               <SelectContent>

@@ -89,7 +89,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="bg-[#F3F4F6] dark:bg-[#0B0F17] text-[#0F172A] dark:text-[#F8FAFC] min-h-screen font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
+      <body className="bg-background text-foreground min-h-screen font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
         <ThemeProvider>
           <FontProvider>
             <ClientLayout>

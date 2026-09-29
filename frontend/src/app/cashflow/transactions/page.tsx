@@ -10,6 +10,14 @@ import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowMod
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
 import { formatCurrency } from "@/lib/format";
 import { TransactionLedger, UnifiedRowItem } from "@/components/TransactionLedger";
+import { PrintTransactionsDialog } from "@/components/PrintTransactionsDialog";
+
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Check, ChevronsUpDown, Printer } from "lucide-react";
+
 
 interface Account {
   account_id: number;
@@ -28,13 +36,14 @@ export default function CashflowTransactionsPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>("ALL");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("ALL");
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
 
   // Modals
   const [isCashflowModalOpen, setIsCashflowModalOpen] = useState(false);
   const [editingCashflowTx, setEditingCashflowTx] = useState<CashflowTransactionItem | null>(null);
 
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingTradeTx, setEditingTradeTx] = useState<TransactionItem | null>(null);
 
   useEffect(() => {
@@ -368,9 +377,8 @@ export default function CashflowTransactionsPage() {
       }
 
       // Account filter
-      if (selectedAccountId !== "ALL") {
-        const aid = Number(selectedAccountId);
-        if (!r.payments.some((p) => p.account_id === aid)) return false;
+      if (selectedAccountIds.length > 0) {
+        if (!r.payments.some((p) => selectedAccountIds.includes(p.account_id))) return false;
       }
 
       // Label filter
@@ -380,14 +388,14 @@ export default function CashflowTransactionsPage() {
 
       return true;
     });
-  }, [unifiedRows, searchQuery, selectedAccountId, selectedLabelFilter]);
+  }, [unifiedRows, searchQuery, selectedAccountIds, selectedLabelFilter]);
 
   // Current balance of selected account
   const selectedAccountInfo = useMemo(() => {
-    if (selectedAccountId === "ALL") {
+    if (selectedAccountIds.length !== 1) {
       return null;
     }
-    const aid = Number(selectedAccountId);
+    const aid = selectedAccountIds[0];
     const acc = accounts.find((a) => a.account_id === aid);
     if (!acc) return null;
 
@@ -399,51 +407,10 @@ export default function CashflowTransactionsPage() {
       currency: acc.currency,
       balance: currentBal
     };
-  }, [selectedAccountId, accounts, unifiedRows]);
+  }, [selectedAccountIds, accounts, unifiedRows]);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-8 space-y-6">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
-              <ArrowLeftRight className="w-5 h-5" />
-            </span>
-            <h1 className="text-xl font-bold text-[#0F172A] dark:text-white tracking-tight">
-              Cashflow Transactions
-            </h1>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Historical ledger with running statement balances, split payment methods, and multi-category itemization
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setEditingTradeTx(null);
-              setIsTradeModalOpen(true);
-            }}
-            className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <Briefcase className="w-3.5 h-3.5 text-blue-500" />
-            <span>+ Record Trade / SIP</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setEditingCashflowTx(null);
-              setIsCashflowModalOpen(true);
-            }}
-            className="px-3.5 py-2 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-[#0F172A] rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-400" />
-            <span>+ Record Cashflow</span>
-          </button>
-        </div>
-      </div>
-
       {/* Main Card with Table */}
       <div className="getquin-card p-5 space-y-4">
         
@@ -459,7 +426,6 @@ export default function CashflowTransactionsPage() {
               </p>
             </div>
 
-            {/* Selected Account Balance Badge */}
             {selectedAccountInfo && (
               <div 
                 data-testid="selected-account-balance"
@@ -475,49 +441,103 @@ export default function CashflowTransactionsPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                setEditingTradeTx(null);
+                setIsTradeModalOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-blue-500" />
+              <span>+ Trade / SIP</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setEditingCashflowTx(null);
+                setIsCashflowModalOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-[#0F172A] rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer mr-2"
+            >
+              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>+ Cashflow</span>
+            </button>
+            
+            <button
+              onClick={() => setIsPrintModalOpen(true)}
+              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer mr-2"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print</span>
+            </button>
+
             {/* Search Input */}
             <div className="relative flex items-center">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search merchant, account, category..."
+                placeholder="Search merchant, account..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[#F3F4F6] dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:bg-white dark:focus:bg-slate-900 focus:outline-none w-52"
+                className="bg-[#F3F4F6] dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:bg-white dark:focus:bg-slate-900 focus:outline-none w-48"
               />
             </div>
 
-            {/* Account Selector Filter */}
-            <select
-              aria-label="account-filter"
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="bg-[#F1F5F9] dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg border border-transparent focus:outline-none cursor-pointer"
-            >
-              <option value="ALL">All Accounts</option>
-              {accounts.map((a) => (
-                <option key={a.account_id} value={a.account_id}>
-                  {a.account_name} ({a.currency})
-                </option>
-              ))}
-            </select>
+            {/* Account Multi-Select Popover */}
+            <Popover>
+              <PopoverTrigger className="flex items-center justify-between bg-[#F1F5F9] dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 px-3 py-1.5 rounded-lg w-40">
+                  <span className="truncate">
+                    {selectedAccountIds.length === 0 
+                      ? "All Accounts" 
+                      : selectedAccountIds.length === 1
+                      ? accounts.find(a => a.account_id === selectedAccountIds[0])?.account_name
+                      : `${selectedAccountIds.length} Accounts`}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-0" align="end">
+                <Command>
+                  <CommandInput placeholder="Search accounts..." />
+                  <CommandList>
+                    <CommandEmpty>No account found.</CommandEmpty>
+                    <CommandGroup>
+                      {accounts.map((a) => (
+                        <CommandItem
+                          key={a.account_id}
+                          onSelect={() => {
+                            setSelectedAccountIds(prev => 
+                              prev.includes(a.account_id) 
+                                ? prev.filter(id => id !== a.account_id)
+                                : [...prev, a.account_id]
+                            )
+                          }}
+                        >
+                          <Checkbox 
+                            checked={selectedAccountIds.includes(a.account_id)}
+                            className="mr-2"
+                          />
+                          {a.account_name} ({a.currency})
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
-            {/* Label Filter Pills */}
-            <div className="flex items-center bg-[#F1F5F9] dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
-              {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
-                <button
-                  key={lbl}
-                  onClick={() => setSelectedLabelFilter(lbl)}
-                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                    selectedLabelFilter === lbl
-                      ? "bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] shadow-xs"
-                      : "text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white"
-                  }`}
-                >
-                  {lbl === "ALL" ? "All Labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
+            {/* Label Filter Select */}
+            <Select value={selectedLabelFilter} onValueChange={(v) => setSelectedLabelFilter(v || "ALL")}>
+              <SelectTrigger className="w-[140px] h-8 text-xs font-bold bg-[#F1F5F9] border-none">
+                <SelectValue placeholder="All Labels" />
+              </SelectTrigger>
+              <SelectContent>
+                {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
+                  <SelectItem key={lbl} value={lbl} className="text-xs font-bold">
+                    {lbl === "ALL" ? "All Labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -526,7 +546,7 @@ export default function CashflowTransactionsPage() {
           transactions={filteredRows}
           loading={loading}
           showRunningBalance={true}
-          selectedAccountId={selectedAccountId}
+          selectedAccountIds={selectedAccountIds}
           onEditCashflow={(tx) => {
             setEditingCashflowTx(tx);
             setIsCashflowModalOpen(true);
@@ -561,6 +581,13 @@ export default function CashflowTransactionsPage() {
         onSuccess={() => loadData()}
         initialData={editingTradeTx}
       />
+
+      <PrintTransactionsDialog
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        accounts={accounts}
+      />
+
     </div>
   );
 }

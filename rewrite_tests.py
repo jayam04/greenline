@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import os
+
+content = """import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import CashflowTransactionsPage from '@/app/cashflow/transactions/page';
@@ -170,8 +172,13 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
     const searchInput = screen.getByPlaceholderText(/Search merchant, account/i);
     fireEvent.change(searchInput, { target: { value: 'GROWW' } });
 
-    expect(screen.getAllByText('GROWW.BO')[0]).toBeInTheDocument();
+    expect(screen.getByText('GROWW.BO')).toBeInTheDocument();
     expect(screen.queryByText('Monthly Salary')).not.toBeInTheDocument();
     expect(screen.queryByText('Whole Foods Market')).not.toBeInTheDocument();
   });
 });
+"""
+
+with open("frontend/src/__tests__/TransactionsLedger.test.tsx", "w") as f:
+    f.write(content)
+

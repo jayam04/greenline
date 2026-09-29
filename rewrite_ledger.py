@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from "react";
+import os
+
+content = """import React, { useState, useMemo, useEffect } from "react";
 import { formatCurrency } from "@/lib/format";
 import { 
   Edit, Trash2, RefreshCw, ShoppingBag, Briefcase, 
@@ -311,3 +313,7 @@ export function TransactionLedger({
     </div>
   );
 }
+"""
+
+with open("frontend/src/components/TransactionLedger.tsx", "w") as f:
+    f.write(content)

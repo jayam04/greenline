@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Menu as MenuPrimitive } from "@base-ui/react/menu"
+import { Menu as MenuPrimitive } from "@base-ui/react"
 import { cn } from "@/lib/utils"
 import { RiArrowRightSLine, RiCheckLine } from "@remixicon/react"
 

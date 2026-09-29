@@ -29,8 +29,6 @@ export function Breadcrumb() {
     }
   }, [pathname]);
 
-  if (pathname === "/login") return null;
-
   // 1. Build hierarchical path segments
   const pathSegments: PathSegment[] = [];
   let siblingTabs: SiblingTab[] = [];

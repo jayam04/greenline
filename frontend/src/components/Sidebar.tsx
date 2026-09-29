@@ -28,8 +28,6 @@ export function Sidebar() {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  if (pathname === "/login") return null;
-
   const handleLogout = () => {
     removeAuthToken();
     router.push("/login");

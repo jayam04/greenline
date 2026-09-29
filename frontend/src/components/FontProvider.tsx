@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 
-export type AppFont = "general-sans" | "inter";
+export type AppFont = "general-sans" | "inter" | "rx100";
 
 export const FONT_STORAGE_KEY = "greenline_font";
 
@@ -18,7 +18,7 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(FONT_STORAGE_KEY) as AppFont | null;
-        if (saved && (saved === "general-sans" || saved === "inter")) {
+        if (saved && (saved === "general-sans" || saved === "inter" || saved === "rx100")) {
           return saved;
         }
       } catch (e) {
@@ -31,17 +31,18 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute("data-font", font);
+    root.classList.remove("font-inter", "font-general-sans", "font-rx100");
     if (font === "inter") {
       root.classList.add("font-inter");
-      root.classList.remove("font-general-sans");
+    } else if (font === "rx100") {
+      root.classList.add("font-rx100");
     } else {
       root.classList.add("font-general-sans");
-      root.classList.remove("font-inter");
     }
   }, [font]);
 
   const setFont = (newFont: AppFont) => {
-    const validFont: AppFont = newFont === "inter" ? "inter" : "general-sans";
+    const validFont: AppFont = ["inter", "rx100", "general-sans"].includes(newFont) ? newFont : "general-sans";
     setFontState(validFont);
     try {
       localStorage.setItem(FONT_STORAGE_KEY, validFont);

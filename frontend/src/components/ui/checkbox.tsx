@@ -1,6 +1,6 @@
 "use client"
 
-import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
+import { Checkbox as CheckboxPrimitive } from "@base-ui/react"
 import { cn } from "@/lib/utils"
 import { RiCheckLine } from "@remixicon/react"
 

@@ -30,6 +30,14 @@ const FONT_PRESETS = [
     preview: "The quick brown fox jumps over 134.50 EUR",
     fontFamily: "var(--font-inter)",
   },
+  {
+    id: "rx100" as const,
+    label: "RX100",
+    tag: "Ledger",
+    description: "Crisp monospace font perfect for financial ledgers and statements",
+    preview: "The quick brown fox jumps over 134.50 EUR",
+    fontFamily: "var(--font-rx100)",
+  },
 ];
 
 const FISCAL_YEAR_PRESETS = [
@@ -481,7 +489,7 @@ export default function SettingsPage() {
                   Interface Typography
                 </h2>
                 <p className="text-[11px] font-medium text-slate-400">
-                  Select between the default geometric font (General Sans) and high-density screen font (Inter)
+                  Select between the default geometric font (General Sans), high-density screen font (Inter), or a crisp monospace font (RX100)
                 </p>
               </div>
             </div>

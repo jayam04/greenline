@@ -59,6 +59,12 @@ body[data-font="inter"],
   --font-current-sans: var(--font-inter);
 }
 
+html[data-font="rx100"],
+body[data-font="rx100"],
+.font-rx100 {
+  --font-current-sans: var(--font-rx100);
+}
+
 html[data-font="general-sans"],
 body[data-font="general-sans"],
 .font-general-sans {
@@ -195,6 +201,7 @@ html, body {
 }
 
 @theme inline {
+  --font-rx100: var(--font-rx100);
   --font-sans: var(--font-sans);
   --font-heading: var(--font-heading);
   --color-sidebar-ring: var(--sidebar-ring);

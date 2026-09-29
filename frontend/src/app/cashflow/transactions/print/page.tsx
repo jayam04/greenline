@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, Suspense } from "react";
+import React, { useEffect, useState, useMemo, Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
@@ -11,10 +11,13 @@ function PrintTransactionsContent() {
   const searchParams = useSearchParams();
   const accountIdsParam = searchParams.get("accounts");
   const typesParam = searchParams.get("types");
+  const startDateParam = searchParams.get("startDate");
+  const endDateParam = searchParams.get("endDate");
 
   const [cashflowTxs, setCashflowTxs] = useState<CashflowTransactionItem[]>([]);
   const [tradeTxs, setTradeTxs] = useState<TransactionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasPrinted = useRef(false);
 
   useEffect(() => {
     document.title = "Greenline - Transactions Ledger (Print)";
@@ -34,7 +37,10 @@ function PrintTransactionsContent() {
       console.error(err);
     } finally {
       setLoading(false);
-      setTimeout(() => window.print(), 500);
+      if (!hasPrinted.current) {
+        hasPrinted.current = true;
+        setTimeout(() => window.print(), 500);
+      }
     }
   };
 
@@ -80,15 +86,23 @@ function PrintTransactionsContent() {
       rawRows = rawRows.filter(r => allowed.includes(r.type));
     }
 
+    if (startDateParam) {
+      rawRows = rawRows.filter(r => r.date >= startDateParam);
+    }
+    
+    if (endDateParam) {
+      rawRows = rawRows.filter(r => r.date <= endDateParam);
+    }
+
     return rawRows;
-  }, [cashflowTxs, tradeTxs, accountIdsParam, typesParam]);
+  }, [cashflowTxs, tradeTxs, accountIdsParam, typesParam, startDateParam, endDateParam]);
 
   if (loading) {
     return <div className="p-8 font-mono">Loading data for print...</div>;
   }
 
   return (
-    <div className="bg-white text-black p-8 max-w-5xl mx-auto font-mono text-xs">
+    <div className="bg-white text-black p-8 max-w-5xl mx-auto font-rx100 text-xs">
       <div className="mb-8 border-b-2 border-black pb-4">
         <h1 className="text-2xl font-black uppercase tracking-widest mb-1">greenline</h1>
         <h2 className="text-sm font-bold uppercase text-gray-600">Transactions Ledger Statement</h2>

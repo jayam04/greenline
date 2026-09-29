@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { CashflowTransactionItem } from "@/components/CashflowModal";
 import { TransactionItem } from "@/components/TransactionModal";
 
-export default function PrintTransactionsPage() {
+function PrintTransactionsContent() {
   const searchParams = useSearchParams();
   const accountIdsParam = searchParams.get("accounts");
   const typesParam = searchParams.get("types");
@@ -34,7 +34,6 @@ export default function PrintTransactionsPage() {
       console.error(err);
     } finally {
       setLoading(false);
-      // Give a tiny delay for render, then print
       setTimeout(() => window.print(), 500);
     }
   };
@@ -69,16 +68,13 @@ export default function PrintTransactionsPage() {
       });
     });
 
-    // Sort oldest to newest
     rawRows.sort((a, b) => a.date.localeCompare(b.date));
 
-    // Filter by accounts
     if (accountIdsParam) {
       const ids = accountIdsParam.split(",").map(Number);
       rawRows = rawRows.filter(r => r.accountIds.some((id: number) => ids.includes(id)));
     }
 
-    // Filter by type
     if (typesParam) {
       const allowed = typesParam.split(",");
       rawRows = rawRows.filter(r => allowed.includes(r.type));
@@ -133,5 +129,13 @@ export default function PrintTransactionsPage() {
         </tbody>
       </table>
     </div>
+  );
+}
+
+export default function PrintTransactionsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 font-mono">Loading...</div>}>
+      <PrintTransactionsContent />
+    </Suspense>
   );
 }

@@ -145,14 +145,19 @@ export default function HoldingsPage() {
     0
   );
   const totalUnrealizedEUR = totalValueEUR - totalCostEUR;
-  const totalRealizedEUR = holdings.reduce(
-    (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
-    0
-  );
+  const totalRealizedEUR =
+    holdings.reduce(
+      (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
+      0
+    ) +
+    closedHoldings.reduce(
+      (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
+      0
+    );
   
   const totalFeesAndTaxesEUR = (summary?.total_fees || 0) + (summary?.total_taxes || 0);
   const totalFeesAndTaxesMaster = convertCurrency(totalFeesAndTaxesEUR, "EUR", masterCurrency);
-  const totalNetPnLEUR = totalRealizedEUR + totalUnrealizedEUR;
+  const totalNetPnLEUR = (totalRealizedEUR + totalUnrealizedEUR) - totalFeesAndTaxesMaster;
 
   // 1-Day Change Metrics
   const totalValueChange1dMaster = useMemo(() => {
@@ -317,7 +322,20 @@ export default function HoldingsPage() {
           </div>
         </div>
 
-        {/* Card 5: Total Net P&L */}
+        {/* Card 5: Fees & Taxes */}
+        <div className="getquin-card p-3.5">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <span>Fees & Taxes</span>
+            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+              {masterCurrency}
+            </span>
+          </div>
+          <div className="text-xl font-extrabold text-slate-700 dark:text-slate-300 tabular-nums mt-1 truncate">
+            {formatCleanMoney(totalFeesAndTaxesMaster, masterCurrency)}
+          </div>
+        </div>
+
+        {/* Card 6: Total Net P&L */}
         <div className="getquin-card p-3.5">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <span>Total Net P&L</span>
@@ -328,19 +346,6 @@ export default function HoldingsPage() {
           <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalNetPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
             {totalNetPnLEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
             <span className="truncate">{formatCleanMoney(totalNetPnLEUR, masterCurrency)}</span>
-          </div>
-        </div>
-
-        {/* Card 6: Fees & Taxes */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
-            <span>Fees & Taxes</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
-              {masterCurrency}
-            </span>
-          </div>
-          <div className="text-xl font-extrabold text-slate-700 dark:text-slate-300 tabular-nums mt-1 truncate">
-            {formatCleanMoney(totalFeesAndTaxesMaster, masterCurrency)}
           </div>
         </div>
 

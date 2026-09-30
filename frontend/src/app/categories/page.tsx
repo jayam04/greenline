@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { 
   Plus, Edit, Trash2, ChevronRight, ChevronDown, Folder, 
   FolderOpen, Tag, Sparkles, X, Layers, CheckCircle2,
-  FolderPlus, Search, Calendar, ChevronUp, Columns
+  FolderPlus, Search, Calendar, ChevronUp, Columns, ArrowUp, ArrowDown
 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateUtils";
@@ -39,6 +39,8 @@ export default function CategoriesPage() {
   const [isManageColumnsModalOpen, setIsManageColumnsModalOpen] = useState(false);
   const [tempActiveColumns, setTempActiveColumns] = useState<TimelineKey[]>([]);
   const [columnTotals, setColumnTotals] = useState<{ [timelineKey: string]: { [categoryId: string]: number } }>({});
+
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -303,6 +305,37 @@ export default function CategoriesPage() {
     );
   };
 
+  const totalsByCol = useMemo(() => {
+    const res: Record<string, { income: number; expense: number; investment: number }> = {};
+    activeColumns.forEach((colKey) => {
+      let income = 0;
+      let expense = 0;
+      let inv = 0;
+      tree.forEach((root) => {
+        const amt = columnTotals[colKey]?.[String(root.category_id)] || 0;
+        if (root.category_type === "INCOME") income += amt;
+        else if (root.category_type === "EXPENSE") expense += amt;
+        else if (root.category_type === "INVESTMENT") inv += amt;
+      });
+      res[colKey] = { income, expense, investment: inv };
+    });
+    return res;
+  }, [activeColumns, tree, columnTotals]);
+
+  const renderSummaryAmount = (val: number, invertDirection = false) => {
+    if (Math.abs(val) < 0.001) return <span className="text-slate-300">-</span>;
+    const isInflow = invertDirection ? val < 0 : val > 0;
+    const colorClass = isInflow ? "text-emerald-600" : "text-rose-600";
+    const Icon = isInflow ? ArrowUp : ArrowDown;
+
+    return (
+      <div className={`flex items-center justify-end gap-1 font-bold ${colorClass}`}>
+        <Icon className="w-3 h-3 shrink-0" />
+        <span>{formatCurrency(Math.abs(val), masterCurrency)}</span>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-6 font-sans">
       {/* Header Bar */}
@@ -421,6 +454,77 @@ export default function CategoriesPage() {
                 </tr>
               )}
             </tbody>
+
+            {/* Summary Section */}
+            {tree.length > 0 && (
+              <tbody className="border-t-2 border-slate-200 bg-slate-50/50">
+                <tr className="hover:bg-slate-50 transition-colors group">
+                  <td className="py-2.5 pl-1 pr-3">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
+                        className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+                        title="Toggle summary details"
+                      >
+                        {isSummaryExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                      </button>
+                      <span className="text-[13px] font-bold text-[#0F172A]">Operating Cashflow (excl. Inv)</span>
+                    </div>
+                  </td>
+                  {activeColumns.map(colKey => {
+                    const t = totalsByCol[colKey];
+                    const ops = t.income - t.expense;
+                    return (
+                      <td key={colKey} className="py-2.5 px-3 text-right tabular-nums text-xs">
+                        {renderSummaryAmount(ops)}
+                      </td>
+                    );
+                  })}
+                  <td className="w-full"></td>
+                  <td></td>
+                </tr>
+
+                {isSummaryExpanded && (
+                  <>
+                    <tr className="hover:bg-slate-50 transition-colors group">
+                      <td className="py-2.5 pl-1 pr-3 border-t border-slate-100">
+                        <div className="flex items-center gap-1.5 pl-[28px]">
+                          <span className="text-xs font-bold text-slate-600">Investments</span>
+                        </div>
+                      </td>
+                      {activeColumns.map(colKey => {
+                        const t = totalsByCol[colKey];
+                        return (
+                          <td key={colKey} className="py-2.5 px-3 text-right tabular-nums text-xs border-t border-slate-100">
+                            {renderSummaryAmount(t.investment, true)}
+                          </td>
+                        );
+                      })}
+                      <td className="w-full border-t border-slate-100"></td>
+                      <td className="border-t border-slate-100"></td>
+                    </tr>
+                    <tr className="hover:bg-slate-50 transition-colors group">
+                      <td className="py-2.5 pl-1 pr-3 border-t border-slate-100">
+                        <div className="flex items-center gap-1.5 pl-[28px]">
+                          <span className="text-xs font-bold text-[#0F172A]">Net Cashflow</span>
+                        </div>
+                      </td>
+                      {activeColumns.map(colKey => {
+                        const t = totalsByCol[colKey];
+                        const net = t.income - t.expense - t.investment;
+                        return (
+                          <td key={colKey} className="py-2.5 px-3 text-right tabular-nums text-xs border-t border-slate-100">
+                            {renderSummaryAmount(net)}
+                          </td>
+                        );
+                      })}
+                      <td className="w-full border-t border-slate-100"></td>
+                      <td className="border-t border-slate-100"></td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            )}
           </table>
         </div>
       </div>

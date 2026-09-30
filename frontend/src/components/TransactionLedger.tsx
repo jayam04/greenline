@@ -55,7 +55,7 @@ export const getTxStyles = (tx: UnifiedRowItem) => {
   
   if (tx.isTransfer) {
     Icon = ArrowRightLeft;
-    iconColor = "text-purple-500 border-purple-500/50 bg-purple-50/50 dark:bg-purple-900/20";
+    iconColor = "text-slate-900 border-slate-900/30 bg-slate-100/50 dark:text-slate-100 dark:border-slate-100/30 dark:bg-slate-800/50";
   } else if (tx.source === "investment") {
     Icon = Briefcase;
     iconColor = "text-blue-500 border-blue-500/50 bg-blue-50/50 dark:bg-blue-900/20";

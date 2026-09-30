@@ -172,4 +172,83 @@ async def run_db_migrations(session: AsyncSession) -> None:
         await mark_migration_applied(session, "v008_expected_dividends_table", "Create expected_dividends table and add expected_dividend_id to transactions")
         applied.add("v008_expected_dividends_table")
 
+    # v009: Add AI import staging tables (import_batches, staged_records)
+    if "v009_ai_import_staging_tables" not in applied:
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS import_batches (
+                batch_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename VARCHAR NOT NULL,
+                file_type VARCHAR NOT NULL,
+                file_size_bytes INTEGER DEFAULT 0,
+                status VARCHAR NOT NULL DEFAULT 'processing',
+                scope VARCHAR NOT NULL DEFAULT 'unified',
+                target_account_id INTEGER REFERENCES accounts(account_id) ON DELETE SET NULL,
+                default_currency VARCHAR(3) DEFAULT 'USD',
+                custom_instructions TEXT,
+                progress_pct INTEGER DEFAULT 0,
+                current_step VARCHAR,
+                error_message TEXT,
+                total_records INTEGER DEFAULT 0,
+                new_records INTEGER DEFAULT 0,
+                exact_matches INTEGER DEFAULT 0,
+                probable_matches INTEGER DEFAULT 0,
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+        """))
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS staged_records (
+                staged_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL REFERENCES import_batches(batch_id) ON DELETE CASCADE,
+                record_type VARCHAR NOT NULL,
+                review_status VARCHAR NOT NULL DEFAULT 'pending',
+                match_status VARCHAR NOT NULL DEFAULT 'new',
+                matched_entity_id INTEGER,
+                matched_entity_details TEXT,
+                confidence_score FLOAT DEFAULT 1.0,
+                transaction_date DATE NOT NULL,
+                action_type VARCHAR NOT NULL,
+                account_id INTEGER REFERENCES accounts(account_id) ON DELETE SET NULL,
+                account_name_raw VARCHAR,
+                asset_id INTEGER REFERENCES assets(asset_id) ON DELETE SET NULL,
+                asset_symbol_raw VARCHAR,
+                asset_name_raw VARCHAR,
+                category_id INTEGER REFERENCES categories(category_id) ON DELETE SET NULL,
+                category_name_raw VARCHAR,
+                quantity FLOAT,
+                price_per_unit FLOAT,
+                total_amount FLOAT NOT NULL,
+                fees FLOAT DEFAULT 0.0,
+                taxes FLOAT DEFAULT 0.0,
+                currency VARCHAR(3) DEFAULT 'USD',
+                notes TEXT,
+                source_raw_text TEXT
+            )
+        """))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_staged_records_batch_id ON staged_records(batch_id)"))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_staged_records_batch_status ON staged_records(batch_id, review_status)"))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_staged_records_transaction_date ON staged_records(transaction_date)"))
+        await session.commit()
+        await mark_migration_applied(session, "v009_ai_import_staging_tables", "Create import_batches and staged_records tables")
+        applied.add("v009_ai_import_staging_tables")
+
+    # v010: Add api_keys table for MCP and agent authentication
+    if "v010_api_keys_table" not in applied:
+        await session.execute(text("""
+            CREATE TABLE IF NOT EXISTS api_keys (
+                key_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                name VARCHAR NOT NULL,
+                key_prefix VARCHAR NOT NULL,
+                key_hash VARCHAR NOT NULL UNIQUE,
+                is_active BOOLEAN NOT NULL DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME
+            )
+        """))
+        await session.execute(text("CREATE INDEX IF NOT EXISTS ix_api_keys_key_hash ON api_keys(key_hash)"))
+        await session.commit()
+        await mark_migration_applied(session, "v010_api_keys_table", "Create api_keys table for MCP authentication")
+        applied.add("v010_api_keys_table")
+
 

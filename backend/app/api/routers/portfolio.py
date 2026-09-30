@@ -294,11 +294,17 @@ async def get_portfolio_summary(
             current_valuation=0.0
         )
 
-        c_acc_stmt = select(Account.currency).join(Lot, Account.account_id == Lot.account_id).where(Lot.asset_id == c_aid)
+        c_acc_stmt = (
+            select(Account.currency)
+            .join(Lot, Account.account_id == Lot.account_id)
+            .where(Lot.asset_id == c_aid)
+            .limit(1)
+        )
         if account_id:
             c_acc_stmt = c_acc_stmt.where(Account.account_id == account_id)
         c_acc_res = await db.execute(c_acc_stmt)
-        c_curr = c_acc_res.scalar_one_or_none() or c_asset.currency or "USD"
+        c_curr = c_acc_res.scalars().first() or c_asset.currency or "USD"
+
 
         # Pre-fetch latest price
         c_ph_stmt = select(PriceHistory.close_price).where(PriceHistory.asset_id == c_aid).order_by(desc(PriceHistory.price_date)).limit(1)

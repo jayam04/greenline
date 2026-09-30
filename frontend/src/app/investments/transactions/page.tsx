@@ -56,14 +56,24 @@ export default function TransactionsPage() {
   const loadTransactions = async () => {
     try {
       setLoading(true);
-      const [txData, sumData] = await Promise.all([
+      const [txRes, sumRes] = await Promise.allSettled([
         apiFetch<Transaction[]>("/transactions?limit=500"),
         apiFetch<PortfolioSummary>("/portfolio/summary"),
       ]);
-      setTransactions(txData || []);
-      setSummary(sumData);
+
+      if (txRes.status === "fulfilled") {
+        setTransactions(txRes.value || []);
+      } else {
+        console.error("Failed to load transactions:", txRes.reason);
+      }
+
+      if (sumRes.status === "fulfilled") {
+        setSummary(sumRes.value);
+      } else {
+        console.error("Failed to load portfolio summary:", sumRes.reason);
+      }
     } catch (e) {
-      console.error("Failed to load transactions:", e);
+      console.error("Failed to load transaction page data:", e);
     } finally {
       setLoading(false);
     }

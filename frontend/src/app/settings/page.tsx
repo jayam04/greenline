@@ -7,7 +7,8 @@ import {
   Settings, User, ShieldCheck, 
   Coins, CheckCircle2, AlertCircle, LogOut, ArrowRight,
   HelpCircle, Sliders, Database, Check, Calendar, Download,
-  RefreshCw, Trash2, RotateCcw, Clock, HardDrive, FileJson, AlertTriangle
+  RefreshCw, Trash2, RotateCcw, Clock, HardDrive, FileJson, AlertTriangle,
+  Key, Copy
 } from "lucide-react";
 import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
 
@@ -56,6 +57,15 @@ interface BackupItem {
   note?: string | null;
 }
 
+interface ApiKeyItem {
+  key_id: number;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [masterCurrency, setMasterCurrency] = useState("EUR");
@@ -63,6 +73,14 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+
+  // MCP API Keys State
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [showCreateKeyModal, setShowCreateKeyModal] = useState(false);
+  const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [creatingKey, setCreatingKey] = useState(false);
 
   // Backup State
   const [backupConfig, setBackupConfig] = useState<BackupConfig | null>(null);
@@ -103,6 +121,7 @@ export default function SettingsPage() {
 
       if (bConfig) setBackupConfig(bConfig);
       if (bList) setBackupsList(bList.backups || []);
+      loadApiKeys();
     } catch (e) {
       console.error("Failed to load settings from server, using localStorage:", e);
       const localCurr = localStorage.getItem("greenline_master_currency") || "EUR";
@@ -113,6 +132,54 @@ export default function SettingsPage() {
       setLoading(false);
     }
   };
+
+  const loadApiKeys = async () => {
+    try {
+      const keys = await apiFetch<ApiKeyItem[]>("/auth/api-keys");
+      if (keys) setApiKeys(keys);
+    } catch (e) {
+      console.error("Failed to load API keys:", e);
+    }
+  };
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKeyName.trim()) return;
+    try {
+      setCreatingKey(true);
+      const res = await apiFetch<{ key: string } & ApiKeyItem>("/auth/api-keys", {
+        method: "POST",
+        body: JSON.stringify({ name: newKeyName.trim() })
+      });
+      setCreatedRawKey(res.key);
+      setNewKeyName("");
+      loadApiKeys();
+    } catch (err: any) {
+      alert(err.message || "Failed to create API key");
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+
+  const handleRevokeKey = async (keyId: number, name: string) => {
+    if (!confirm(`Are you sure you want to revoke API key '${name}'? Any AI agent using this key will immediately lose access.`)) return;
+    try {
+      await apiFetch(`/auth/api-keys/${keyId}`, { method: "DELETE" });
+      setApiKeys(prev => prev.filter(k => k.key_id !== keyId));
+      setSavedMessage("API key revoked.");
+      setTimeout(() => setSavedMessage(""), 3000);
+    } catch (err: any) {
+      alert(err.message || "Failed to revoke API key");
+    }
+  };
+
+  const handleCopyKey = () => {
+    if (!createdRawKey) return;
+    navigator.clipboard.writeText(createdRawKey);
+    setCopiedKey(true);
+    setTimeout(() => setCopiedKey(false), 2500);
+  };
+
 
   const handleChangeMasterCurrency = async (newCurrency: string) => {
     setMasterCurrency(newCurrency);
@@ -366,7 +433,72 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Card 3: Database & Auto-Backup Management */}
+          {/* Card 3: MCP & AI Agent API Keys */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 rounded-xl">
+                  <Key className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                    MCP & AI Agent API Keys
+                  </h2>
+                  <p className="text-[11px] font-medium text-slate-400">
+                    Create permanent API keys for ChatGPT Actions, Claude, and Greenline MCP servers
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => { setShowCreateKeyModal(true); setCreatedRawKey(null); }}
+                className="btn-pill-black text-xs px-3 py-1.5 cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>+ Create API Key</span>
+              </button>
+            </div>
+
+            {/* List of Keys */}
+            {apiKeys.length === 0 ? (
+              <div className="py-6 text-center text-slate-400 dark:text-slate-500 text-xs">
+                No active API keys yet. Click <strong className="text-slate-600 dark:text-slate-300">Create API Key</strong> to connect ChatGPT or MCP.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden text-xs">
+                {apiKeys.map((k) => (
+                  <div key={k.key_id} className="p-3 bg-white dark:bg-[#151D2B] flex items-center justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-[#0F172A] dark:text-white">{k.name}</span>
+                        <span className="font-mono text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded">
+                          {k.key_prefix}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                        <span>Created: {new Date(k.created_at).toLocaleDateString()}</span>
+                        {k.last_used_at && (
+                          <span>• Last used: {new Date(k.last_used_at).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRevokeKey(k.key_id, k.name)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                      title="Revoke this API Key"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Card 4: Database & Auto-Backup Management */}
           <div className="getquin-card p-5 space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
@@ -628,9 +760,9 @@ export default function SettingsPage() {
               </div>
 
               <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-                <span className="font-semibold text-slate-500">Session Security</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5" /> Active JWT
+                <span className="font-semibold text-slate-500">MCP Auth</span>
+                <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
+                  <Key className="w-3.5 h-3.5" /> {apiKeys.length} Active Key{apiKeys.length === 1 ? "" : "s"}
                 </span>
               </div>
             </div>
@@ -645,6 +777,115 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Create / Reveal API Key Modal */}
+      {showCreateKeyModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#151D2B] rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-800 shadow-2xl animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 rounded-full">
+                <Key className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[#0F172A] dark:text-white">
+                  {createdRawKey ? "API Key Generated" : "Create MCP API Key"}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {createdRawKey ? "Save this secret key securely" : "Enter a descriptive name for this client"}
+                </p>
+              </div>
+            </div>
+
+            {createdRawKey ? (
+              <div className="space-y-4">
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    Copy this key now!
+                  </p>
+                  <p className="text-[11px] leading-relaxed">
+                    For your security, this full key will <strong>never be shown again</strong>. Paste it as your Bearer token or <code className="font-mono bg-amber-100 dark:bg-amber-900/60 px-1 py-0.5 rounded">X-API-Key</code> in ChatGPT Actions or MCP configs.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase">Secret API Key</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={createdRawKey}
+                      className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyKey}
+                      className="px-3 py-2 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold rounded-xl transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedKey ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedKey ? "Copied" : "Copy"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => { setShowCreateKeyModal(false); setCreatedRawKey(null); }}
+                    className="btn-pill-black text-xs px-4 py-2 cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateApiKey} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Key Name / Description
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. ChatGPT Actions, Claude Desktop, Local Agent"
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#151D2B] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateKeyModal(false)}
+                    disabled={creatingKey}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingKey || !newKeyName.trim()}
+                    className="btn-pill-black text-xs px-4 py-2 cursor-pointer flex items-center gap-1.5"
+                  >
+                    {creatingKey ? (
+                      <>
+                        <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Generating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Key className="w-3.5 h-3.5" />
+                        <span>Generate Key</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Restore Confirmation Modal */}
       {restoreConfirmFile && (
@@ -690,3 +931,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+

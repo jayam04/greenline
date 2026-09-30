@@ -506,3 +506,19 @@ class BackupConfigUpdate(BaseModel):
 
 class BackupCreateRequest(BaseModel):
     note: Optional[str] = None
+
+# MCP API Key Schemas
+class ApiKeyCreate(BaseModel):
+    name: str = "Default MCP Key"
+
+class ApiKeyResponse(BaseModel):
+    key_id: int
+    name: str
+    key_prefix: str
+    is_active: bool
+    created_at: datetime.datetime
+    last_used_at: Optional[datetime.datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class ApiKeyCreateResponse(ApiKeyResponse):
+    key: str # Full raw secret key returned only once upon creation

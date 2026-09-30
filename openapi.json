@@ -1,0 +1,1423 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Greenline MCP & Portfolio API",
+    "description": "Dedicated AI Agent and MCP API for Greenline Personal Finance. Strictly manages cashflow transactions, stock and investment trades, and category/account/asset catalogs.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://lark-unvented-festivity.ngrok-free.dev",
+      "description": "Production Ngrok Gateway"
+    }
+  ],
+  "paths": {
+    "/api/v1/mcp/categories": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Get Mcp Categories",
+        "description": "Fetch valid categories and accounts. AI MUST call this first to obtain category_id and valid account_name before recording expenses or income.",
+        "operationId": "getCategories",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPCategoriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/cashflow": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Read Mcp Cashflow",
+        "description": "Read cashflow statements with signed amounts (+ for income, - for expense) and filters by month (YYYY-MM), bank_account, category_id, or merchant.",
+        "operationId": "readCashflows",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "description": "Month in YYYY-MM format, e.g. 2026-09",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bank_account",
+            "in": "query",
+            "description": "Account name or ID to filter by",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category_id",
+            "in": "query",
+            "description": "Exact category ID to filter by",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "merchant",
+            "in": "query",
+            "description": "Search term for merchant name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max number of statements to return (default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPCashflowReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Mutate Mcp Cashflow",
+        "description": "Bulk or single mutate cashflows (create, update, delete). Requires exact merchant, strict category_id, valid account_name, signed amounts, and balanced double-entry (sum of payments == sum of items).",
+        "operationId": "mutateCashflows",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPCashflowMutateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPCashflowMutateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mcp/stocks": {
+      "get": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Read Mcp Stocks",
+        "description": "Fetch existing stocks, valid investment accounts, and recent transactions. AI MUST call this endpoint first to verify account names and existing assets before executing trades.",
+        "operationId": "readStockTransactions",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account",
+            "in": "query",
+            "description": "Account name or ID to filter by",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "asset",
+            "in": "query",
+            "description": "Stock symbol (e.g. AAPL) or asset ID to filter by",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transaction_type",
+            "in": "query",
+            "description": "Filter by transaction type: buy, sell, dividend, bonus, split, deposit, withdrawal",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "description": "Month in YYYY-MM format, e.g. 2026-09",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max number of statements to return (default 50)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPStockReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mcp"
+        ],
+        "summary": "Mutate Mcp Stocks",
+        "description": "Mutate stock transactions (create, update, delete). AI MUST call GET /api/v1/mcp/stocks first for valid accounts and assets. If an asset is missing, set force_create_asset=true. Creating accounts is strictly forbidden.",
+        "operationId": "mutateStockTransactions",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "query",
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MCPStockMutateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MCPStockMutateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MCPAvailableAccount": {
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "account_type": {
+            "type": "string",
+            "title": "Account Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "account_name",
+          "currency",
+          "account_type"
+        ],
+        "title": "MCPAvailableAccount"
+      },
+      "MCPCashflowItemInput": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id",
+            "description": "Strict category ID from GET /api/v1/mcp/categories"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount",
+            "description": "Signed item amount. Negative (-) for expense/outflow, positive (+) for income/inflow"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Detailed line item or item name, e.g. '1x Milk'"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label",
+            "description": "Optional classification: ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "amount"
+        ],
+        "title": "MCPCashflowItemInput"
+      },
+      "MCPCashflowItemResponse": {
+        "properties": {
+          "item_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Id"
+          },
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "category_name": {
+            "type": "string",
+            "title": "Category Name"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "category_name",
+          "amount"
+        ],
+        "title": "MCPCashflowItemResponse"
+      },
+      "MCPCashflowMutateRequest": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowOperation"
+            },
+            "type": "array",
+            "title": "Operations",
+            "description": "List of cashflow operations to create, update, or delete. For a single transaction, provide an array containing 1 operation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "title": "MCPCashflowMutateRequest"
+      },
+      "MCPCashflowMutateResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowStatement"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "message"
+        ],
+        "title": "MCPCashflowMutateResponse"
+      },
+      "MCPCashflowOperation": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Operation action: 'create', 'update', or 'delete'",
+            "default": "create"
+          },
+          "cashflow_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashflow Id",
+            "description": "Required for 'update' or 'delete'"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date",
+            "description": "Transaction date (YYYY-MM-DD). Defaults to today if creating"
+          },
+          "merchant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merchant",
+            "description": "Counterparty or merchant name only (e.g. 'Tesco', 'Employer Ltd'). Generic titles like 'Expense' are rejected"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "description": "Currency code",
+            "default": "EUR"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Optional transaction notes"
+          },
+          "payments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MCPCashflowPaymentInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payments",
+            "description": "List of payment methods and amounts"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MCPCashflowItemInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items",
+            "description": "List of category items and amounts"
+          }
+        },
+        "type": "object",
+        "title": "MCPCashflowOperation"
+      },
+      "MCPCashflowPaymentInput": {
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id",
+            "description": "ID of the bank or wallet account"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name",
+            "description": "Exact name of the bank/wallet account (strictly matched against existing accounts)"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount",
+            "description": "Signed payment amount. Negative (-) for expense/outflow, positive (+) for income/inflow"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency",
+            "description": "Currency code (EUR, USD, etc.)",
+            "default": "EUR"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount"
+        ],
+        "title": "MCPCashflowPaymentInput"
+      },
+      "MCPCashflowPaymentResponse": {
+        "properties": {
+          "payment_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Id"
+          },
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "amount": {
+            "type": "number",
+            "title": "Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "default": "EUR"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "account_name",
+          "amount"
+        ],
+        "title": "MCPCashflowPaymentResponse"
+      },
+      "MCPCashflowReadResponse": {
+        "properties": {
+          "statements": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowStatement"
+            },
+            "type": "array",
+            "title": "Statements"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "statements",
+          "total_count"
+        ],
+        "title": "MCPCashflowReadResponse"
+      },
+      "MCPCashflowStatement": {
+        "properties": {
+          "cashflow_id": {
+            "type": "integer",
+            "title": "Cashflow Id"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "merchant": {
+            "type": "string",
+            "title": "Merchant"
+          },
+          "total_amount": {
+            "type": "number",
+            "title": "Total Amount"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "transaction_kind": {
+            "type": "string",
+            "title": "Transaction Kind"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "payments": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowPaymentResponse"
+            },
+            "type": "array",
+            "title": "Payments",
+            "default": []
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCashflowItemResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "cashflow_id",
+          "date",
+          "merchant",
+          "total_amount",
+          "currency",
+          "transaction_kind"
+        ],
+        "title": "MCPCashflowStatement"
+      },
+      "MCPCategoriesResponse": {
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/MCPCategoryItem"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "available_accounts": {
+            "items": {
+              "$ref": "#/components/schemas/MCPAvailableAccount"
+            },
+            "type": "array",
+            "title": "Available Accounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "categories",
+          "available_accounts"
+        ],
+        "title": "MCPCategoriesResponse"
+      },
+      "MCPCategoryItem": {
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "title": "Category Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "full_path": {
+            "type": "string",
+            "title": "Full Path"
+          },
+          "category_type": {
+            "type": "string",
+            "title": "Category Type"
+          },
+          "default_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "name",
+          "full_path",
+          "category_type"
+        ],
+        "title": "MCPCategoryItem"
+      },
+      "MCPStockAssetItem": {
+        "properties": {
+          "asset_id": {
+            "type": "integer",
+            "title": "Asset Id"
+          },
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "asset_type": {
+            "type": "string",
+            "title": "Asset Type"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange"
+          }
+        },
+        "type": "object",
+        "required": [
+          "asset_id",
+          "symbol",
+          "name",
+          "asset_type",
+          "currency"
+        ],
+        "title": "MCPStockAssetItem"
+      },
+      "MCPStockMutateRequest": {
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/MCPStockOperation"
+            },
+            "type": "array",
+            "title": "Operations",
+            "description": "List of stock operations to create, update, or delete. For a single transaction, provide an array containing 1 operation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "operations"
+        ],
+        "title": "MCPStockMutateRequest"
+      },
+      "MCPStockMutateResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/MCPStockTransactionResponse"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "message"
+        ],
+        "title": "MCPStockMutateResponse"
+      },
+      "MCPStockOperation": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "title": "Action",
+            "description": "Operation action: 'create', 'update', or 'delete'",
+            "default": "create"
+          },
+          "transaction_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transaction Id",
+            "description": "Required for 'update' or 'delete'"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id",
+            "description": "ID of the trading/demat/bank account"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name",
+            "description": "Exact name of the trading account (strictly matched against available_accounts; creating accounts is forbidden)"
+          },
+          "funding_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Account Id",
+            "description": "Optional funding account ID if funded from another bank/cash account"
+          },
+          "funding_account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Account Name",
+            "description": "Optional funding account name"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id",
+            "description": "ID of the stock/asset"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol",
+            "description": "Ticker symbol of the stock/asset (e.g. 'AAPL', 'MSFT', 'RELIANCE')"
+          },
+          "isin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Isin",
+            "description": "Optional ISIN code of the asset"
+          },
+          "asset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Name",
+            "description": "Company/asset name, e.g. 'Apple Inc.'"
+          },
+          "force_create_asset": {
+            "type": "boolean",
+            "title": "Force Create Asset",
+            "description": "Set to true to force-create the asset if it does not already exist in Greenline",
+            "default": false
+          },
+          "asset_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Type",
+            "description": "Asset type if force-creating: 'stock', 'etf', 'mutual_fund', 'bond', 'crypto'",
+            "default": "stock"
+          },
+          "asset_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Currency",
+            "description": "Currency of the asset (defaults to account currency or USD)"
+          },
+          "exchange": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange",
+            "description": "Exchange if force-creating, e.g. 'NASDAQ', 'NYSE', 'NSE', 'LSE'"
+          },
+          "transaction_type": {
+            "type": "string",
+            "title": "Transaction Type",
+            "description": "Type of transaction: 'buy', 'sell', 'dividend', 'bonus', 'split', 'deposit', 'withdrawal'",
+            "default": "buy"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date",
+            "description": "Date of transaction (YYYY-MM-DD). Defaults to today if creating"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity",
+            "description": "Number of units or shares"
+          },
+          "price_per_unit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Per Unit",
+            "description": "Execution price per share/unit"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees",
+            "description": "Brokerage, commission, or exchange fees",
+            "default": 0.0
+          },
+          "taxes": {
+            "type": "number",
+            "title": "Taxes",
+            "description": "Taxes, stamp duty, or withholding tax",
+            "default": 0.0
+          },
+          "total_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Amount",
+            "description": "Total net cash outlay or proceeds. If omitted, automatically computed from quantity, price, fees, and taxes"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes",
+            "description": "Optional notes or trade tags"
+          }
+        },
+        "type": "object",
+        "title": "MCPStockOperation"
+      },
+      "MCPStockReadResponse": {
+        "properties": {
+          "available_assets": {
+            "items": {
+              "$ref": "#/components/schemas/MCPStockAssetItem"
+            },
+            "type": "array",
+            "title": "Available Assets"
+          },
+          "available_accounts": {
+            "items": {
+              "$ref": "#/components/schemas/MCPAvailableAccount"
+            },
+            "type": "array",
+            "title": "Available Accounts"
+          },
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/MCPStockTransactionResponse"
+            },
+            "type": "array",
+            "title": "Transactions"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "available_assets",
+          "available_accounts",
+          "transactions",
+          "total_count"
+        ],
+        "title": "MCPStockReadResponse"
+      },
+      "MCPStockTransactionResponse": {
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "title": "Transaction Id"
+          },
+          "account_id": {
+            "type": "integer",
+            "title": "Account Id"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "account_currency": {
+            "type": "string",
+            "title": "Account Currency"
+          },
+          "funding_account_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Account Id"
+          },
+          "funding_account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding Account Name"
+          },
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Id"
+          },
+          "asset_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Symbol"
+          },
+          "asset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Name"
+          },
+          "transaction_type": {
+            "type": "string",
+            "title": "Transaction Type"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "price_per_unit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Per Unit"
+          },
+          "fees": {
+            "type": "number",
+            "title": "Fees",
+            "default": 0.0
+          },
+          "taxes": {
+            "type": "number",
+            "title": "Taxes",
+            "default": 0.0
+          },
+          "total_amount": {
+            "type": "number",
+            "title": "Total Amount"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "transaction_id",
+          "account_id",
+          "account_name",
+          "account_currency",
+          "transaction_type",
+          "date",
+          "total_amount"
+        ],
+        "title": "MCPStockTransactionResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "gl_mcp_...",
+        "description": "Greenline API Key (gl_mcp_...) or Bearer JWT token."
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ]
+}

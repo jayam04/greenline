@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, func
 from app.config import settings
@@ -12,7 +12,8 @@ from app.scheduler import start_scheduler
 from app.api.routers import (
     auth, accounts, assets, transactions, portfolio, 
     snapshots, prices, corporate_actions, benchmarks, backup,
-    categories, cashflow, settings as app_settings_router, discrepancies
+    categories, cashflow, settings as app_settings_router, discrepancies,
+    import_router, mcp_router
 )
 
 from app.services.fifo_engine import recalculate_all_lots
@@ -103,7 +104,14 @@ app.include_router(categories.router, prefix=settings.API_V1_STR)
 app.include_router(cashflow.router, prefix=settings.API_V1_STR)
 app.include_router(app_settings_router.router, prefix=settings.API_V1_STR)
 app.include_router(discrepancies.router, prefix=settings.API_V1_STR)
+app.include_router(import_router.router, prefix=settings.API_V1_STR)
+app.include_router(mcp_router.router, prefix=settings.API_V1_STR)
 
 @app.get("/")
 def root():
     return {"message": "Investment Tracker API is running", "docs": "/docs"}
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_root_mcp_openapi(request: Request):
+    from app.api.routers.mcp_router import get_mcp_openapi_json
+    return await get_mcp_openapi_json(request)

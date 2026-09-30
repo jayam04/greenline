@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, Date, DateTime, ForeignKey, 
-    UniqueConstraint, Text, Index
+    UniqueConstraint, Text, Index, Boolean
 )
 from sqlalchemy.orm import relationship
 from app.db.database import Base
@@ -296,4 +296,94 @@ class AppSetting(Base):
     key = Column(String, primary_key=True, index=True)
     value = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    batch_id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    file_type = Column(String, nullable=False)  # pdf, csv, xlsx, image, json
+    file_size_bytes = Column(Integer, default=0)
+    status = Column(String, nullable=False, default="processing")  # processing, ready_for_review, partially_merged, merged, discarded, failed
+    scope = Column(String, nullable=False, default="unified")
+
+    target_account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
+    default_currency = Column(String(3), default="USD")
+    custom_instructions = Column(Text, nullable=True)
+
+    progress_pct = Column(Integer, default=0)
+    current_step = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    total_records = Column(Integer, default=0)
+    new_records = Column(Integer, default=0)
+    exact_matches = Column(Integer, default=0)
+    probable_matches = Column(Integer, default=0)
+
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    target_account = relationship("Account")
+    records = relationship("StagedRecord", back_populates="batch", cascade="all, delete-orphan", lazy="selectin")
+
+class StagedRecord(Base):
+    __tablename__ = "staged_records"
+
+    staged_id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("import_batches.batch_id", ondelete="CASCADE"), nullable=False, index=True)
+
+    record_type = Column(String, nullable=False)  # investment | cashflow
+    review_status = Column(String, nullable=False, default="pending")  # approved, pending, skipped, modified
+    match_status = Column(String, nullable=False, default="new")  # new, exact_match, probable_match
+
+    matched_entity_id = Column(Integer, nullable=True)  # transaction_id or cashflow_id
+    matched_entity_details = Column(Text, nullable=True)  # JSON snapshot of existing transaction
+
+    confidence_score = Column(Float, default=1.0)
+
+    # Normalized fields
+    transaction_date = Column(Date, nullable=False, index=True)
+    action_type = Column(String, nullable=False)  # buy, sell, dividend, split, income, expense, transfer
+
+    account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
+    account_name_raw = Column(String, nullable=True)
+
+    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="SET NULL"), nullable=True)
+    asset_symbol_raw = Column(String, nullable=True)
+    asset_name_raw = Column(String, nullable=True)
+
+    category_id = Column(Integer, ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True)
+    category_name_raw = Column(String, nullable=True)
+
+    quantity = Column(Float, nullable=True)
+    price_per_unit = Column(Float, nullable=True)
+    total_amount = Column(Float, nullable=False)
+    fees = Column(Float, default=0.0)
+    taxes = Column(Float, default=0.0)
+    currency = Column(String(3), default="USD")
+    notes = Column(Text, nullable=True)
+    source_raw_text = Column(Text, nullable=True)
+
+    batch = relationship("ImportBatch", back_populates="records")
+    account = relationship("Account", lazy="selectin")
+    asset = relationship("Asset", lazy="selectin")
+    category = relationship("Category", lazy="selectin")
+
+    __table_args__ = (
+        Index("ix_staged_records_batch_status", "batch_id", "review_status"),
+    )
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    key_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    key_prefix = Column(String, nullable=False) # e.g. gl_mcp_3a9f...
+    key_hash = Column(String, nullable=False, unique=True, index=True) # SHA-256 hex digest
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", lazy="selectin")
 

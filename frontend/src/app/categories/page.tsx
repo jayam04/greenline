@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { 
   Plus, Edit, Trash2, ChevronRight, ChevronDown, Folder, 
   FolderOpen, Tag, Sparkles, X, Layers, CheckCircle2,
-  FolderPlus, Search, Calendar, ChevronUp
+  FolderPlus, Search, Calendar, ChevronUp, Columns
 } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateUtils";
@@ -34,9 +34,10 @@ export default function CategoriesPage() {
 
   const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
 
-  // Dynamic Timeline Columns (Default: This Month & Last Month)
+  // Dynamic Timeline Columns
   const [activeColumns, setActiveColumns] = useState<TimelineKey[]>(["THIS_MONTH", "LAST_MONTH"]);
-  const [isAddColumnOpen, setIsAddColumnOpen] = useState(false);
+  const [isManageColumnsModalOpen, setIsManageColumnsModalOpen] = useState(false);
+  const [tempActiveColumns, setTempActiveColumns] = useState<TimelineKey[]>([]);
   const [columnTotals, setColumnTotals] = useState<{ [timelineKey: string]: { [categoryId: string]: number } }>({});
 
   // Modal State
@@ -46,6 +47,17 @@ export default function CategoriesPage() {
 
   useEffect(() => {
     document.title = "Categories · greenline";
+    const savedCols = typeof window !== "undefined" ? localStorage.getItem("greenline_active_columns") : null;
+    if (savedCols) {
+      try {
+        const parsed = JSON.parse(savedCols);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setActiveColumns(parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse saved active columns", e);
+      }
+    }
     loadCategoryData();
   }, []);
 
@@ -70,12 +82,21 @@ export default function CategoriesPage() {
         setMasterCurrency(localCurr);
       }
 
-      // Auto-expand level 1 & 2
-      const initialExpanded: { [id: number]: boolean } = {};
-      (flatData || []).forEach((c) => {
-        if (c.level <= 2) initialExpanded[c.category_id] = true;
-      });
-      setExpandedNodes(initialExpanded);
+      // Load expanded state from localStorage or auto-expand level 1 & 2
+      const savedState = typeof window !== "undefined" ? localStorage.getItem("greenline_categories_expanded") : null;
+      if (savedState) {
+        try {
+          setExpandedNodes(JSON.parse(savedState));
+        } catch(e) {
+          console.error("Failed to parse saved expanded state", e);
+        }
+      } else {
+        const initialExpanded: { [id: number]: boolean } = {};
+        (flatData || []).forEach((c) => {
+          if (c.level <= 2) initialExpanded[c.category_id] = true;
+        });
+        setExpandedNodes(initialExpanded);
+      }
     } catch (e) {
       console.error("Failed to load categories:", e);
     } finally {
@@ -105,20 +126,12 @@ export default function CategoriesPage() {
     }
   };
 
-  const handleAddColumn = (key: TimelineKey) => {
-    if (!activeColumns.includes(key)) {
-      setActiveColumns((prev) => [...prev, key]);
-      loadTotalsForTimeline(key);
-    }
-    setIsAddColumnOpen(false);
-  };
-
-  const handleRemoveColumn = (key: TimelineKey) => {
-    setActiveColumns((prev) => prev.filter((k) => k !== key));
-  };
-
   const toggleExpand = (id: number) => {
-    setExpandedNodes((prev) => ({ ...prev, [id]: !prev[id] }));
+    setExpandedNodes((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      localStorage.setItem("greenline_categories_expanded", JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleExpandAll = () => {
@@ -127,10 +140,12 @@ export default function CategoriesPage() {
       all[c.category_id] = true;
     });
     setExpandedNodes(all);
+    localStorage.setItem("greenline_categories_expanded", JSON.stringify(all));
   };
 
   const handleCollapseAll = () => {
     setExpandedNodes({});
+    localStorage.setItem("greenline_categories_expanded", JSON.stringify({}));
   };
 
   const handleOpenAdd = (parentId?: number) => {
@@ -172,30 +187,17 @@ export default function CategoriesPage() {
     const hasChildren = node.subcategories && node.subcategories.length > 0;
     const isExpanded = !!expandedNodes[node.category_id];
     const effLabel = node.effective_label || node.default_label || "DISCRETIONARY";
-
-    const badgeColor =
-      effLabel === "ESSENTIAL"
-        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-        : effLabel === "LUXURY"
-        ? "bg-pink-50 text-pink-700 border-pink-200"
-        : effLabel === "INVESTMENT"
-        ? "bg-blue-50 text-blue-700 border-blue-200"
-        : "bg-amber-50 text-amber-700 border-amber-200";
-
-    const typeBadge =
-      node.category_type === "INCOME"
-        ? "bg-emerald-50 text-emerald-700"
-        : node.category_type === "TRANSFER"
-        ? "bg-purple-50 text-purple-700"
-        : node.category_type === "INVESTMENT"
-        ? "bg-blue-50 text-blue-700"
-        : "bg-slate-100 text-slate-700";
+    const dotColor =
+      effLabel === "ESSENTIAL" ? "bg-emerald-500"
+        : effLabel === "LUXURY" ? "bg-pink-500"
+        : effLabel === "INVESTMENT" ? "bg-blue-500"
+        : "bg-amber-500";
 
     return (
       <React.Fragment key={node.category_id}>
         <tr className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 group">
           {/* Column 1: Category Name with Tree Indentation */}
-          <td className="py-2.5 px-3">
+          <td className="py-2.5 pl-1 pr-3">
             <div 
               className="flex items-center gap-1.5"
               style={{ paddingLeft: `${(node.level - 1) * 22}px` }}
@@ -218,6 +220,8 @@ export default function CategoriesPage() {
                 <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               )}
 
+              <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={`Classification: ${effLabel}`} />
+
               <span className={`text-xs font-bold text-[#0F172A] ${node.level === 1 ? "text-[13px]" : ""}`}>
                 {node.name}
               </span>
@@ -230,28 +234,30 @@ export default function CategoriesPage() {
             </div>
           </td>
 
-          {/* Column 2: Category Type */}
-          <td className="py-2.5 px-3">
-            <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md ${typeBadge}`}>
-              {node.category_type === "EXPENSE" ? "SPENDS" : node.category_type}
-            </span>
-          </td>
-
-          {/* Column 3: Classification Label */}
-          <td className="py-2.5 px-3">
-            <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md border ${badgeColor}`}>
-              {effLabel}
-            </span>
-          </td>
-
           {/* Dynamic Timeline Totals Columns */}
           {activeColumns.map((colKey) => {
-            const val = columnTotals[colKey]?.[String(node.category_id)] || 0;
+            const aggAmount = columnTotals[colKey]?.[String(node.category_id)] || 0;
+            let displayAmount = aggAmount;
+
+            if (isExpanded && hasChildren) {
+              const childrenSum = node.subcategories.reduce(
+                (sum, child) => sum + (columnTotals[colKey]?.[String(child.category_id)] || 0),
+                0
+              );
+              displayAmount = aggAmount - childrenSum;
+            }
+
+            const amountColor = node.category_type === "INCOME"
+              ? "text-emerald-600 font-bold"
+              : (node.category_type === "EXPENSE" || displayAmount < -0.001)
+              ? "text-rose-600 font-bold"
+              : "text-[#0F172A]";
+
             return (
               <td key={colKey} className="py-2.5 px-3 text-right tabular-nums font-semibold text-xs">
-                {val > 0.001 ? (
-                  <span className={node.category_type === "INCOME" ? "text-emerald-600 font-bold" : "text-[#0F172A]"}>
-                    {formatCurrency(val, masterCurrency)}
+                {Math.abs(displayAmount) > 0.001 ? (
+                  <span className={amountColor}>
+                    {formatCurrency(displayAmount, masterCurrency)}
                   </span>
                 ) : (
                   <span className="text-slate-300">-</span>
@@ -260,8 +266,11 @@ export default function CategoriesPage() {
             );
           })}
 
+          {/* Spacer to absorb extra width */}
+          <td className="w-full"></td>
+
           {/* Column Actions */}
-          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+          <td className="py-2.5 pl-8 pr-3 text-right whitespace-nowrap">
             <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={() => handleOpenAdd(node.category_id)}
@@ -363,38 +372,19 @@ export default function CategoriesPage() {
             </p>
           </div>
 
-          {/* Add Period Dropdown Button in Toolbar */}
+          {/* Manage Columns Button in Toolbar */}
           <div className="relative">
             <button
-              onClick={() => setIsAddColumnOpen(!isAddColumnOpen)}
+              onClick={() => {
+                setTempActiveColumns([...activeColumns]);
+                setIsManageColumnsModalOpen(true);
+              }}
               className="btn-pill-gray text-xs cursor-pointer flex items-center gap-1.5"
-              title="Add timeline comparison column"
+              title="Manage timeline comparison columns"
             >
-              <Plus className="w-3.5 h-3.5 text-blue-600" />
-              <span>Add Period Column</span>
+              <Columns className="w-3.5 h-3.5 text-blue-600" />
+              <span>Manage Columns</span>
             </button>
-
-            {isAddColumnOpen && (
-              <div className="absolute right-0 top-9 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 w-44 text-left normal-case space-y-0.5">
-                <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                  Add Comparison Period
-                </div>
-                {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => handleAddColumn(opt.key)}
-                    className="w-full text-left px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-black rounded-lg transition-colors cursor-pointer"
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-                {TIMELINE_OPTIONS.filter((o) => !activeColumns.includes(o.key)).length === 0 && (
-                  <div className="px-2 py-1.5 text-[11px] text-slate-400">
-                    All periods already added
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
@@ -402,32 +392,22 @@ export default function CategoriesPage() {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-slate-200 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-                <th className="pb-2.5 px-3 font-bold min-w-[280px]">Category Hierarchy</th>
-                <th className="pb-2.5 px-3 font-bold w-24">Type</th>
-                <th className="pb-2.5 px-3 font-bold w-32">Classification</th>
+                <th className="pb-2.5 pl-1 pr-3 font-bold min-w-[280px]">Category Hierarchy</th>
 
                 {/* Dynamic Timeline Headers */}
                 {activeColumns.map((colKey, idx) => {
                   const opt = TIMELINE_OPTIONS.find((o) => o.key === colKey);
                   return (
                     <th key={colKey} className="pb-2.5 px-3 font-bold text-right min-w-[120px]">
-                      <div className="inline-flex items-center gap-1.5 bg-slate-100 px-2 py-0.5 rounded-md text-[#0F172A]">
-                        <span>{opt?.label || colKey}</span>
-                        {activeColumns.length > 1 && (
-                          <button
-                            onClick={() => handleRemoveColumn(colKey)}
-                            className="text-slate-400 hover:text-rose-600 cursor-pointer p-0.5 rounded"
-                            title="Remove column"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
+                      {opt?.label || colKey}
                     </th>
                   );
                 })}
 
-                <th className="pb-2.5 px-3 font-bold text-right w-24">Actions</th>
+                {/* Spacer to absorb extra width so data columns stay compact to the left */}
+                <th className="w-full"></th>
+
+                <th className="pb-2.5 pl-8 pr-3 font-bold text-right w-24">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
@@ -435,7 +415,7 @@ export default function CategoriesPage() {
 
               {tree.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={4 + activeColumns.length} className="py-8 text-center text-slate-400 font-medium text-xs">
+                  <td colSpan={3 + activeColumns.length} className="py-8 text-center text-slate-400 font-medium text-xs">
                     No categories found. Click &quot;Add Category&quot; to create one.
                   </td>
                 </tr>
@@ -444,6 +424,69 @@ export default function CategoriesPage() {
           </table>
         </div>
       </div>
+
+      {/* Manage Columns Modal */}
+      {isManageColumnsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-[#0F172A]">Manage Timeline Columns</h3>
+              <button
+                onClick={() => setIsManageColumnsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer p-1 rounded-md"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+              {TIMELINE_OPTIONS.map((opt) => {
+                const isSelected = tempActiveColumns.includes(opt.key);
+                return (
+                  <label key={opt.key} className="flex items-center gap-3 p-3 border border-slate-100 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors group">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setTempActiveColumns([...tempActiveColumns, opt.key]);
+                        } else {
+                          if (tempActiveColumns.length <= 1) return; // Prevent removing all
+                          setTempActiveColumns(tempActiveColumns.filter((k) => k !== opt.key));
+                        }
+                      }}
+                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span className="text-sm font-semibold text-slate-700 group-hover:text-[#0F172A] transition-colors">{opt.label}</span>
+                  </label>
+                );
+              })}
+              <p className="text-[11px] text-slate-500 font-medium pt-2">
+                Select the timeline periods you want to compare side-by-side. At least one column must be active.
+              </p>
+            </div>
+            <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setIsManageColumnsModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const newlyAdded = tempActiveColumns.filter((key) => !activeColumns.includes(key));
+                  setActiveColumns(tempActiveColumns);
+                  localStorage.setItem("greenline_active_columns", JSON.stringify(tempActiveColumns));
+                  newlyAdded.forEach((key) => loadTotalsForTimeline(key));
+                  setIsManageColumnsModalOpen(false);
+                }}
+                className="px-4 py-2 text-xs font-bold bg-[#0F172A] text-white rounded-lg hover:bg-slate-800 transition-all shadow-sm cursor-pointer"
+              >
+                Apply Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Category Add & Edit Modal */}
       <CategoryModal

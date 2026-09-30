@@ -500,16 +500,16 @@ button, input, select, textarea {
 
 .tour-panel.active {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  gap: 2.5rem;
+  grid-template-columns: 1fr 1.65fr;
+  gap: 3rem;
   align-items: center;
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
 .tour-panel .browser-frame {
-  max-width: 490px;
   width: 100%;
+  max-width: 740px;
   margin: 0 auto;
 }
 

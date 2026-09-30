@@ -27,3 +27,18 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/',
 }));
+
+// Mock Next.js fonts
+vi.mock('next/font/google', () => ({
+  Inter: () => ({
+    className: 'mock-font-inter',
+    variable: '--font-inter',
+  }),
+}));
+
+vi.mock('next/font/local', () => ({
+  default: () => ({
+    className: 'mock-font-general-sans',
+    variable: '--font-general-sans',
+  }),
+}));

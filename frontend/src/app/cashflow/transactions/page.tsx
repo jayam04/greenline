@@ -9,6 +9,15 @@ import {
 import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowModal";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
 import { formatCurrency } from "@/lib/format";
+import { TransactionLedger, UnifiedRowItem } from "@/components/TransactionLedger";
+import { PrintTransactionsDialog } from "@/components/PrintTransactionsDialog";
+
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Check, ChevronsUpDown, Printer } from "lucide-react";
+
 
 interface Account {
   account_id: number;
@@ -17,41 +26,6 @@ interface Account {
   account_type: string;
 }
 
-interface UnifiedRowItem {
-  key: string;
-  source: "cashflow" | "investment";
-  rawCashflow?: CashflowTransactionItem;
-  rawTrade?: TransactionItem;
-  date: string;
-  title: string;
-  notes?: string | null;
-  payments: {
-    account_id: number;
-    account_name: string;
-    account_currency: string;
-    amount: number;
-    holding_delta?: string;
-    running_balance_after?: number;
-  }[];
-  items: {
-    category_name: string;
-    category_type?: string;
-    description?: string | null;
-    effective_label?: string | null;
-    amount: number;
-  }[];
-  isTransfer: boolean;
-  isIncome: boolean;
-  totalAmount: number;
-  currency: string;
-  runningBalancesAfter: Record<number, number>;
-  primaryBalanceAfter?: {
-    account_id: number;
-    account_name: string;
-    currency: string;
-    balance: number;
-  };
-}
 
 export default function CashflowTransactionsPage() {
   const [cashflowTxs, setCashflowTxs] = useState<CashflowTransactionItem[]>([]);
@@ -62,13 +36,14 @@ export default function CashflowTransactionsPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>("ALL");
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("ALL");
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
 
   // Modals
   const [isCashflowModalOpen, setIsCashflowModalOpen] = useState(false);
   const [editingCashflowTx, setEditingCashflowTx] = useState<CashflowTransactionItem | null>(null);
 
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingTradeTx, setEditingTradeTx] = useState<TransactionItem | null>(null);
 
   useEffect(() => {
@@ -402,9 +377,8 @@ export default function CashflowTransactionsPage() {
       }
 
       // Account filter
-      if (selectedAccountId !== "ALL") {
-        const aid = Number(selectedAccountId);
-        if (!r.payments.some((p) => p.account_id === aid)) return false;
+      if (selectedAccountIds.length > 0) {
+        if (!r.payments.some((p) => selectedAccountIds.includes(p.account_id))) return false;
       }
 
       // Label filter
@@ -414,70 +388,29 @@ export default function CashflowTransactionsPage() {
 
       return true;
     });
-  }, [unifiedRows, searchQuery, selectedAccountId, selectedLabelFilter]);
+  }, [unifiedRows, searchQuery, selectedAccountIds, selectedLabelFilter]);
 
   // Current balance of selected account
   const selectedAccountInfo = useMemo(() => {
-    if (selectedAccountId === "ALL") {
+    if (selectedAccountIds.length !== 1) {
       return null;
     }
-    const aid = Number(selectedAccountId);
+    const aid = selectedAccountIds[0];
     const acc = accounts.find((a) => a.account_id === aid);
     if (!acc) return null;
 
     // Latest balance across all unified rows
-    const latestRowWithAccount = unifiedRows.find((r) => r.runningBalancesAfter[aid] !== undefined);
-    const currentBal = latestRowWithAccount ? latestRowWithAccount.runningBalancesAfter[aid] : 0;
+    const latestRowWithAccount = unifiedRows.find((r) => r.runningBalancesAfter?.[aid] !== undefined);
+    const currentBal = latestRowWithAccount ? latestRowWithAccount.runningBalancesAfter?.[aid] || 0 : 0;
     return {
       name: acc.account_name,
       currency: acc.currency,
       balance: currentBal
     };
-  }, [selectedAccountId, accounts, unifiedRows]);
+  }, [selectedAccountIds, accounts, unifiedRows]);
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-8 space-y-6">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
-              <ArrowLeftRight className="w-5 h-5" />
-            </span>
-            <h1 className="text-xl font-bold text-[#0F172A] dark:text-white tracking-tight">
-              Cashflow Transactions
-            </h1>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Historical ledger with running statement balances, split payment methods, and multi-category itemization
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setEditingTradeTx(null);
-              setIsTradeModalOpen(true);
-            }}
-            className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <Briefcase className="w-3.5 h-3.5 text-blue-500" />
-            <span>+ Record Trade / SIP</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setEditingCashflowTx(null);
-              setIsCashflowModalOpen(true);
-            }}
-            className="px-3.5 py-2 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-[#0F172A] rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-400" />
-            <span>+ Record Cashflow</span>
-          </button>
-        </div>
-      </div>
-
       {/* Main Card with Table */}
       <div className="getquin-card p-5 space-y-4">
         
@@ -493,7 +426,6 @@ export default function CashflowTransactionsPage() {
               </p>
             </div>
 
-            {/* Selected Account Balance Badge */}
             {selectedAccountInfo && (
               <div 
                 data-testid="selected-account-balance"
@@ -509,215 +441,123 @@ export default function CashflowTransactionsPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                setEditingTradeTx(null);
+                setIsTradeModalOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Briefcase className="w-3.5 h-3.5 text-blue-500" />
+              <span>+ Trade / SIP</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setEditingCashflowTx(null);
+                setIsCashflowModalOpen(true);
+              }}
+              className="px-3 py-1.5 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-[#0F172A] rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer mr-2"
+            >
+              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>+ Cashflow</span>
+            </button>
+            
+            <button
+              onClick={() => setIsPrintModalOpen(true)}
+              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer mr-2"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print</span>
+            </button>
+
             {/* Search Input */}
             <div className="relative flex items-center">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
               <input
                 type="text"
-                placeholder="Search merchant, account, category..."
+                placeholder="Search merchant, account..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[#F3F4F6] dark:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 dark:focus:border-slate-700 focus:bg-white dark:focus:bg-slate-900 focus:outline-none w-52"
+                className="bg-secondary text-xs font-semibold text-foreground placeholder:text-muted-foreground pl-8 pr-3 py-1.5 rounded-lg border border-input focus:border-ring focus:bg-background focus:outline-none w-48"
               />
             </div>
 
-            {/* Account Selector Filter */}
-            <select
-              aria-label="account-filter"
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="bg-[#F1F5F9] dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg border border-transparent focus:outline-none cursor-pointer"
-            >
-              <option value="ALL">All Accounts</option>
-              {accounts.map((a) => (
-                <option key={a.account_id} value={a.account_id}>
-                  {a.account_name} ({a.currency})
-                </option>
-              ))}
-            </select>
+            {/* Account Multi-Select Popover */}
+            <Popover>
+              <PopoverTrigger className="flex items-center justify-between bg-secondary hover:bg-secondary/80 text-xs font-bold text-secondary-foreground border border-border px-3 py-1.5 rounded-lg w-40">
+                  <span className="truncate">
+                    {selectedAccountIds.length === 0 
+                      ? "All Accounts" 
+                      : selectedAccountIds.length === 1
+                      ? accounts.find(a => a.account_id === selectedAccountIds[0])?.account_name
+                      : `${selectedAccountIds.length} Accounts`}
+                  </span>
+                  <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-0" align="end">
+                <Command>
+                  <CommandInput placeholder="Search accounts..." />
+                  <CommandList>
+                    <CommandEmpty>No account found.</CommandEmpty>
+                    <CommandGroup>
+                      {accounts.map((a) => (
+                        <CommandItem
+                          key={a.account_id}
+                          onSelect={() => {
+                            setSelectedAccountIds(prev => 
+                              prev.includes(a.account_id) 
+                                ? prev.filter(id => id !== a.account_id)
+                                : [...prev, a.account_id]
+                            )
+                          }}
+                        >
+                          <Checkbox 
+                            checked={selectedAccountIds.includes(a.account_id)}
+                            className="mr-2"
+                          />
+                          {a.account_name} ({a.currency})
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
-            {/* Label Filter Pills */}
-            <div className="flex items-center bg-[#F1F5F9] dark:bg-slate-800 p-1 rounded-xl text-xs font-bold">
-              {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
-                <button
-                  key={lbl}
-                  onClick={() => setSelectedLabelFilter(lbl)}
-                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                    selectedLabelFilter === lbl
-                      ? "bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] shadow-xs"
-                      : "text-slate-600 dark:text-slate-400 hover:text-black dark:hover:text-white"
-                  }`}
-                >
-                  {lbl === "ALL" ? "All Labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
+            {/* Label Filter Select */}
+            <Select value={selectedLabelFilter} onValueChange={(v) => setSelectedLabelFilter(v || "ALL")}>
+              <SelectTrigger className="w-[140px] h-8 text-xs font-bold bg-secondary text-secondary-foreground border border-border">
+                <SelectValue placeholder="All Labels" />
+              </SelectTrigger>
+              <SelectContent>
+                {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
+                  <SelectItem key={lbl} value={lbl} className="text-xs font-bold">
+                    {lbl === "ALL" ? "All Labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
         {/* Ledger Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
-                <th className="pb-2.5 font-bold">Date</th>
-                <th className="pb-2.5 font-bold">Title / Merchant</th>
-                <th className="pb-2.5 font-bold">Payment Method(s)</th>
-                <th className="pb-2.5 font-bold">Category & Description</th>
-                <th className="pb-2.5 font-bold text-right">Amount</th>
-                <th className="pb-2.5 font-bold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-                    Loading transactions ledger...
-                  </td>
-                </tr>
-              ) : filteredRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-slate-400 font-medium text-xs">
-                    No cashflow transactions recorded for this period.
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((r) => (
-                  <tr key={r.key} data-testid="transaction-row" className="hover:bg-slate-50/80 dark:hover:bg-slate-800/30 transition-colors">
-                    {/* Date */}
-                    <td className="py-3 font-semibold text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap">
-                      {r.date}
-                    </td>
-
-                    {/* Title */}
-                    <td className="py-3 font-bold text-[#0F172A] dark:text-white">
-                      <div className="flex items-center gap-1.5">
-                        {r.source === "investment" && (
-                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" title="Investment Trade" />
-                        )}
-                        <span>{r.title}</span>
-                      </div>
-                      {r.notes && (
-                        <div className="text-[11px] font-normal text-slate-400 line-clamp-1">{r.notes}</div>
-                      )}
-                    </td>
-
-                    {/* Payments */}
-                    <td className="py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {r.payments.map((p, idx) => (
-                          <span
-                            key={idx}
-                            data-testid="payment-badge"
-                            data-account-id={p.account_id}
-                            data-amount={p.amount}
-                            data-running-balance={p.running_balance_after}
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60"
-                          >
-                            <span>{p.account_name}</span>
-                            {p.holding_delta ? (
-                              <span className="text-blue-600 dark:text-blue-400 font-extrabold">({p.holding_delta})</span>
-                            ) : (
-                              <>
-                                <span className={p.amount >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                                  {p.amount >= 0 ? `+${formatCurrency(p.amount, p.account_currency)}` : formatCurrency(p.amount, p.account_currency)}
-                                </span>
-                                {p.running_balance_after !== undefined && (
-                                  <span className="text-[9px] text-slate-400 font-semibold pl-0.5 border-l border-slate-300 dark:border-slate-700">
-                                    Bal: {formatCurrency(p.running_balance_after, p.account_currency)}
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-
-                    {/* Items */}
-                    <td className="py-3">
-                      <div className="space-y-1">
-                        {r.items.map((i, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-xs">
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{i.category_name}</span>
-                            {i.description && (
-                              <span className="text-[11px] text-slate-400 line-clamp-1 font-normal">• {i.description}</span>
-                            )}
-                            {i.effective_label && (
-                              <span className="px-1.5 py-0.2 text-[9px] font-extrabold uppercase rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                {i.effective_label}
-                              </span>
-                            )}
-                            {r.items.length > 1 && (
-                              <span className="text-[10px] text-slate-400 font-semibold ml-auto">
-                                {formatCurrency(i.amount, r.currency)}
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-
-                    {/* Total Amount */}
-                    <td className="py-3 text-right font-bold tabular-nums">
-                      <span className={r.isTransfer ? "text-blue-600 dark:text-blue-400" : r.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>
-                        {r.isIncome ? "+" : "-"}{formatCurrency(r.totalAmount, r.currency)}
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3 text-right whitespace-nowrap">
-                      {r.source === "cashflow" && r.rawCashflow && (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingCashflowTx(r.rawCashflow!);
-                              setIsCashflowModalOpen(true);
-                            }}
-                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                            title="Edit Cashflow"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCashflow(r.rawCashflow!.cashflow_id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                            title="Delete Cashflow"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {r.source === "investment" && r.rawTrade && (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingTradeTx(r.rawTrade!);
-                              setIsTradeModalOpen(true);
-                            }}
-                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                            title="Edit Trade Transaction"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTrade(r.rawTrade!.transaction_id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                            title="Delete Trade"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <TransactionLedger
+          transactions={filteredRows}
+          loading={loading}
+          showRunningBalance={true}
+          selectedAccountIds={selectedAccountIds}
+          onEditCashflow={(tx) => {
+            setEditingCashflowTx(tx);
+            setIsCashflowModalOpen(true);
+          }}
+          onDeleteCashflow={handleDeleteCashflow}
+          onEditTrade={(tx) => {
+            setEditingTradeTx(tx);
+            setIsTradeModalOpen(true);
+          }}
+          onDeleteTrade={handleDeleteTrade}
+        />
       </div>
 
       {/* Cashflow Modal */}
@@ -741,6 +581,13 @@ export default function CashflowTransactionsPage() {
         onSuccess={() => loadData()}
         initialData={editingTradeTx}
       />
+
+      <PrintTransactionsDialog
+        isOpen={isPrintModalOpen}
+        onClose={() => setIsPrintModalOpen(false)}
+        accounts={accounts}
+      />
+
     </div>
   );
 }

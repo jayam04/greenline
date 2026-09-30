@@ -14,6 +14,7 @@ class AppSettingsSchema(BaseModel):
     link_brokerage_with_bank: bool = False
     master_currency: str = "EUR"
     fiscal_year_start: str = "01-01"
+    app_font: str = "general-sans"
 
 @router.get("", response_model=AppSettingsSchema)
 @router.get("/", response_model=AppSettingsSchema)
@@ -22,7 +23,7 @@ async def get_settings(
     current_user: User = Depends(get_current_user)
 ) -> AppSettingsSchema:
     stmt = select(AppSetting).where(
-        AppSetting.key.in_(["link_brokerage_with_bank", "master_currency", "fiscal_year_start"])
+        AppSetting.key.in_(["link_brokerage_with_bank", "master_currency", "fiscal_year_start", "app_font"])
     )
     res = await db.execute(stmt)
     settings_map = {s.key: s.value for s in res.scalars().all()}
@@ -48,10 +49,22 @@ async def get_settings(
         except Exception:
             fy_val = settings_map["fiscal_year_start"]
 
+    font_val = "general-sans"
+    if "app_font" in settings_map:
+        try:
+            font_val = json.loads(settings_map["app_font"])
+        except Exception:
+            font_val = settings_map["app_font"]
+    if str(font_val).strip().lower() not in ("general-sans", "inter"):
+        font_val = "general-sans"
+    else:
+        font_val = str(font_val).strip().lower()
+
     return AppSettingsSchema(
         link_brokerage_with_bank=bool(link_val),
         master_currency=str(curr_val).strip().upper() or "EUR",
-        fiscal_year_start=str(fy_val).strip() or "01-01"
+        fiscal_year_start=str(fy_val).strip() or "01-01",
+        app_font=font_val
     )
 
 @router.put("", response_model=AppSettingsSchema)
@@ -93,10 +106,24 @@ async def update_settings(
     else:
         s_fy.value = fy_json
 
+    # 4. Update app_font
+    norm_font = payload.app_font.strip().lower()
+    if norm_font not in ("general-sans", "inter"):
+        norm_font = "general-sans"
+    stmt_font = select(AppSetting).where(AppSetting.key == "app_font")
+    res_font = await db.execute(stmt_font)
+    s_font = res_font.scalar_one_or_none()
+    font_json = json.dumps(norm_font)
+    if not s_font:
+        db.add(AppSetting(key="app_font", value=font_json))
+    else:
+        s_font.value = font_json
+
     await db.commit()
 
     return AppSettingsSchema(
         link_brokerage_with_bank=payload.link_brokerage_with_bank,
         master_currency=norm_curr,
-        fiscal_year_start=norm_fy
+        fiscal_year_start=norm_fy,
+        app_font=norm_font
     )

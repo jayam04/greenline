@@ -66,15 +66,42 @@ export function AllocationChart({
 
   const total = Object.values(allocation).reduce((acc, v) => acc + v, 0);
 
-  const chartData: ChartItem[] = Object.entries(allocation)
+  const chartData: ChartItem[] = [];
+  let othersValue = 0;
+
+  const validEntries = Object.entries(allocation)
     .filter(([_, value]) => value > 0)
-    .map(([key, value], idx) => ({
-      name: key.toUpperCase(),
-      value: Number(value.toFixed(2)),
-      pct: total > 0 ? (value / total) * 100 : 0,
-      color: GETQUIN_SPECTRUM_COLORS[idx % GETQUIN_SPECTRUM_COLORS.length],
-    }))
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => b[1] - a[1]); // sort by value descending
+
+  validEntries.forEach(([key, value]) => {
+    const pct = total > 0 ? (value / total) * 100 : 0;
+    if (pct < 1.0) {
+      othersValue += value;
+    } else {
+      chartData.push({
+        name: key.toUpperCase(),
+        value: Number(value.toFixed(2)),
+        pct: pct,
+        color: "", // Will assign color later
+      });
+    }
+  });
+
+  if (othersValue > 0) {
+    chartData.push({
+      name: "OTHERS",
+      value: Number(othersValue.toFixed(2)),
+      pct: total > 0 ? (othersValue / total) * 100 : 0,
+      color: "#94A3B8", // slate-400
+    });
+  }
+
+  // Assign colors (exclude Others which has fixed color)
+  chartData.forEach((item, idx) => {
+    if (item.name !== "OTHERS") {
+      item.color = GETQUIN_SPECTRUM_COLORS[idx % GETQUIN_SPECTRUM_COLORS.length];
+    }
+  });
 
   const chartHeight = height || 224;
   const baseOuterRadius = Math.max(50, Math.floor(chartHeight / 2 - 16));

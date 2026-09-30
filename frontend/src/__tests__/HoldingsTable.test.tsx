@@ -280,4 +280,75 @@ describe('Holdings Production Page Component (src/app/holdings/page.tsx)', () =>
     expect(within(kpiCard).getByText('$100.00')).toBeInTheDocument();
     expect(screen.queryByText('$108.70')).not.toBeInTheDocument();
   });
+
+  it('displays Fees & Taxes card before Total Net P&L card and deducts fees & taxes from Total Net P&L', async () => {
+    const customSummary = {
+      ...mockSummary,
+      total_fees: 20.0,
+      total_taxes: 10.0,
+      top_holdings: [
+        {
+          ...mockSummary.top_holdings[1],
+          currency: 'EUR',
+          current_value: 1000.0,
+          total_cost: 800.0,
+          realized_pnl: 100.0,
+        }
+      ],
+      closed_holdings: [
+        {
+          asset_id: 99,
+          symbol: 'CLOSED.EQ',
+          name: 'Closed Asset',
+          asset_type: 'stock',
+          sector: 'Finance',
+          currency: 'EUR',
+          quantity_held: 0,
+          avg_cost_price: 0,
+          total_cost: 0,
+          latest_price: 0,
+          latest_price_date: '2026-08-25',
+          current_value: 0,
+          unrealized_pnl: 0,
+          unrealized_pnl_pct: 0,
+          realized_pnl: 50.0,
+          realized_pnl_pct: 10.0,
+          xirr: null,
+          open_lots: [],
+        }
+      ]
+    };
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/portfolio/summary') return customSummary;
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return {};
+    });
+
+    render(<HoldingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Positions & Holdings')).toBeInTheDocument();
+    });
+
+    // 1. Verify card order: Fees & Taxes must appear before Total Net P&L in the DOM
+    const feesAndTaxesLabel = screen.getByText('Fees & Taxes');
+    const totalNetPnlLabel = screen.getByText('Total Net P&L');
+    expect(
+      feesAndTaxesLabel.compareDocumentPosition(totalNetPnlLabel) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+
+    // 2. Verify Fees & Taxes card displays €30.00
+    const feesCard = feesAndTaxesLabel.closest('.getquin-card') as HTMLElement;
+    expect(within(feesCard).getByText('€30.00')).toBeInTheDocument();
+
+    // 3. Verify Total Net P&L card:
+    // Realized: 100 + 50 = 150 EUR
+    // Unrealized: 1000 - 800 = 200 EUR
+    // Fees & Taxes: 20 + 10 = 30 EUR
+    // Net P&L: (150 + 200) - 30 = €320.00
+    const netPnlCard = totalNetPnlLabel.closest('.getquin-card') as HTMLElement;
+    expect(within(netPnlCard).getByText('€320.00')).toBeInTheDocument();
+  });
 });
+

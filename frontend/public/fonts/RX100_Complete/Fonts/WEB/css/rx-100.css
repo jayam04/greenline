@@ -1,0 +1,22 @@
+/**
+* @license
+*
+* Font Family: RX100
+* Designed by: Anurag Gautam, Indian Type Foundry
+* URL: https://www.fontshare.com/fonts/rx-100
+* © 2026 Indian Type Foundry
+*
+* RX100 Regular 
+
+*
+*/
+@font-face {
+  font-family: 'RX100-Regular';
+  src: url('../fonts/RX100-Regular.woff2') format('woff2'),
+       url('../fonts/RX100-Regular.woff') format('woff'),
+       url('../fonts/RX100-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+

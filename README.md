@@ -11,9 +11,12 @@ An elegant, real-time personal finance and investment analytics platform designe
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python)](https://python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+[![Showcase Website](https://img.shields.io/badge/Showcase-Interactive%20Tour-10B981?style=flat&logo=safari)](https://jayam04.github.io/greenline/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 </div>
+
+> 🌐 **Live Interactive Showcase**: Explore the live, interactive showcase website featuring screenshot galleries, deep-dive architectural comparisons, and quickstart instructions at [**jayam04.github.io/greenline**](https://jayam04.github.io/greenline/) (or open `docs/index.html` locally).
 
 ---
 
@@ -247,6 +250,11 @@ greenline/
 │   ├── tests/                # Automated pytest unit & integration tests
 │   ├── Dockerfile
 │   └── requirements.txt
+├── docs/                     # Static showcase website & documentation (GitHub Pages)
+│   ├── assets/screenshots/   # High-resolution retina screenshots
+│   ├── index.html            # Showcase landing page
+│   ├── styles.css            # Modern Emerald & Slate styling
+│   └── script.js             # Theme toggle & interactive lightbox
 ├── frontend/
 │   ├── e2e/                  # Playwright End-to-End test suites
 │   ├── src/
@@ -257,9 +265,11 @@ greenline/
 │   ├── package.json
 │   ├── playwright.config.ts
 │   └── vitest.config.mts
+├── scripts/                  # Automated maintenance & screenshot capture utilities
 ├── data/                     # Persistent SQLite databases and JSON backups
 ├── docker-compose.yml        # Development Docker Compose (npm run dev + hot-reload)
 ├── docker-compose.prod.yml   # Production Docker Compose (npm start + optimized build)
+├── docker-compose.demo.yml   # Isolated Demo Stack for showcase captures
 ├── pyproject.toml            # Python tool configurations (Ruff, Pytest)
 ├── .gitignore
 └── README.md

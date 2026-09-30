@@ -1,0 +1,40 @@
+services:
+  backend-demo:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8005:8000"
+    volumes:
+      - ./data:/data
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+    environment:
+      - DATABASE_FILE=investments.demo_site.db
+      - DATABASE_URL=sqlite+aiosqlite:////data/investments.demo_site.db
+      - SECRET_KEY=demo-secret-investment-tracker-key-2026
+      - DEFAULT_ADMIN_USER=admin
+      - DEFAULT_ADMIN_PASSWORD=admin123
+      - PYTHONPATH=/app
+    restart: unless-stopped
+
+  frontend-demo:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    command: npm run dev -- -H 0.0.0.0 -p 3000
+    ports:
+      - "3005:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8005
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - backend-demo
+    restart: unless-stopped

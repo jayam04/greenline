@@ -148,7 +148,8 @@ export default function SettingsPage() {
           localStorage.setItem("greenline_fiscal_year_start", fy);
         }
         if (res.app_font) {
-          const normFont: AppFont = res.app_font.trim().toLowerCase() === "inter" ? "inter" : "general-sans";
+          const raw = res.app_font.trim().toLowerCase();
+          const normFont: AppFont = raw === "inter" ? "inter" : raw === "rx100" ? "rx100" : "general-sans";
           setFont(normFont);
         }
       }

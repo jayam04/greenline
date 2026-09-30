@@ -185,41 +185,57 @@ function PrintTransactionsContent() {
       }
     });
 
-    // 3. Filter and Sort
+    // 3. Sort chronologically
     rawRows.sort((a, b) => a.date.localeCompare(b.date));
+
+    // 4. Calculate Balances and Group
+    const groups: Record<number, { accountName: string, currency: string, rows: AccountRow[], openingBalance: number, closingBalance: number }> = {};
+    
+    rawRows.forEach(r => {
+      if (!groups[r.accountId]) {
+        groups[r.accountId] = { 
+          accountName: r.accountName, 
+          currency: r.currency,
+          rows: [], 
+          openingBalance: 0, 
+          closingBalance: 0 
+        };
+      }
+      
+      const g = groups[r.accountId];
+      const isBeforeStart = startDateParam ? r.date < startDateParam : false;
+      const isAfterEnd = endDateParam ? r.date > endDateParam : false;
+
+      // Always process for accurate absolute balances
+      if (isBeforeStart) {
+        g.openingBalance += r.amount;
+        g.closingBalance += r.amount;
+      } else if (!isAfterEnd) {
+        g.closingBalance += r.amount;
+        
+        // Only push to visible rows if it matches the type filter
+        if (!typesParam || typesParam.split(",").includes(r.type)) {
+          g.rows.push(r);
+        }
+      }
+    });
+
+    // 5. Convert to array and filter by accountIds
+    let result = Object.entries(groups).map(([id, grp]) => ({
+      accountId: Number(id),
+      accountName: grp.accountName,
+      currency: grp.currency,
+      openingBalance: grp.openingBalance,
+      closingBalance: grp.closingBalance,
+      rows: grp.rows
+    }));
 
     if (accountIdsParam) {
       const ids = accountIdsParam.split(",").map(Number);
-      rawRows = rawRows.filter(r => ids.includes(r.accountId));
+      result = result.filter(g => ids.includes(g.accountId));
     }
 
-    if (typesParam) {
-      const allowed = typesParam.split(",");
-      rawRows = rawRows.filter(r => allowed.includes(r.type));
-    }
-
-    if (startDateParam) {
-      rawRows = rawRows.filter(r => r.date >= startDateParam);
-    }
-    
-    if (endDateParam) {
-      rawRows = rawRows.filter(r => r.date <= endDateParam);
-    }
-
-    // 4. Group by Account
-    const groups: Record<number, { accountName: string, rows: AccountRow[] }> = {};
-    rawRows.forEach(r => {
-      if (!groups[r.accountId]) {
-        groups[r.accountId] = { accountName: r.accountName, rows: [] };
-      }
-      groups[r.accountId].rows.push(r);
-    });
-
-    return Object.entries(groups).map(([id, grp]) => ({
-      accountId: Number(id),
-      accountName: grp.accountName,
-      rows: grp.rows
-    })).sort((a, b) => a.accountName.localeCompare(b.accountName));
+    return result.sort((a, b) => a.accountName.localeCompare(b.accountName));
 
   }, [cashflowTxs, tradeTxs, accountIdsParam, typesParam, startDateParam, endDateParam]);
 
@@ -260,6 +276,14 @@ function PrintTransactionsContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
+              <tr className="align-top bg-gray-50/50">
+                <td className="py-2 pr-4 whitespace-nowrap text-gray-600"></td>
+                <td className="py-2 pr-4 font-bold text-gray-800">&lt;Opening Balance&gt;</td>
+                <td className="py-2 pr-4 text-gray-500 uppercase text-[10px]"></td>
+                <td className={`py-2 text-right font-bold whitespace-nowrap ${group.openingBalance < 0 ? 'text-gray-900' : 'text-gray-900'}`}>
+                  {formatCurrency(group.openingBalance, group.currency)}
+                </td>
+              </tr>
               {group.rows.map((row, i) => (
                 <tr key={i} className="align-top">
                   <td className="py-2 pr-4 whitespace-nowrap text-gray-600">{row.date}</td>
@@ -270,6 +294,14 @@ function PrintTransactionsContent() {
                   </td>
                 </tr>
               ))}
+              <tr className="align-top bg-gray-100/50 border-t-2 border-gray-200">
+                <td className="py-2 pr-4 whitespace-nowrap text-gray-600"></td>
+                <td className="py-2 pr-4 font-bold text-gray-900">&lt;Closing Balance&gt;</td>
+                <td className="py-2 pr-4 text-gray-500 uppercase text-[10px]"></td>
+                <td className={`py-2 text-right font-bold whitespace-nowrap ${group.closingBalance < 0 ? 'text-gray-900' : 'text-gray-900'}`}>
+                  {formatCurrency(group.closingBalance, group.currency)}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>

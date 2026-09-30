@@ -194,7 +194,7 @@ export function TransactionLedger({
                     </div>
                     
                     <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${amountColor}`}>
-                      {tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
+                      {(tx.isTransfer || tx.source === "investment") ? "" : (tx.isIncome ? "+" : "-")}{formatCurrency(tx.totalAmount, tx.currency)}
                     </div>
                   </button>
                 );
@@ -230,7 +230,7 @@ export function TransactionLedger({
                 })()}
               </div>
               <div className={`text-2xl font-black tabular-nums ${getTxStyles(selectedTx).amountColor}`}>
-                {selectedTx.isIncome ? "+" : "-"}{formatCurrency(selectedTx.totalAmount, selectedTx.currency)}
+                {(selectedTx.isTransfer || selectedTx.source === "investment") ? "" : (selectedTx.isIncome ? "+" : "-")}{formatCurrency(selectedTx.totalAmount, selectedTx.currency)}
               </div>
             </div>
 

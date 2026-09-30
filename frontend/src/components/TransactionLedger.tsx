@@ -45,10 +45,10 @@ export interface UnifiedRowItem {
 }
 
 export const getTxStyles = (tx: UnifiedRowItem) => {
-  let amountColor = "text-rose-600 dark:text-rose-400"; // default expense
-  if (tx.isTransfer) amountColor = "text-purple-600 dark:text-purple-400";
-  else if (tx.source === "investment") amountColor = "text-blue-600 dark:text-blue-400";
-  else if (tx.isIncome) amountColor = "text-emerald-600 dark:text-emerald-400";
+  let amountColor = "text-slate-900 dark:text-slate-100"; // default expense (black)
+  if (tx.isTransfer) amountColor = "text-slate-500 dark:text-slate-400"; // gray for transfers
+  else if (tx.source === "investment") amountColor = "text-blue-600 dark:text-blue-400"; // blue for investments
+  else if (tx.isIncome) amountColor = "text-emerald-600 dark:text-emerald-400"; // green for income
 
   let iconColor = "text-amber-500 border-amber-500/50 bg-amber-50/50 dark:bg-amber-900/20"; // default Want
   let Icon = ShoppingBag;
@@ -194,7 +194,7 @@ export function TransactionLedger({
                     </div>
                     
                     <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${amountColor}`}>
-                      {(tx.isTransfer || tx.source === "investment") ? "" : (tx.isIncome ? "+" : "-")}{formatCurrency(tx.totalAmount, tx.currency)}
+                      {tx.isTransfer ? "" : tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
                     </div>
                   </button>
                 );
@@ -230,7 +230,7 @@ export function TransactionLedger({
                 })()}
               </div>
               <div className={`text-2xl font-black tabular-nums ${getTxStyles(selectedTx).amountColor}`}>
-                {(selectedTx.isTransfer || selectedTx.source === "investment") ? "" : (selectedTx.isIncome ? "+" : "-")}{formatCurrency(selectedTx.totalAmount, selectedTx.currency)}
+                {selectedTx.isTransfer ? "" : selectedTx.isIncome ? "+" : "-"}{formatCurrency(selectedTx.totalAmount, selectedTx.currency)}
               </div>
             </div>
 

@@ -280,7 +280,7 @@ async def commit_import_batch(
             await db.flush()
 
             # Ensure price history
-            if ast_id and rec.price_per_unit and rec.price_per_unit > 0:
+            if rec.action_type in ["buy", "sell"] and ast_id and rec.price_per_unit and rec.price_per_unit > 0:
                 ph_stmt = select(PriceHistory).where(
                     PriceHistory.asset_id == ast_id,
                     PriceHistory.price_date == rec.transaction_date

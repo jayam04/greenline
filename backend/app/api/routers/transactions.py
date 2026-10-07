@@ -50,7 +50,7 @@ async def _ensure_price_history_for_tx(db: AsyncSession, tx: Transaction):
     """
     If transaction has an asset_id and price_per_unit, ensure PriceHistory exists for that asset date.
     """
-    if tx.asset_id and tx.price_per_unit and tx.price_per_unit > 0:
+    if tx.transaction_type in ["buy", "sell"] and tx.asset_id and tx.price_per_unit and tx.price_per_unit > 0:
         ph_stmt = select(PriceHistory).where(
             PriceHistory.asset_id == tx.asset_id,
             PriceHistory.price_date == tx.transaction_date

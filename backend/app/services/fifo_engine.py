@@ -59,6 +59,22 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             ))
         await db.flush()
 
+    elif t_type in ["split", "bonus"]:
+        if tx.quantity is None or tx.quantity <= 0:
+            return
+            
+        lot = Lot(
+            account_id=tx.account_id,
+            asset_id=tx.asset_id,
+            buy_transaction_id=tx.transaction_id,
+            buy_date=tx.transaction_date,
+            quantity_original=float(tx.quantity),
+            quantity_remaining=float(tx.quantity),
+            cost_per_unit=0.0
+        )
+        db.add(lot)
+        await db.flush()
+
     elif t_type == "sell":
         if tx.quantity is None or tx.quantity <= 0:
             return
@@ -221,38 +237,7 @@ async def recalculate_all_lots(db: AsyncSession) -> None:
     result = await db.execute(stmt)
     all_txs = list(result.scalars().all())
 
-    from app.db.models import CorporateAction
-    ca_stmt = select(CorporateAction).order_by(asc(CorporateAction.action_date), asc(CorporateAction.action_id))
-    ca_result = await db.execute(ca_stmt)
-    all_cas = list(ca_result.scalars().all())
-
-    events = []
     for tx in all_txs:
-        events.append((tx.transaction_date, 1, tx.transaction_id, tx))
-    for ca in all_cas:
-        events.append((ca.action_date, 0, ca.action_id, ca))
-
-    events.sort(key=lambda x: (x[0], x[1], x[2]))
-
-    for event_date, priority, _, event in events:
-        if priority == 1:
-            await process_transaction_event(db, event)
-        else:
-            if event.action_type in ["split", "bonus"]:
-                parts = event.ratio.split(":")
-                if len(parts) == 2:
-                    try:
-                        new_num, old_den = float(parts[0]), float(parts[1])
-                        multiplier = new_num / old_den if old_den > 0 else 1.0
-
-                        stmt = select(Lot).where(Lot.asset_id == event.asset_id, Lot.quantity_remaining > 0)
-                        res = await db.execute(stmt)
-                        for lot in res.scalars().all():
-                            lot.quantity_remaining *= multiplier
-                            lot.quantity_original *= multiplier
-                            lot.cost_per_unit /= multiplier
-                        await db.flush()
-                    except Exception:
-                        pass
+        await process_transaction_event(db, tx)
 
     await db.commit()

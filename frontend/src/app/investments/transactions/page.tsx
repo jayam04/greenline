@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatMoney } from "@/lib/format";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
-import { CorporateActionModal } from "@/components/CorporateActionModal";
+
 import { 
   Plus, Search, ArrowRight, ArrowLeft, MoreVertical, 
   Edit, Trash2, Info, ArrowUpRight, ArrowDownRight, RefreshCw, Sparkles
@@ -45,7 +45,7 @@ export default function TransactionsPage() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCorpActionModalOpen, setIsCorpActionModalOpen] = useState(false);
+
   const [editingTransaction, setEditingTransaction] = useState<TransactionItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
@@ -162,13 +162,7 @@ export default function TransactionsPage() {
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-blue-600" : ""}`} />
                 </button>
 
-                <button
-                  onClick={() => setIsCorpActionModalOpen(true)}
-                  className="btn-pill-gray text-[11px]"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Corporate Action</span>
-                </button>
+
                 <button
                   onClick={() => {
                     setEditingTransaction(null);
@@ -267,6 +261,9 @@ export default function TransactionsPage() {
                                   {isDividend && `Dividend received`}
                                   {isDeposit && `Deposit into ${tx.account_name || "account"}`}
                                   {tx.transaction_type.toLowerCase() === "withdrawal" && `Withdrawal from ${tx.account_name || "account"}`}
+                                  {tx.transaction_type.toLowerCase() === "split" && `Stock Split`}
+                                  {tx.transaction_type.toLowerCase() === "bonus" && `Bonus Shares`}
+                                  {tx.notes && <span className="ml-2 text-slate-500 italic">- {tx.notes}</span>}
                                 </div>
                               </div>
                             </div>
@@ -284,6 +281,7 @@ export default function TransactionsPage() {
                                 </div>
                               </div>
 
+                              {tx.transaction_id >= 0 && (
                               <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
                                 <button
                                   onClick={() => handleEdit(tx)}
@@ -300,6 +298,7 @@ export default function TransactionsPage() {
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               </div>
+                            )}
                             </div>
                           </div>
                         );
@@ -424,11 +423,7 @@ export default function TransactionsPage() {
         initialData={editingTransaction}
       />
 
-      <CorporateActionModal
-        isOpen={isCorpActionModalOpen}
-        onClose={() => setIsCorpActionModalOpen(false)}
-        onSuccess={loadTransactions}
-      />
+
 
     </div>
   );

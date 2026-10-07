@@ -3,10 +3,8 @@ from datetime import date
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import select
 from app.db.database import Base
-from app.db.models import Transaction, Lot, CorporateAction, PriceHistory, Asset, Account
+from app.db.models import Transaction, Lot, PriceHistory, Asset, Account
 from app.services.fifo_engine import recalculate_all_lots
-from app.api.routers.corporate_actions import create_corporate_action
-from app.schemas.schemas import CorporateActionCreate
 
 @pytest.mark.anyio
 async def test_fifo_recalculate_with_corporate_action():
@@ -39,18 +37,6 @@ async def test_fifo_recalculate_with_corporate_action():
         )
         session.add(tx)
         
-        # Sell 50 shares at 20 on Jan 10
-        tx2 = Transaction(
-            account_id=account_id,
-            asset_id=asset_id,
-            transaction_type="sell",
-            transaction_date=date(2023, 1, 10),
-            quantity=50.0,
-            price_per_unit=20.0,
-            total_amount=1000.0
-        )
-        session.add(tx2)
-        
         # Add Price History on Jan 1
         ph = PriceHistory(
             asset_id=asset_id,
@@ -66,24 +52,28 @@ async def test_fifo_recalculate_with_corporate_action():
         
         lots = (await session.execute(select(Lot))).scalars().all()
         assert len(lots) == 1
-        assert lots[0].quantity_remaining == 50.0
+        assert lots[0].quantity_remaining == 100.0
         assert lots[0].cost_per_unit == 10.0
         
-        # Add corporate action: 2:1 split on Jan 5
-        ca = CorporateActionCreate(
+        # Add corporate action: 2:1 split on Jan 5 (adds 100 shares)
+        tx_split = Transaction(
+            account_id=account_id,
             asset_id=asset_id,
-            action_type="split",
-            action_date=date(2023, 1, 5),
-            ratio="2:1"
+            transaction_type="split",
+            transaction_date=date(2023, 1, 5),
+            quantity=100.0,
+            price_per_unit=0.0,
+            total_amount=0.0
         )
-        await create_corporate_action(ca, session, current_user=None)
+        session.add(tx_split)
+        await session.commit()
         
-        # The price history should be adjusted
-        ph_after = (await session.execute(select(PriceHistory).where(PriceHistory.asset_id == asset_id))).scalars().first()
-        assert ph_after.close_price == 5.0 # 10 / 2
+        await recalculate_all_lots(session)
         
         # Let's check lots.
         lots_after = (await session.execute(select(Lot))).scalars().all()
-        assert len(lots_after) == 1
-        assert lots_after[0].quantity_remaining == 150.0
-        assert lots_after[0].cost_per_unit == 5.0
+        assert len(lots_after) == 2
+        assert lots_after[0].quantity_remaining == 100.0
+        assert lots_after[0].cost_per_unit == 10.0
+        assert lots_after[1].quantity_remaining == 100.0
+        assert lots_after[1].cost_per_unit == 0.0

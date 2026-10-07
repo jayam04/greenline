@@ -47,7 +47,7 @@ class Asset(Base):
     lots = relationship("Lot", back_populates="asset", cascade="all, delete-orphan")
     price_history = relationship("PriceHistory", back_populates="asset", cascade="all, delete-orphan")
     dividends = relationship("Dividend", back_populates="asset", cascade="all, delete-orphan")
-    corporate_actions = relationship("CorporateAction", back_populates="asset", cascade="all, delete-orphan")
+
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -162,17 +162,6 @@ class ExpectedDividend(Base):
         UniqueConstraint("asset_id", "account_id", "ex_date", name="uix_expected_dividend_asset_account_date"),
     )
 
-class CorporateAction(Base):
-    __tablename__ = "corporate_actions"
-    
-    action_id = Column(Integer, primary_key=True, index=True)
-    asset_id = Column(Integer, ForeignKey("assets.asset_id"), nullable=False)
-    action_type = Column(String, nullable=False) # split, bonus, merger, spinoff, name_change
-    action_date = Column(Date, nullable=False)
-    ratio = Column(String, nullable=False) # e.g. "2:1" or "1:2"
-    notes = Column(Text, nullable=True)
-
-    asset = relationship("Asset", back_populates="corporate_actions")
 
 class CashFlow(Base):
     __tablename__ = "cash_flows"

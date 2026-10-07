@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
 from app.config import settings
 from app.db.models import (
-    Account, Asset, Transaction, PriceHistory, CorporateAction, 
+    Account, Asset, Transaction, PriceHistory, 
     ExpectedDividend, Category, CashflowTransaction, CashflowPayment, 
     CashflowItem, AppSetting, Dividend, Lot, LotSale, NetworthSnapshot, 
     NetworthByAssetClass, CashFlow, XIRRCache, Benchmark
@@ -372,7 +372,6 @@ def validate_backup_payload(data: dict) -> None:
         ("cashflow_payments", "payment_id", "Cashflow Payment"),
         ("cashflow_items", "item_id", "Cashflow Item"),
         ("price_history", "price_id", "Price History"),
-        ("corporate_actions", "action_id", "Corporate Action"),
     ]
 
     for coll_name, id_key, entity_label in collections:
@@ -465,15 +464,7 @@ def validate_backup_payload(data: dict) -> None:
         _parse_iso_date(ph.get("price_date"), "price_history.price_date")
         _parse_float(ph.get("close_price"), "price_history.close_price")
 
-    # Validate corporate actions
-    valid_action_types = {"split", "bonus", "dividend", "merger", "spinoff", "spin_off", "name_change", "rights"}
-    for ca in data.get("corporate_actions", []):
-        _parse_iso_date(ca.get("action_date"), "corporate_action.action_date")
-        action_type = ca.get("action_type")
-        if not action_type:
-            raise ValueError("Invalid corporate action: missing action_type.")
-        if action_type.lower() not in valid_action_types:
-            raise ValueError(f"Invalid corporate action_type '{action_type}'.")
+
 
     # Referential integrity checks
     account_ids = {a["account_id"] for a in data.get("accounts", []) if "account_id" in a}
@@ -543,10 +534,6 @@ def validate_backup_payload(data: dict) -> None:
         if ast_id not in asset_ids:
             raise ValueError(f"Invalid foreign key: PriceHistory refers to missing asset_id {ast_id}")
 
-    for ca in data.get("corporate_actions", []):
-        ast_id = ca.get("asset_id")
-        if ast_id not in asset_ids:
-            raise ValueError(f"Invalid foreign key: CorporateAction refers to missing asset_id {ast_id}")
 
 async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]:
     """
@@ -606,7 +593,6 @@ async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]
             await db.execute(delete(Dividend))
             await db.execute(delete(ExpectedDividend))
             await db.execute(delete(Transaction))
-            await db.execute(delete(CorporateAction))
             await db.execute(delete(PriceHistory))
             await db.execute(delete(Category))
             await db.execute(delete(Account))
@@ -678,19 +664,6 @@ async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]
                 if old_pid and old_pid in category_map:
                     new_cat.parent_id = category_map[old_pid]
             await db.flush()
-
-            # 5. Insert Corporate Actions
-            for ca in data.get("corporate_actions", []):
-                mapped_ast_id = asset_map.get(ca["asset_id"])
-                if mapped_ast_id:
-                    ca_date = _parse_iso_date(ca["action_date"], "corporate_action.action_date")
-                    db.add(CorporateAction(
-                        asset_id=mapped_ast_id,
-                        action_type=ca["action_type"],
-                        action_date=ca_date,
-                        ratio=ca.get("ratio", "1:1"),
-                        notes=ca.get("notes")
-                    ))
 
             # 6. Insert Price History
             for ph in data.get("price_history", []):

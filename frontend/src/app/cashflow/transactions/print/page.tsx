@@ -56,7 +56,7 @@ function PrintTransactionsContent() {
   };
 
   const accountGroups = useMemo(() => {
-    let rawRows: AccountRow[] = [];
+    const rawRows: AccountRow[] = [];
 
     // 1. Process Cashflows
     cashflowTxs.forEach(cf => {

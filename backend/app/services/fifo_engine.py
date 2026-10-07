@@ -219,9 +219,40 @@ async def recalculate_all_lots(db: AsyncSession) -> None:
 
     stmt = select(Transaction).order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
     result = await db.execute(stmt)
-    all_txs: List[Transaction] = result.scalars().all()
+    all_txs = list(result.scalars().all())
 
+    from app.db.models import CorporateAction
+    ca_stmt = select(CorporateAction).order_by(asc(CorporateAction.action_date), asc(CorporateAction.action_id))
+    ca_result = await db.execute(ca_stmt)
+    all_cas = list(ca_result.scalars().all())
+
+    events = []
     for tx in all_txs:
-        await process_transaction_event(db, tx)
+        events.append((tx.transaction_date, 1, tx.transaction_id, tx))
+    for ca in all_cas:
+        events.append((ca.action_date, 0, ca.action_id, ca))
+
+    events.sort(key=lambda x: (x[0], x[1], x[2]))
+
+    for event_date, priority, _, event in events:
+        if priority == 1:
+            await process_transaction_event(db, event)
+        else:
+            if event.action_type in ["split", "bonus"]:
+                parts = event.ratio.split(":")
+                if len(parts) == 2:
+                    try:
+                        new_num, old_den = float(parts[0]), float(parts[1])
+                        multiplier = new_num / old_den if old_den > 0 else 1.0
+
+                        stmt = select(Lot).where(Lot.asset_id == event.asset_id, Lot.quantity_remaining > 0)
+                        res = await db.execute(stmt)
+                        for lot in res.scalars().all():
+                            lot.quantity_remaining *= multiplier
+                            lot.quantity_original *= multiplier
+                            lot.cost_per_unit /= multiplier
+                        await db.flush()
+                    except Exception:
+                        pass
 
     await db.commit()

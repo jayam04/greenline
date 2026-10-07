@@ -24,27 +24,38 @@ async def create_corporate_action(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    from app.services.fifo_engine import recalculate_all_lots
+    from app.db.models import Asset, PriceHistory
+
     action = CorporateAction(**action_in.model_dump())
     db.add(action)
     await db.commit()
     await db.refresh(action)
 
-    # Adjust open lots if split or bonus
-    if action.action_type in ["split", "bonus"]:
+    # If asset is Private Equity, automatically adjust historical prices
+    stmt_asset = select(Asset).where(Asset.asset_id == action.asset_id)
+    res_asset = await db.execute(stmt_asset)
+    asset = res_asset.scalars().first()
+
+    if asset and asset.asset_type == "Private Equity" and action.action_type in ["split", "bonus"]:
         try:
             parts = action.ratio.split(":")
             if len(parts) == 2:
                 new_num, old_den = float(parts[0]), float(parts[1])
                 multiplier = new_num / old_den if old_den > 0 else 1.0
-                
-                stmt = select(Lot).where(Lot.asset_id == action.asset_id, Lot.quantity_remaining > 0)
-                res = await db.execute(stmt)
-                for lot in res.scalars().all():
-                    lot.quantity_remaining *= multiplier
-                    lot.quantity_original *= multiplier
-                    lot.cost_per_unit /= multiplier
-                await db.commit()
+                if multiplier > 0:
+                    stmt_ph = select(PriceHistory).where(
+                        PriceHistory.asset_id == action.asset_id,
+                        PriceHistory.price_date <= action.action_date
+                    )
+                    res_ph = await db.execute(stmt_ph)
+                    for ph in res_ph.scalars().all():
+                        ph.close_price /= multiplier
+                    await db.commit()
         except Exception:
             pass
+
+    # Fully recalculate all lots with the new action interleaving
+    await recalculate_all_lots(db)
 
     return action

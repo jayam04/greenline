@@ -4,9 +4,10 @@ import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatMoney } from "@/lib/format";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
+import { CorporateActionModal } from "@/components/CorporateActionModal";
 import { 
   Plus, Search, ArrowRight, ArrowLeft, MoreVertical, 
-  Edit, Trash2, Info, ArrowUpRight, ArrowDownRight, RefreshCw
+  Edit, Trash2, Info, ArrowUpRight, ArrowDownRight, RefreshCw, Sparkles
 } from "lucide-react";
 
 interface Transaction {
@@ -44,6 +45,7 @@ export default function TransactionsPage() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCorpActionModalOpen, setIsCorpActionModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TransactionItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
@@ -158,6 +160,14 @@ export default function TransactionsPage() {
                   title="Reload Transactions"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-blue-600" : ""}`} />
+                </button>
+
+                <button
+                  onClick={() => setIsCorpActionModalOpen(true)}
+                  className="btn-pill-gray text-[11px]"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Corporate Action</span>
                 </button>
                 <button
                   onClick={() => {
@@ -406,12 +416,20 @@ export default function TransactionsPage() {
         </div>
       </div>
 
+
       <TransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={loadTransactions}
         initialData={editingTransaction}
       />
+
+      <CorporateActionModal
+        isOpen={isCorpActionModalOpen}
+        onClose={() => setIsCorpActionModalOpen(false)}
+        onSuccess={loadTransactions}
+      />
+
     </div>
   );
 }

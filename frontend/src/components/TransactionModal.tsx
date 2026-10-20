@@ -293,18 +293,23 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
       return;
     }
 
-    const isAssetTransaction = ["buy", "sell", "dividend"].includes(transactionType);
+    const isAssetTransaction = ["buy", "sell", "dividend", "split", "bonus"].includes(transactionType);
     if (isAssetTransaction && !assetId) {
       setError("Please select a security from master or search Yahoo Finance.");
       setLoading(false);
       return;
     }
 
-    const parsedTotal = parseFloat(totalAmount);
-    if (isNaN(parsedTotal) || parsedTotal < 0) {
-      setError("Please enter a valid total amount.");
-      setLoading(false);
-      return;
+    let parsedTotal = 0;
+    if (["split", "bonus"].includes(transactionType)) {
+      parsedTotal = 0;
+    } else {
+      parsedTotal = parseFloat(totalAmount);
+      if (isNaN(parsedTotal) || parsedTotal < 0) {
+        setError("Please enter a valid total amount.");
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -315,10 +320,10 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
         transaction_type: transactionType,
         transaction_date: transactionDate,
         quantity: quantity ? parseFloat(quantity) : null,
-        price_per_unit: pricePerUnit ? parseFloat(pricePerUnit) : null,
+        price_per_unit: ["split", "bonus"].includes(transactionType) ? 0.0 : (pricePerUnit ? parseFloat(pricePerUnit) : null),
         total_amount: parsedTotal,
-        fees: parseFloat(fees || "0"),
-        taxes: parseFloat(taxes || "0"),
+        fees: ["split", "bonus"].includes(transactionType) ? 0.0 : parseFloat(fees || "0"),
+        taxes: ["split", "bonus"].includes(transactionType) ? 0.0 : parseFloat(taxes || "0"),
         notes: notes || null,
       };
 
@@ -414,6 +419,8 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
                 <option value="buy">Buy</option>
                 <option value="sell">Sell</option>
                 <option value="dividend">Dividend</option>
+                <option value="split">Stock Split</option>
+                <option value="bonus">Bonus Shares</option>
                 <option value="deposit">Deposit (Cash In)</option>
                 <option value="withdrawal">Withdrawal (Cash Out)</option>
               </select>
@@ -469,7 +476,7 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
           </div>
 
           {/* Interactive Search Combobox for Security / Asset */}
-          {["buy", "sell", "dividend"].includes(transactionType) && (
+          {["buy", "sell", "dividend", "split", "bonus"].includes(transactionType) && (
             <div className="relative" ref={searchContainerRef}>
               <label className="block font-semibold text-slate-600 mb-1">
                 Security / Asset
@@ -567,10 +574,12 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
               </div>
             )}
 
-          {["buy", "sell", "dividend"].includes(transactionType) && (
+          {["buy", "sell", "dividend", "split", "bonus"].includes(transactionType) && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">Quantity</label>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  {["split", "bonus"].includes(transactionType) ? "Added Shares" : "Quantity"}
+                </label>
                 <input
                   type="number"
                   step="any"
@@ -578,69 +587,73 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
                   className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
-                  required={transactionType === "buy" || transactionType === "sell"}
+                  required={transactionType !== "dividend"}
+                />
+              </div>
+
+              {!["split", "bonus"].includes(transactionType) && (
+                <div>
+                  <label className="block font-semibold text-slate-600 mb-1">
+                    Price Per Unit ({accCurrency})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="e.g. 150.50"
+                    value={pricePerUnit}
+                    onChange={(e) => setPricePerUnit(e.target.value)}
+                    className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
+                    required={transactionType === "buy" || transactionType === "sell"}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {!["split", "bonus"].includes(transactionType) && (
+            <div className="grid grid-cols-3 gap-2.5">
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  Total Amount ({accCurrency})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  placeholder="0.00"
+                  value={totalAmount}
+                  onChange={(e) => setTotalAmount(e.target.value)}
+                  className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
+                  required
                 />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-600 mb-1">
-                  Price Per Unit ({accCurrency})
+                  Fees / Charges ({accCurrency})
                 </label>
                 <input
                   type="number"
                   step="any"
-                  placeholder="e.g. 150.50"
-                  value={pricePerUnit}
-                  onChange={(e) => setPricePerUnit(e.target.value)}
-                  className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
-                  required={transactionType === "buy" || transactionType === "sell"}
+                  value={fees}
+                  onChange={(e) => setFees(e.target.value)}
+                  className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:outline-none"
                 />
               </div>
-            </div>
-          )}
 
-          <div className="grid grid-cols-3 gap-2.5">
-            <div>
-              <label className="block font-semibold text-slate-600 mb-1">
-                Total Amount ({accCurrency})
-              </label>
-              <input
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={totalAmount}
-                onChange={(e) => setTotalAmount(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-600 mb-1">
-                Fees / Charges ({accCurrency})
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={fees}
-                onChange={(e) => setFees(e.target.value)}
-                className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-600 mb-1">
-                Taxes ({accCurrency})
-              </label>
-              <input
-                type="number"
-                step="any"
-                value={taxes}
+              <div>
+                <label className="block font-semibold text-slate-600 mb-1">
+                  Taxes ({accCurrency})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={taxes}
                 onChange={(e) => setTaxes(e.target.value)}
                 className="w-full bg-[#F3F4F6] text-slate-900 tabular-nums font-bold rounded-lg px-3 py-2 border border-transparent focus:outline-none"
               />
             </div>
           </div>
+          )}
 
           <div>
             <label className="block font-semibold text-slate-600 mb-1">Notes</label>

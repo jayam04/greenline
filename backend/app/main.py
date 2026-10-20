@@ -11,7 +11,7 @@ from app.scheduler import start_scheduler
 
 from app.api.routers import (
     auth, accounts, assets, transactions, portfolio, 
-    snapshots, prices, corporate_actions, benchmarks, backup,
+    snapshots, prices, benchmarks, backup,
     categories, cashflow, settings as app_settings_router, discrepancies,
     import_router, mcp_router
 )
@@ -97,7 +97,6 @@ app.include_router(transactions.router, prefix=settings.API_V1_STR)
 app.include_router(portfolio.router, prefix=settings.API_V1_STR)
 app.include_router(snapshots.router, prefix=settings.API_V1_STR)
 app.include_router(prices.router, prefix=settings.API_V1_STR)
-app.include_router(corporate_actions.router, prefix=settings.API_V1_STR)
 app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
 app.include_router(backup.router, prefix=settings.API_V1_STR)
 app.include_router(categories.router, prefix=settings.API_V1_STR)

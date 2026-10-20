@@ -169,17 +169,6 @@ class CustomPriceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # Corporate Action Schemas
-class CorporateActionCreate(BaseModel):
-    asset_id: int
-    action_type: str # split, bonus, merger, spinoff, name_change
-    action_date: datetime.date
-    ratio: str # e.g. "2:1"
-    notes: Optional[str] = None
-
-class CorporateActionResponse(CorporateActionCreate):
-    action_id: int
-    model_config = ConfigDict(from_attributes=True)
-
 # Portfolio Summary & Holdings Schemas
 class HoldingSummary(BaseModel):
     """

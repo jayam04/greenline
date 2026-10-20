@@ -44,6 +44,33 @@ export interface UnifiedRowItem {
   };
 }
 
+export const getTxStyles = (tx: UnifiedRowItem) => {
+  let amountColor = "text-slate-900 dark:text-slate-100"; // default expense (black)
+  if (tx.isTransfer) amountColor = "text-slate-500 dark:text-slate-400"; // gray for transfers
+  else if (tx.source === "investment") amountColor = "text-blue-600 dark:text-blue-400"; // blue for investments
+  else if (tx.isIncome) amountColor = "text-emerald-600 dark:text-emerald-400"; // green for income
+
+  let iconColor = "text-amber-500 border-amber-500/50 bg-amber-50/50 dark:bg-amber-900/20"; // default Want
+  let Icon = ShoppingBag;
+  
+  if (tx.isTransfer) {
+    Icon = ArrowRightLeft;
+    iconColor = "text-slate-900 border-slate-900/30 bg-slate-100/50 dark:text-slate-100 dark:border-slate-100/30 dark:bg-slate-800/50";
+  } else if (tx.source === "investment") {
+    Icon = Briefcase;
+    iconColor = "text-blue-500 border-blue-500/50 bg-blue-50/50 dark:bg-blue-900/20";
+  } else {
+    const lbl = tx.items[0]?.effective_label || "DISCRETIONARY";
+    if (lbl === "ESSENTIAL") {
+      iconColor = "text-emerald-500 border-emerald-500/50 bg-emerald-50/50 dark:bg-emerald-900/20";
+    } else if (lbl === "LUXURY") {
+      iconColor = "text-pink-500 border-pink-500/50 bg-pink-50/50 dark:bg-pink-900/20";
+    }
+  }
+
+  return { amountColor, iconColor, Icon };
+};
+
 interface TransactionLedgerProps {
   transactions: UnifiedRowItem[];
   loading?: boolean;
@@ -139,19 +166,7 @@ export function TransactionLedger({
             <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800/50">
               {group.transactions.map((tx) => {
                 const isSelected = selectedTxKey === tx.key;
-                
-                let Icon = ShoppingBag;
-                let iconColor = "text-slate-500 dark:text-slate-400";
-                
-                if (tx.source === "investment") {
-                  Icon = Briefcase;
-                  iconColor = "text-blue-500 dark:text-blue-400";
-                } else if (tx.isTransfer) {
-                  Icon = ArrowRightLeft;
-                  iconColor = "text-slate-500 dark:text-slate-400";
-                } else if (tx.isIncome) {
-                  iconColor = "text-emerald-500 dark:text-emerald-400";
-                }
+                const { amountColor, iconColor, Icon } = getTxStyles(tx);
 
                 return (
                   <button
@@ -165,7 +180,7 @@ export function TransactionLedger({
                       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
                     )}
                     
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center bg-muted shrink-0 ${iconColor}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${iconColor}`}>
                       <Icon className="w-4 h-4" />
                     </div>
                     
@@ -178,10 +193,8 @@ export function TransactionLedger({
                       </div>
                     </div>
                     
-                    <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${
-                      tx.isTransfer ? "text-muted-foreground" : tx.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-foreground"
-                    }`}>
-                      {tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
+                    <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${amountColor}`}>
+                      {tx.isTransfer ? "" : tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
                     </div>
                   </button>
                 );
@@ -197,22 +210,27 @@ export function TransactionLedger({
           <div className="flex flex-col h-full">
             <div className="flex items-start justify-between p-6 border-b border-border shrink-0">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full flex items-center justify-center bg-muted shrink-0">
-                  {selectedTx.source === "investment" ? <Briefcase className="w-6 h-6 text-blue-500" /> : selectedTx.isTransfer ? <ArrowRightLeft className="w-6 h-6 text-slate-500" /> : selectedTx.isIncome ? <ShoppingBag className="w-6 h-6 text-emerald-500" /> : <ShoppingBag className="w-6 h-6 text-slate-500" />}
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    {selectedTx.title}
-                  </h2>
-                  <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    {new Date(selectedTx.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                  </div>
-                </div>
+                {(() => {
+                  const { amountColor, iconColor, Icon } = getTxStyles(selectedTx);
+                  return (
+                    <>
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 border ${iconColor}`}>
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                          {selectedTx.title}
+                        </h2>
+                        <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                          {new Date(selectedTx.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              <div className={`text-2xl font-black tabular-nums ${
-                selectedTx.isTransfer ? "text-slate-700 dark:text-slate-300" : selectedTx.isIncome ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-              }`}>
-                {selectedTx.isIncome ? "+" : "-"}{formatCurrency(selectedTx.totalAmount, selectedTx.currency)}
+              <div className={`text-2xl font-black tabular-nums ${getTxStyles(selectedTx).amountColor}`}>
+                {selectedTx.isTransfer ? "" : selectedTx.isIncome ? "+" : "-"}{formatCurrency(selectedTx.totalAmount, selectedTx.currency)}
               </div>
             </div>
 

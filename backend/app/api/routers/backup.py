@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.database import get_db
 from app.db.models import (
-    Account, Asset, Transaction, PriceHistory, CorporateAction, 
+    Account, Asset, Transaction, PriceHistory, 
     ExpectedDividend, Category, CashflowTransaction, CashflowPayment, 
     CashflowItem, AppSetting, User
 )
@@ -141,7 +141,6 @@ async def export_all_portfolio_data(
     asts = (await db.execute(select(Asset))).scalars().all()
     txs = (await db.execute(select(Transaction))).scalars().all()
     phs = (await db.execute(select(PriceHistory))).scalars().all()
-    cas = (await db.execute(select(CorporateAction))).scalars().all()
     exp_divs = (await db.execute(select(ExpectedDividend))).scalars().all()
     cats = (await db.execute(select(Category))).scalars().all()
     c_txs = (await db.execute(select(CashflowTransaction))).scalars().all()
@@ -203,16 +202,7 @@ async def export_all_portfolio_data(
                 "source": p.source
             } for p in phs
         ],
-        "corporate_actions": [
-            {
-                "action_id": c.action_id,
-                "asset_id": c.asset_id,
-                "action_type": c.action_type,
-                "action_date": c.action_date.isoformat(),
-                "ratio": c.ratio,
-                "notes": c.notes
-            } for c in cas
-        ],
+
         "expected_dividends": [
             {
                 "expected_dividend_id": ed.expected_dividend_id,

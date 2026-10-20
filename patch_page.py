@@ -1,23 +1,75 @@
 import re
 
-with open('frontend/src/app/page.tsx', 'r') as f:
+with open("frontend/src/app/investments/transactions/page.tsx", "r") as f:
     content = f.read()
 
-# Add imports
-imports = """import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+# 1. Import CorporateActionModal and Sparkles
+content = content.replace(
+    'import { TransactionModal, TransactionItem } from "@/components/TransactionModal";',
+    'import { TransactionModal, TransactionItem } from "@/components/TransactionModal";\nimport { CorporateActionModal } from "@/components/CorporateActionModal";'
+)
+
+# Replace the lucide-react import if Sparkles is not imported
+if "Sparkles" not in content.split('from "lucide-react";')[0]:
+    content = content.replace(
+        'RefreshCw\n} from "lucide-react";',
+        'RefreshCw, Sparkles\n} from "lucide-react";'
+    )
+
+# 2. Add state for CorporateActionModal
+content = content.replace(
+    'const [isModalOpen, setIsModalOpen] = useState(false);',
+    'const [isModalOpen, setIsModalOpen] = useState(false);\n  const [isCorpActionModalOpen, setIsCorpActionModalOpen] = useState(false);'
+)
+
+# 3. Add Corporate Action button
+button_html = """
+                <button
+                  onClick={() => setIsCorpActionModalOpen(true)}
+                  className="btn-pill-gray text-[11px]"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Corporate Action</span>
+                </button>
+                <button
 """
-content = content.replace('import Link from "next/link";', 'import Link from "next/link";\n' + imports)
+content = content.replace(
+    """                <button
+                  onClick={() => {
+                    setEditingTransaction(null);
+                    setIsModalOpen(true);
+                  }}""",
+    button_html + """                  onClick={() => {
+                    setEditingTransaction(null);
+                    setIsModalOpen(true);
+                  }}"""
+)
 
-# Replace getquin-card with Card
-content = content.replace('<div className="getquin-card p-5">', '<Card className="p-5">')
-content = content.replace('<div className="getquin-card p-5">', '<Card className="p-5">')
-content = content.replace('</Card>\n\n          {/* Card 2', '</Card>\n\n          {/* Card 2') # just checking logic
-# Wait, replacing closing tags of getquin-card is hard via simple regex because it's just </div>
-# I will use regex carefully.
+# 4. Render CorporateActionModal
+modal_html = """
+      <TransactionModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={loadTransactions}
+        initialData={editingTransaction}
+      />
 
-# Let's just do a simpler sed-like regex approach.
-# getquin-card is used in exactly 4 places (Net Worth Hero, Accounts & Balances, Entities Donut, Full Year Snapshot)
+      <CorporateActionModal
+        isOpen={isCorpActionModalOpen}
+        onClose={() => setIsCorpActionModalOpen(false)}
+        onSuccess={loadTransactions}
+      />
+"""
+content = content.replace(
+    """      <TransactionModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={loadTransactions}
+        initialData={editingTransaction}
+      />""",
+    modal_html
+)
+
+with open("frontend/src/app/investments/transactions/page.tsx", "w") as f:
+    f.write(content)
+

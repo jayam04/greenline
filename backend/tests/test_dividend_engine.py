@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import select
 from app.db.database import Base
-from app.db.models import Account, Asset, Transaction, CorporateAction, User
+from app.db.models import Account, Asset, Transaction, User
 from app.services.dividend_engine import (
     calculate_shares_on_date,
     sync_dividends_for_asset,
@@ -42,13 +42,16 @@ async def test_calculate_shares_on_date_with_splits_and_sells():
         ))
 
         # 2. 2:1 Stock Split on 2024-06-01
-        session.add(CorporateAction(
+        session.add(Transaction(
+            account_id=account.account_id,
             asset_id=asset.asset_id,
-            action_type="split",
-            action_date=datetime.date(2024, 6, 1),
-            ratio="2:1"
+            transaction_type="split",
+            transaction_date=datetime.date(2024, 6, 1),
+            quantity=100.0,
+            price_per_unit=0.0,
+            total_amount=0.0,
+            source="manual"
         ))
-
         # 3. Sell 50 shares on 2024-08-01
         session.add(Transaction(
             account_id=account.account_id,
@@ -246,13 +249,16 @@ async def test_calculate_shares_on_ex_date_boundary_and_deterministic_matching()
             source="manual"
         ))
         # - 2:1 Split effective on ex-date
-        session.add(CorporateAction(
+        session.add(Transaction(
+            account_id=demat.account_id,
             asset_id=asset.asset_id,
-            action_type="split",
-            action_date=datetime.date(2024, 6, 1),
-            ratio="2:1"
+            transaction_type="split",
+            transaction_date=datetime.date(2024, 5, 31),
+            quantity=100.0,
+            price_per_unit=0.0,
+            total_amount=0.0,
+            source="manual"
         ))
-
         # 3. Add two existing transactions in Table C:
         # tx1: $25 dividend on 2024-06-10 (unrelated amount)
         tx_other = Transaction(

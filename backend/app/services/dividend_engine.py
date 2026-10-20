@@ -4,7 +4,7 @@ from typing import List, Tuple, Optional
 import yfinance as yf
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc, func
-from app.db.models import Asset, Account, Transaction, CorporateAction
+from app.db.models import Asset, Account, Transaction
 from app.services.fifo_engine import recalculate_all_lots
 
 def _fetch_yfinance_dividends_sync(symbol: str) -> List[Tuple[datetime.date, float]]:
@@ -65,56 +65,23 @@ async def calculate_shares_on_date(
             Transaction.asset_id == asset_id,
             Transaction.account_id == account_id,
             tx_condition,
-            Transaction.transaction_type.in_(["buy", "sell"])
+            Transaction.transaction_type.in_(["buy", "sell", "split", "bonus"])
         )
         .order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
     )
     tx_res = await db.execute(tx_stmt)
     txs = tx_res.scalars().all()
 
-    # 2. Fetch corporate actions on or before target_date
-    ca_stmt = (
-        select(CorporateAction)
-        .where(
-            CorporateAction.asset_id == asset_id,
-            CorporateAction.action_date <= target_date,
-            CorporateAction.action_type.in_(["split", "bonus"])
-        )
-        .order_by(asc(CorporateAction.action_date), asc(CorporateAction.action_id))
-    )
-    ca_res = await db.execute(ca_stmt)
-    actions = ca_res.scalars().all()
-
-    if not txs and not actions:
+    if not txs:
         return 0.0
 
-    # Interleave events chronologically:
-    # Corporate actions effective on a date take effect at market open before intraday trades (priority 0)
-    events = []
-    for ca in actions:
-        events.append((ca.action_date, 0, ca))
-    for tx in txs:
-        events.append((tx.transaction_date, 1, tx))
-
-    events.sort(key=lambda x: (x[0], x[1]))
-
     running_shares = 0.0
-    for _, _, item in events:
-        if isinstance(item, Transaction):
-            qty = float(item.quantity or 0.0)
-            if item.transaction_type == "buy":
-                running_shares += qty
-            elif item.transaction_type == "sell":
-                running_shares -= qty
-        elif isinstance(item, CorporateAction):
-            try:
-                parts = item.ratio.split(":")
-                if len(parts) == 2:
-                    new_num, old_den = float(parts[0]), float(parts[1])
-                    multiplier = new_num / old_den if old_den > 0 else 1.0
-                    running_shares *= multiplier
-            except Exception:
-                pass
+    for item in txs:
+        qty = float(item.quantity or 0.0)
+        if item.transaction_type in ["buy", "split", "bonus"]:
+            running_shares += qty
+        elif item.transaction_type == "sell":
+            running_shares -= qty
 
     return max(0.0, round(running_shares, 6))
 

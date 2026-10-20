@@ -59,6 +59,22 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             ))
         await db.flush()
 
+    elif t_type in ["split", "bonus"]:
+        if tx.quantity is None or tx.quantity <= 0:
+            return
+            
+        lot = Lot(
+            account_id=tx.account_id,
+            asset_id=tx.asset_id,
+            buy_transaction_id=tx.transaction_id,
+            buy_date=tx.transaction_date,
+            quantity_original=float(tx.quantity),
+            quantity_remaining=float(tx.quantity),
+            cost_per_unit=0.0
+        )
+        db.add(lot)
+        await db.flush()
+
     elif t_type == "sell":
         if tx.quantity is None or tx.quantity <= 0:
             return
@@ -219,7 +235,7 @@ async def recalculate_all_lots(db: AsyncSession) -> None:
 
     stmt = select(Transaction).order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
     result = await db.execute(stmt)
-    all_txs: List[Transaction] = result.scalars().all()
+    all_txs = list(result.scalars().all())
 
     for tx in all_txs:
         await process_transaction_event(db, tx)

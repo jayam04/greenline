@@ -11,7 +11,7 @@ from app.main import app
 from app.db.database import Base, get_db
 from app.api.deps import get_current_user
 from app.db.models import (
-    Account, Asset, Transaction, PriceHistory, CorporateAction, 
+    Account, Asset, Transaction, PriceHistory, 
     ExpectedDividend, Category, CashflowTransaction, CashflowPayment, 
     CashflowItem, AppSetting, User
 )
@@ -330,9 +330,8 @@ async def test_backup_export_import_symmetry_and_id_remapping(temp_backup_env):
         session.add_all([cf_pmt, cf_item])
 
         ph = PriceHistory(asset_id=asset.asset_id, price_date=datetime.date(2026, 5, 1), close_price=150.0, source="manual")
-        ca = CorporateAction(asset_id=asset.asset_id, action_type="split", action_date=datetime.date(2026, 6, 1), ratio="2:1")
         setting = AppSetting(key="master_currency", value="USD")
-        session.add_all([ph, ca, setting])
+        session.add_all([ph, setting])
 
         await session.commit()
 
@@ -403,9 +402,6 @@ async def test_backup_export_import_symmetry_and_id_remapping(temp_backup_env):
             for ph_item in export_payload["price_history"]:
                 ph_item["price_id"] += 1000
                 ph_item["asset_id"] += 1000
-            for ca_item in export_payload["corporate_actions"]:
-                ca_item["action_id"] += 1000
-                ca_item["asset_id"] += 1000
 
             # 3. Import via POST /api/v1/backup/import
             import_json_bytes = json.dumps(export_payload).encode("utf-8")
@@ -765,7 +761,7 @@ async def test_backup_validation_enums_and_negative_values():
             "total_amount": 1000.0
         }],
         "categories": [{"category_id": 1, "name": "Food", "category_type": "EXPENSE"}],
-        "corporate_actions": [{"action_id": 1, "asset_id": 1, "action_type": "split", "action_date": "2026-02-01"}],
+
         "cashflow_transactions": [],
         "cashflow_payments": [],
         "cashflow_items": [],
@@ -797,11 +793,7 @@ async def test_backup_validation_enums_and_negative_values():
     with pytest.raises(ValueError, match="category_type"):
         validate_backup_payload(bad_cat)
 
-    # 5. Invalid corporate action_type
-    bad_ca = json.loads(json.dumps(base_payload))
-    bad_ca["corporate_actions"][0]["action_type"] = "invalid_action"
-    with pytest.raises(ValueError, match="action_type"):
-        validate_backup_payload(bad_ca)
+
 
 @pytest.mark.anyio
 async def test_active_db_path_synchronized_with_database_url(monkeypatch):
@@ -965,7 +957,6 @@ async def test_full_round_trip_export_import_all_11_entities(temp_backup_env):
         session.add(PriceHistory(asset_id=asset.asset_id, price_date=datetime.date(2026, 4, 1), close_price=220.0, source="manual"))
 
         # 6. Corporate Action
-        session.add(CorporateAction(asset_id=asset.asset_id, action_type="bonus", action_date=datetime.date(2026, 4, 15), ratio="1:1"))
 
         # 7. Categories
         cat_parent = Category(name="Finances", category_type="EXPENSE", default_label="ESSENTIAL")
@@ -1080,9 +1071,7 @@ async def test_full_round_trip_export_import_all_11_entities(temp_backup_env):
                 assert len(phs) == 1
                 assert phs[0].close_price == 220.0
 
-                cas = (await session.execute(select(CorporateAction))).scalars().all()
-                assert len(cas) == 1
-                assert cas[0].action_type == "bonus"
+
     finally:
         app.dependency_overrides.clear()
 

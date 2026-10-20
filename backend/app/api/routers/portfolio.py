@@ -161,7 +161,12 @@ async def get_portfolio_summary(
         cost_basis_sold_for_asset = sum(r[1] for r in rpnl_rows)
         asset_net_div = div_map.get(aid, 0.0)
         realized_pnl_for_asset = cap_gains_for_asset + asset_net_div
-        realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0) if cost_basis_sold_for_asset > 0 else 0.0
+        if cost_basis_sold_for_asset > 0:
+            realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0)
+        elif cost_sum > 0:
+            realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_sum * 100.0)
+        else:
+            realized_pnl_pct_for_asset = 0.0
         
         # Fetch fees and taxes for this asset from pre-fetched map
         fees_entry = fees_map.get(aid, (0.0, 0.0))

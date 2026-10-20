@@ -6,7 +6,7 @@ from app.db.database import engine, Base, AsyncSessionLocal
 from app.db.models import (
     User, Account, Asset, Transaction, PriceHistory, 
     Benchmark, Category, CashflowTransaction, CashflowPayment, 
-    CashflowItem, AppSetting, Dividend, CorporateAction
+    CashflowItem, AppSetting, Dividend, 
 )
 from app.services.auth_service import get_password_hash
 from app.services.cashflow_engine import seed_default_categories
@@ -29,7 +29,7 @@ async def seed_all():
         # Clear existing data to ensure clean idempotency
         for model in [
             CashflowItem, CashflowPayment, CashflowTransaction,
-            PriceHistory, Transaction, Dividend, CorporateAction,
+            PriceHistory, Transaction, Dividend, ,
             Benchmark, Asset, Account, AppSetting
         ]:
             await session.execute(delete(model))

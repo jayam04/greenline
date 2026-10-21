@@ -25,6 +25,7 @@ def _clean_credential(value):
 def create_database_engine(database_url: str, connect_args=None) -> AsyncEngine:
     """Build an async SQLAlchemy engine for the configured database URL."""
     driver_args = dict(connect_args or {})
+    engine_kwargs = {"echo": False}
     if database_url.startswith("oracle+oracledb://"):
         if settings.ORACLE_USER:
             driver_args.setdefault("user", _clean_credential(settings.ORACLE_USER))
@@ -32,15 +33,22 @@ def create_database_engine(database_url: str, connect_args=None) -> AsyncEngine:
             driver_args.setdefault("password", _clean_credential(settings.ORACLE_PASSWORD))
         if settings.ORACLE_DSN:
             driver_args.setdefault("dsn", _clean_credential(settings.ORACLE_DSN))
+        driver_args.setdefault("stmtcachesize", 50)
         for key in ("user", "password", "dsn"):
             if key in driver_args and isinstance(driver_args[key], str):
                 driver_args[key] = _clean_credential(driver_args[key])
+        engine_kwargs.update({
+            "pool_size": 10,
+            "max_overflow": 20,
+            "pool_recycle": 1800,
+            "pool_pre_ping": True,
+        })
     return create_async_engine(
         database_url,
         connect_args=(
             {"check_same_thread": False} if "sqlite" in database_url else driver_args
         ),
-        echo=False,
+        **engine_kwargs
     )
 
 

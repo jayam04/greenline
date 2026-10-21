@@ -1,14 +1,20 @@
-from typing import List
+from typing import List, Optional, Dict, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc, delete
 from app.db.models import Transaction, Lot, LotSale, CashFlow, Dividend
 
-async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
+async def process_transaction_event(
+    db: AsyncSession, 
+    tx: Transaction,
+    open_lots_cache: Optional[Dict[Tuple[int, int], List[Lot]]] = None
+) -> None:
     """
     Processes transaction events (buy, sell, deposit, withdrawal, dividend)
     and updates lots, lot_sales, cash_flows, and dividends.
+    When open_lots_cache is provided, lot lookups and flushes are batched in memory.
     """
     t_type = tx.transaction_type.lower()
+    auto_flush = open_lots_cache is None
     
     if t_type == "buy":
         if tx.quantity is None or tx.quantity <= 0:
@@ -32,6 +38,8 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             cost_per_unit=cost_per_unit
         )
         db.add(lot)
+        if open_lots_cache is not None:
+            open_lots_cache.setdefault((tx.account_id, tx.asset_id), []).append(lot)
         
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         # Cash flows (Negative for investments, full outlay including fees & taxes)
@@ -57,7 +65,8 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
                 amount=-abs(total_buy_cost),
                 flow_type="buy"
             ))
-        await db.flush()
+        if auto_flush:
+            await db.flush()
 
     elif t_type in ["split", "bonus"]:
         if tx.quantity is None or tx.quantity <= 0:
@@ -73,7 +82,10 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             cost_per_unit=0.0
         )
         db.add(lot)
-        await db.flush()
+        if open_lots_cache is not None:
+            open_lots_cache.setdefault((tx.account_id, tx.asset_id), []).append(lot)
+        if auto_flush:
+            await db.flush()
 
     elif t_type == "sell":
         if tx.quantity is None or tx.quantity <= 0:
@@ -87,17 +99,24 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
         net_sale_price_per_unit = net_total_sale_proceeds / float(tx.quantity)
         
         # Find open lots FIFO (ordered by buy_date ASC, lot_id ASC)
-        stmt = (
-            select(Lot)
-            .where(
-                Lot.account_id == tx.account_id,
-                Lot.asset_id == tx.asset_id,
-                Lot.quantity_remaining > 0
+        if open_lots_cache is not None:
+            open_lots = [
+                l for l in open_lots_cache.get((tx.account_id, tx.asset_id), [])
+                if l.quantity_remaining > 0
+            ]
+        else:
+            stmt = (
+                select(Lot)
+                .where(
+                    Lot.account_id == tx.account_id,
+                    Lot.asset_id == tx.asset_id,
+                    Lot.quantity_remaining > 0
+                )
+                .order_by(asc(Lot.buy_date), asc(Lot.lot_id))
             )
-            .order_by(asc(Lot.buy_date), asc(Lot.lot_id))
-        )
-        result = await db.execute(stmt)
-        open_lots: List[Lot] = list(result.scalars().all())
+            result = await db.execute(stmt)
+            open_lots = list(result.scalars().all())
+
         for lot in open_lots:
             if sale_qty_remaining <= 0:
                 break
@@ -111,15 +130,20 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             realized_pnl = net_lot_proceeds - cost_basis
             holding_days = (tx.transaction_date - lot.buy_date).days
             
-            lot_sale = LotSale(
-                lot_id=lot.lot_id,
-                sell_transaction_id=tx.transaction_id,
-                quantity_sold=qty_to_take,
-                sale_price_per_unit=net_sale_price_per_unit,
-                cost_basis=cost_basis,
-                realized_pnl=realized_pnl,
-                holding_period_days=max(0, holding_days)
-            )
+            lot_sale_kwargs = {
+                "sell_transaction_id": tx.transaction_id,
+                "quantity_sold": qty_to_take,
+                "sale_price_per_unit": net_sale_price_per_unit,
+                "cost_basis": cost_basis,
+                "realized_pnl": realized_pnl,
+                "holding_period_days": max(0, holding_days)
+            }
+            if getattr(lot, "lot_id", None) is not None:
+                lot_sale_kwargs["lot_id"] = lot.lot_id
+            else:
+                lot_sale_kwargs["lot"] = lot
+
+            lot_sale = LotSale(**lot_sale_kwargs)
             db.add(lot_sale)
             
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
@@ -146,7 +170,8 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
                 amount=net_total_sale_proceeds,
                 flow_type="sell"
             ))
-        await db.flush()
+        if auto_flush:
+            await db.flush()
 
     elif t_type == "deposit":
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
@@ -164,7 +189,8 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             amount=abs(tx.total_amount),
             flow_type="deposit"
         ))
-        await db.flush()
+        if auto_flush:
+            await db.flush()
 
     elif t_type == "withdrawal":
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
@@ -182,7 +208,8 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
             amount=-abs(tx.total_amount),
             flow_type="withdrawal"
         ))
-        await db.flush()
+        if auto_flush:
+            await db.flush()
 
     elif t_type == "dividend":
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
@@ -219,25 +246,27 @@ async def process_transaction_event(db: AsyncSession, tx: Transaction) -> None:
                 amount=net_dividend,
                 flow_type="dividend"
             ))
-            await db.flush()
+            if auto_flush:
+                await db.flush()
 
 async def recalculate_all_lots(db: AsyncSession) -> None:
     """
     Clears all derived state (lot_sales, lots, cash_flows, dividends)
-    and re-processes all transactions chronologically.
+    and re-processes all transactions chronologically with batch in-memory FIFO.
     """
     db.expire_all()
     await db.execute(delete(LotSale))
     await db.execute(delete(Lot))
     await db.execute(delete(CashFlow))
     await db.execute(delete(Dividend))
-    await db.commit()
 
     stmt = select(Transaction).order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
     result = await db.execute(stmt)
     all_txs = list(result.scalars().all())
 
+    open_lots_cache: Dict[Tuple[int, int], List[Lot]] = {}
     for tx in all_txs:
-        await process_transaction_event(db, tx)
+        await process_transaction_event(db, tx, open_lots_cache=open_lots_cache)
 
+    await db.flush()
     await db.commit()

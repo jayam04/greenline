@@ -1,19 +1,45 @@
 import datetime
-from typing import List, Dict, Optional
+import math
+from typing import List, Dict, Optional, Tuple
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, asc, or_
 from sqlalchemy.orm import selectinload
 from app.db.database import get_db
-from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem
+from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, CashFlow
 from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
 from app.services.xirr_engine import calculate_xirr_for_scope
 from app.services.cashflow_engine import convert_currency
 from app.services.snapshot_engine import calculate_account_snapshots
 from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances
 from app.api.deps import get_current_user
+import pyxirr
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
+
+def _compute_asset_xirr_in_memory(
+    flows: List[Tuple[datetime.date, float]],
+    current_val: float,
+    as_of: Optional[datetime.date] = None
+) -> Optional[float]:
+    if as_of is None:
+        as_of = datetime.date.today()
+    dates = [f[0] for f in flows]
+    amounts = [f[1] for f in flows]
+    if current_val > 0:
+        dates.append(as_of)
+        amounts.append(current_val)
+    if len(dates) < 2:
+        return None
+    if not (any(a < 0 for a in amounts) and any(a > 0 for a in amounts)):
+        return None
+    try:
+        val = pyxirr.xirr(dates, amounts)
+        if val is None or str(val) == "nan":
+            return None
+        return float(val)
+    except Exception:
+        return None
 
 @router.get("/summary", response_model=PortfolioSummaryResponse)
 async def get_portfolio_summary(
@@ -23,6 +49,11 @@ async def get_portfolio_summary(
 ):
     if not isinstance(account_id, int):
         account_id = None
+
+    # Pre-fetch all accounts map for instant currency & balance lookups
+    all_accounts_res = await db.execute(select(Account))
+    all_accounts: Dict[int, Account] = {a.account_id: a for a in all_accounts_res.scalars().all()}
+
     # 1. Fetch active open lots
     lot_stmt = select(Lot).where(Lot.quantity_remaining > 0)
     if account_id:
@@ -87,7 +118,6 @@ async def get_portfolio_summary(
             if not has_previous_price[aid] and asset_price_dates[aid] is not None:
                 asset_previous_prices[aid] = asset_prices[aid]
 
-
     # Pre-fetch assets metadata
     assets_map: Dict[int, Asset] = {}
     if asset_ids:
@@ -126,6 +156,44 @@ async def get_portfolio_summary(
         net_div = max(0.0, float(dtx.total_amount or 0.0) - float(dtx.taxes or 0.0))
         div_map[dtx.asset_id] = div_map.get(dtx.asset_id, 0.0) + net_div
 
+    # Pre-fetch realized PnL, cost basis, quantity sold, and account_id grouped by asset in a single query
+    rpnl_stmt = (
+        select(
+            Lot.asset_id,
+            func.sum(LotSale.realized_pnl),
+            func.sum(LotSale.cost_basis),
+            func.sum(LotSale.quantity_sold),
+            func.min(Lot.account_id)
+        )
+        .join(LotSale, Lot.lot_id == LotSale.lot_id)
+    )
+    if account_id:
+        rpnl_stmt = rpnl_stmt.where(Lot.account_id == account_id)
+    rpnl_stmt = rpnl_stmt.group_by(Lot.asset_id)
+    rpnl_res = await db.execute(rpnl_stmt)
+    rpnl_by_asset: Dict[int, Tuple[float, float]] = {}
+    closed_sales_by_asset: Dict[int, Tuple[float, float, float, Optional[int]]] = {}
+    for r in rpnl_res.all():
+        aid = r[0]
+        pnl = float(r[1] or 0.0)
+        cost = float(r[2] or 0.0)
+        qty = float(r[3] or 0.0)
+        acc_id_val = r[4]
+        rpnl_by_asset[aid] = (pnl, cost)
+        closed_sales_by_asset[aid] = (pnl, cost, qty, acc_id_val)
+
+    # Pre-fetch asset cashflows for in-memory XIRR calculation in a single query
+    cf_stmt = (
+        select(CashFlow.scope_id, CashFlow.flow_date, CashFlow.amount)
+        .where(CashFlow.scope_type == "asset")
+        .order_by(asc(CashFlow.flow_date))
+    )
+    cf_res = await db.execute(cf_stmt)
+    asset_flows_map: Dict[int, List[Tuple[datetime.date, float]]] = {}
+    for scope_id, fdate, amt in cf_res.all():
+        if scope_id is not None:
+            asset_flows_map.setdefault(scope_id, []).append((fdate, float(amt)))
+
     # Calculate Holdings
     holdings_list: List[HoldingSummary] = []
     
@@ -149,16 +217,8 @@ async def get_portfolio_summary(
         unrealized = curr_val - cost_sum
         unrealized_pct = (unrealized / cost_sum * 100.0) if cost_sum > 0 else 0.0
         
-        # Realized PnL (Capital Gains from sales + Net Dividends) & Cost Basis for this asset
-        rpnl_stmt = select(LotSale.realized_pnl, LotSale.cost_basis)\
-            .join(Lot, LotSale.lot_id == Lot.lot_id)\
-            .where(Lot.asset_id == aid)
-        if account_id:
-            rpnl_stmt = rpnl_stmt.where(Lot.account_id == account_id)
-        rpnl_res = await db.execute(rpnl_stmt)
-        rpnl_rows = rpnl_res.all()
-        cap_gains_for_asset = sum(r[0] for r in rpnl_rows)
-        cost_basis_sold_for_asset = sum(r[1] for r in rpnl_rows)
+        # Realized PnL from pre-fetched map
+        cap_gains_for_asset, cost_basis_sold_for_asset = rpnl_by_asset.get(aid, (0.0, 0.0))
         asset_net_div = div_map.get(aid, 0.0)
         realized_pnl_for_asset = cap_gains_for_asset + asset_net_div
         if cost_basis_sold_for_asset > 0:
@@ -179,23 +239,17 @@ async def get_portfolio_summary(
         total_basis = cost_sum + cost_basis_sold_for_asset
         net_pnl_pct_for_asset = (net_pnl_for_asset / total_basis * 100.0) if total_basis > 0 else 0.0
         
-        # XIRR for asset
-        xirr_val = await calculate_xirr_for_scope(
-            db=db,
-            scope_type="asset",
-            scope_id=aid,
-            current_valuation=curr_val
+        # In-memory XIRR for asset
+        xirr_val = _compute_asset_xirr_in_memory(
+            flows=asset_flows_map.get(aid, []),
+            current_val=curr_val
         )
         
-        # Determine holding currency from the holding's lots/accounts
+        # Determine holding currency from in-memory accounts map
         acc_ids = list(set(l.account_id for l in a_lots))
         holding_currency = "USD"
-        if acc_ids:
-            acc_stmt = select(Account.currency).where(Account.account_id == acc_ids[0])
-            acc_res = await db.execute(acc_stmt)
-            acc_curr = acc_res.scalar_one_or_none()
-            if acc_curr:
-                holding_currency = acc_curr
+        if acc_ids and acc_ids[0] in all_accounts:
+            holding_currency = all_accounts[acc_ids[0]].currency or "USD"
         elif asset.currency:
             holding_currency = asset.currency
 
@@ -256,67 +310,60 @@ async def get_portfolio_summary(
         else:
             sector_allocation["Other"] = sector_allocation.get("Other", 0.0) + curr_val
 
-    # 3. Fetch Closed Positions (Assets with LotSale records but 0 open quantity)
-    closed_lot_stmt = (
-        select(
-            Lot.asset_id,
-            func.sum(LotSale.realized_pnl),
-            func.sum(LotSale.cost_basis),
-            func.sum(LotSale.quantity_sold)
-        )
-        .join(LotSale, Lot.lot_id == LotSale.lot_id)
-    )
-    if account_id:
-        closed_lot_stmt = closed_lot_stmt.where(Lot.account_id == account_id)
-    closed_lot_stmt = closed_lot_stmt.group_by(Lot.asset_id)
-    closed_lot_res = await db.execute(closed_lot_stmt)
-
+    # 3. Identify Closed Positions (Assets with LotSale records or dividends but 0 open quantity)
     open_asset_ids_set = set(asset_ids)
     closed_holdings_list: List[HoldingSummary] = []
-    closed_lot_rows = closed_lot_res.all()
-    closed_lot_aids = set(r[0] for r in closed_lot_rows)
+    needed_closed_aids = [
+        aid for aid in closed_sales_by_asset.keys()
+        if aid not in open_asset_ids_set
+    ]
+    div_only_aids = [
+        d_aid for d_aid, d_amt in div_map.items()
+        if d_aid not in open_asset_ids_set and d_aid not in closed_sales_by_asset and d_amt > 0
+    ]
+    all_needed_closed = list(set(needed_closed_aids + div_only_aids))
 
-    for c_aid, c_rpnl, c_cost_basis, c_qty_sold in closed_lot_rows:
-        if c_aid in open_asset_ids_set:
-            continue
+    # Batch pre-fetch closed Asset models
+    closed_assets_map: Dict[int, Asset] = {}
+    if all_needed_closed:
+        c_ast_res = await db.execute(select(Asset).where(Asset.asset_id.in_(all_needed_closed)))
+        closed_assets_map = {a.asset_id: a for a in c_ast_res.scalars().all()}
 
-        c_asset_res = await db.execute(select(Asset).where(Asset.asset_id == c_aid))
-        c_asset = c_asset_res.scalar_one_or_none()
+    # Batch pre-fetch latest prices for closed assets
+    closed_prices_map: Dict[int, float] = {}
+    if all_needed_closed:
+        c_rn_col = func.row_number().over(
+            partition_by=PriceHistory.asset_id,
+            order_by=[desc(PriceHistory.price_date), desc(PriceHistory.price_id)]
+        ).label("rn")
+        c_ranked_ph = select(PriceHistory.asset_id, PriceHistory.close_price, c_rn_col).where(PriceHistory.asset_id.in_(all_needed_closed)).subquery()
+        c_ph_stmt = select(c_ranked_ph.c.asset_id, c_ranked_ph.c.close_price).where(c_ranked_ph.c.rn == 1)
+        for c_aid_val, c_px in (await db.execute(c_ph_stmt)).all():
+            if c_px is not None:
+                closed_prices_map[c_aid_val] = float(c_px)
+
+    for c_aid in needed_closed_aids:
+        c_cap_gains, c_cost_basis, c_qty_sold, c_acc_id = closed_sales_by_asset[c_aid]
+        c_asset = closed_assets_map.get(c_aid)
         if not c_asset:
             continue
 
-        c_cap_gains = c_rpnl or 0.0
-        c_cost_basis = c_cost_basis or 0.0
-        c_qty_sold = c_qty_sold or 0.0
         c_net_div = div_map.get(c_aid, 0.0)
         c_realized_pnl = c_cap_gains + c_net_div
         c_rpnl_pct = (c_realized_pnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
 
-        c_xirr = await calculate_xirr_for_scope(
-            db=db,
-            scope_type="asset",
-            scope_id=c_aid,
-            current_valuation=0.0
+        c_xirr = _compute_asset_xirr_in_memory(
+            flows=asset_flows_map.get(c_aid, []),
+            current_val=0.0
         )
 
-        c_acc_stmt = (
-            select(Account.currency)
-            .join(Lot, Account.account_id == Lot.account_id)
-            .where(Lot.asset_id == c_aid)
-            .limit(1)
-        )
-        if account_id:
-            c_acc_stmt = c_acc_stmt.where(Account.account_id == account_id)
-        c_acc_res = await db.execute(c_acc_stmt)
-        c_curr = c_acc_res.scalars().first() or c_asset.currency or "USD"
+        acc_curr = "USD"
+        if c_acc_id in all_accounts:
+            acc_curr = all_accounts[c_acc_id].currency or "USD"
+        elif c_asset.currency:
+            acc_curr = c_asset.currency
 
-
-        # Pre-fetch latest price
-        c_ph_stmt = select(PriceHistory.close_price).where(PriceHistory.asset_id == c_aid).order_by(desc(PriceHistory.price_date)).limit(1)
-        c_ph_res = await db.execute(c_ph_stmt)
-        c_latest_price = c_ph_res.scalar_one_or_none() or 0.0
-
-        # Fetch fees and taxes for this closed asset from pre-fetched map
+        c_latest_price = closed_prices_map.get(c_aid, 0.0)
         c_fees_entry = fees_map.get(c_aid, (0.0, 0.0))
         c_asset_fees = c_fees_entry[0]
         c_asset_taxes = c_fees_entry[1]
@@ -328,7 +375,7 @@ async def get_portfolio_summary(
             name=c_asset.name,
             asset_type=c_asset.asset_type,
             sector=c_asset.sector,
-            currency=c_curr,
+            currency=acc_curr,
             quantity_held=0.0,
             avg_cost_price=c_cost_basis / c_qty_sold if c_qty_sold > 0 else 0.0,
             total_cost=c_cost_basis,
@@ -350,49 +397,44 @@ async def get_portfolio_summary(
         ))
 
     # Assets that only have dividends and no open lots or lot sales
-    for d_aid, d_amt in div_map.items():
-        if d_aid not in open_asset_ids_set and d_aid not in closed_lot_aids and d_amt > 0:
-            d_asset_res = await db.execute(select(Asset).where(Asset.asset_id == d_aid))
-            d_asset = d_asset_res.scalar_one_or_none()
-            if d_asset:
-                closed_holdings_list.append(HoldingSummary(
-                    asset_id=d_asset.asset_id,
-                    symbol=d_asset.symbol,
-                    name=d_asset.name,
-                    asset_type=d_asset.asset_type,
-                    sector=d_asset.sector,
-                    currency=d_asset.currency or "USD",
-                    quantity_held=0.0,
-                    avg_cost_price=0.0,
-                    total_cost=0.0,
-                    latest_price=0.0,
-                    current_value=0.0,
-                    unrealized_pnl=0.0,
-                    unrealized_pnl_pct=0.0,
-                    realized_pnl=d_amt,
-                    realized_pnl_pct=0.0,
-                    dividend_income=d_amt,
-                    capital_gains_realized=0.0,
-                    fees_and_taxes=0.0,
-                    total_fees=0.0,
-                    total_taxes=0.0,
-                    net_pnl=d_amt,
-                    net_pnl_pct=0.0,
-                    xirr=None,
-                    open_lots=[]
-                ))
+    for d_aid in div_only_aids:
+        d_asset = closed_assets_map.get(d_aid)
+        if d_asset:
+            d_amt = div_map.get(d_aid, 0.0)
+            closed_holdings_list.append(HoldingSummary(
+                asset_id=d_asset.asset_id,
+                symbol=d_asset.symbol,
+                name=d_asset.name,
+                asset_type=d_asset.asset_type,
+                sector=d_asset.sector,
+                currency=d_asset.currency or "USD",
+                quantity_held=0.0,
+                avg_cost_price=0.0,
+                total_cost=0.0,
+                latest_price=0.0,
+                current_value=0.0,
+                unrealized_pnl=0.0,
+                unrealized_pnl_pct=0.0,
+                realized_pnl=d_amt,
+                realized_pnl_pct=0.0,
+                dividend_income=d_amt,
+                capital_gains_realized=0.0,
+                fees_and_taxes=0.0,
+                total_fees=0.0,
+                total_taxes=0.0,
+                net_pnl=d_amt,
+                net_pnl_pct=0.0,
+                xirr=None,
+                open_lots=[]
+            ))
 
     # 4. Fetch Realized PnL total (Capital Gains + Net Dividends)
-    tot_cap_gains_stmt = select(LotSale.realized_pnl)
-    if account_id:
-        tot_cap_gains_stmt = tot_cap_gains_stmt.join(Lot, LotSale.lot_id == Lot.lot_id).where(Lot.account_id == account_id)
-    tot_cap_gains_res = await db.execute(tot_cap_gains_stmt)
-    total_capital_gains = sum(tot_cap_gains_res.scalars().all())
+    total_capital_gains = sum(r[0] for r in rpnl_by_asset.values())
     total_net_dividends = sum(div_map.values())
     total_realized_pnl = total_capital_gains + total_net_dividends
     
     # 5. Fetch Cash Balance using centralized funding-account & cashflow aware engine
-    balances = await calculate_all_account_cash_balances(db)
+    balances = await calculate_all_account_cash_balances(db, accounts=list(all_accounts.values()))
     if account_id:
         cash_balance = balances.get(account_id, 0.0)
     else:
@@ -409,31 +451,29 @@ async def get_portfolio_summary(
         current_valuation=total_net_worth
     )
     
-    # Fetch transactions for total fees and taxes
-    tx_stmt = select(Transaction)
+    # Fetch transaction fees and taxes in a lightweight projection
+    tx_stmt = select(Transaction.account_id, Transaction.fees, Transaction.taxes).where(
+        or_(Transaction.fees.isnot(None), Transaction.taxes.isnot(None))
+    )
     if account_id:
         tx_stmt = tx_stmt.where(Transaction.account_id == account_id)
     tx_res = await db.execute(tx_stmt)
-    all_txs = tx_res.scalars().all()
-    # Fetch accounts map for currency resolution
-    all_accounts_res = await db.execute(select(Account))
-    all_accounts = {a.account_id: a for a in all_accounts_res.scalars().all()}
 
     total_fees = 0.0
     total_taxes = 0.0
-    for tx in all_txs:
-        acc = all_accounts.get(tx.account_id)
+    for acc_id, fees, taxes in tx_res.all():
+        acc = all_accounts.get(acc_id)
         tx_curr = acc.currency if acc else "USD"
-        if tx.fees:
+        if fees:
             if account_id:
-                total_fees += tx.fees
+                total_fees += float(fees)
             else:
-                total_fees += convert_currency(tx.fees, tx_curr, "EUR")
-        if tx.taxes:
+                total_fees += convert_currency(float(fees), tx_curr, "EUR")
+        if taxes:
             if account_id:
-                total_taxes += tx.taxes
+                total_taxes += float(taxes)
             else:
-                total_taxes += convert_currency(tx.taxes, tx_curr, "EUR")
+                total_taxes += convert_currency(float(taxes), tx_curr, "EUR")
 
     # Sort top holdings by current value
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)

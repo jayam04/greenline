@@ -16,16 +16,25 @@ if db_url.startswith("sqlite+aiosqlite:///"):
         except OSError:
             pass
 
+def _clean_credential(value):
+    if isinstance(value, str):
+        return value.strip("\"' \t\r\n")
+    return value
+
+
 def create_database_engine(database_url: str, connect_args=None) -> AsyncEngine:
     """Build an async SQLAlchemy engine for the configured database URL."""
     driver_args = dict(connect_args or {})
     if database_url.startswith("oracle+oracledb://"):
         if settings.ORACLE_USER:
-            driver_args.setdefault("user", settings.ORACLE_USER)
+            driver_args.setdefault("user", _clean_credential(settings.ORACLE_USER))
         if settings.ORACLE_PASSWORD:
-            driver_args.setdefault("password", settings.ORACLE_PASSWORD)
+            driver_args.setdefault("password", _clean_credential(settings.ORACLE_PASSWORD))
         if settings.ORACLE_DSN:
-            driver_args.setdefault("dsn", settings.ORACLE_DSN)
+            driver_args.setdefault("dsn", _clean_credential(settings.ORACLE_DSN))
+        for key in ("user", "password", "dsn"):
+            if key in driver_args and isinstance(driver_args[key], str):
+                driver_args[key] = _clean_credential(driver_args[key])
     return create_async_engine(
         database_url,
         connect_args=(

@@ -32,10 +32,38 @@ def test_create_database_engine_supports_oracle_async_dialect(monkeypatch):
         asyncio.run(engine.dispose())
 
 
+def test_create_database_engine_sanitizes_oracle_connect_args(monkeypatch):
+    import app.db.database as db_module
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ORACLE_USER", '  "greenline" ')
+    monkeypatch.setattr(settings, "ORACLE_PASSWORD", " 'secret' ")
+    monkeypatch.setattr(settings, "ORACLE_DSN", ' "(description=walletless-tls)" ')
+
+    captured = {}
+    def mock_create_async_engine(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return None
+
+    monkeypatch.setattr(db_module, "create_async_engine", mock_create_async_engine)
+    db_module.create_database_engine("oracle+oracledb://@")
+
+    connect_args = captured["kwargs"].get("connect_args", {})
+    assert connect_args.get("user") == "greenline"
+    assert connect_args.get("password") == "secret"
+    assert connect_args.get("dsn") == "(description=walletless-tls)"
+
+
 def test_oracle_schema_script_contains_current_models():
     from pathlib import Path
 
-    sql = Path("backend/app/db/schemas/seed.sql").read_text()
+    candidates = [
+        Path("backend/app/db/schemas/seed.sql"),
+        Path("app/db/schemas/seed.sql"),
+    ]
+    sql_path = next(p for p in candidates if p.exists())
+    sql = sql_path.read_text()
     for table_name in Base.metadata.tables:
         match = re.search(
             rf"CREATE TABLE {re.escape(table_name)} \((.*?)\n\);",

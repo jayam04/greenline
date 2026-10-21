@@ -125,7 +125,7 @@ graph TD
 | :--- | :--- |
 | **Frontend** | [Next.js 16](https://nextjs.org/) (App Router, Turbopack), [React 19](https://react.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [Lucide Icons](https://lucide.dev/), [Recharts](https://recharts.org/) |
 | **Backend** | [FastAPI](https://fastapi.tiangolo.com/), [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async), [Pydantic v2](https://docs.pydantic.dev/), [APScheduler](https://apscheduler.readthedocs.io/) |
-| **Database** | SQLite with [aiosqlite](https://github.com/omnilib/aiosqlite) |
+| **Database** | SQLite ([aiosqlite](https://github.com/omnilib/aiosqlite), default) or Oracle Autonomous Database ([python-oracledb](https://python-oracledb.readthedocs.io/)) |
 | **Market Data** | Yahoo Finance ([yfinance](https://github.com/ranaroussi/yfinance)) |
 | **Testing** | [Pytest](https://docs.pytest.org/), [Vitest](https://vitest.dev/), [Playwright](https://playwright.dev/) |
 | **Containers** | Docker & Docker Compose (Multi-stage development & production builds) |
@@ -195,6 +195,31 @@ npm ci
 npm run dev
 ```
 
+### Oracle Autonomous Database
+
+The backend uses the same async SQLAlchemy models with either SQLite or Oracle. SQLite remains the default. For walletless TLS, enable TLS authentication for the Autonomous Database instance, then provide its TLS connect descriptor and application credentials through environment variables:
+
+```bash
+export DATABASE_URL='oracle+oracledb://@'
+export ORACLE_USER='greenline_app'
+export ORACLE_PASSWORD='...'
+export ORACLE_DSN='(description=(address=(protocol=tcps)(host=...)(port=1521))(connect_data=(service_name=...))(security=(ssl_server_dn_match=yes)))'
+```
+
+`ORACLE_DSN` should be the TLS connect descriptor supplied by OCI. Keep credentials in a secret manager or environment, and URL encode special characters if credentials are embedded directly in `DATABASE_URL`. The driver uses Thin mode and does not require Oracle Client libraries.
+
+To initialize a new Oracle schema, run [`backend/app/db/schemas/seed.sql`](backend/app/db/schemas/seed.sql) once using SQLcl or SQL*Plus. The application’s startup migrations then maintain the schema.
+
+To copy an existing SQLite database, initialize the target schema first, then run the one-time migration from the backend directory. The target Oracle tables must be empty:
+
+```bash
+export SQLITE_SOURCE_URL='sqlite+aiosqlite:////path/to/investments.db'
+export ORACLE_DATABASE_URL='oracle+oracledb://@'
+PYTHONPATH=. python -m app.db.migrate_sqlite_to_oracle
+```
+
+The copy preserves primary keys and relationships, checks that the target is empty, and verifies row counts. Oracle manual and automatic backups use portable JSON logical snapshots; restoring one replaces the mapped application tables. SQLite continues to use database-file backups.
+
 ---
 
 ## 🧪 Running Automated Tests
@@ -244,7 +269,7 @@ greenline/
 ├── backend/
 │   ├── app/
 │   │   ├── api/              # REST routers (accounts, assets, portfolio, cashflow, categories)
-│   │   ├── db/               # SQLAlchemy models, sessions, & migration engine
+│   │   ├── db/               # SQLAlchemy models, sessions, migrations, and Oracle schema
 │   │   ├── schemas/          # Pydantic v2 request & response schemas
 │   │   └── services/         # Core financial engines (FIFO, XIRR, Snapshots, Cashflow)
 │   ├── tests/                # Automated pytest unit & integration tests

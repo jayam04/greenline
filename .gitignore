@@ -44,6 +44,7 @@ backend/app/__pycache__/
 backend/tests/__pycache__/
 .pytest_cache/
 .coverage
+.ruff_cache/
 htmlcov/
 .tox/
 .nox/
@@ -55,10 +56,10 @@ dist/
 build/
 *.egg-info/
 .eggs/
+*.tsbuildinfo
 
 # IDEs & System Files
 .DS_Store
-.DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
@@ -69,6 +70,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Local Agent & Tool Artifacts
+.archify/
 
 
 # Personal & Miscellaneous

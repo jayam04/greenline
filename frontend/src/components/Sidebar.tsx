@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { removeAuthToken } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
+import { useGreenlineAuth } from "@/components/AuthProvider";
 import { 
   TrendingUp, Briefcase, Building2, LogOut, User,
   ArrowLeftRight, Settings, Sparkles, Sun, Moon, Laptop,
@@ -15,6 +16,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { isAuth0Enabled, user: auth0User, logout: authLogout } = useGreenlineAuth();
   
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -28,9 +30,13 @@ export function Sidebar() {
     setIsMobileOpen(false);
   }, [pathname]);
 
-  const handleLogout = () => {
-    removeAuthToken();
-    router.push("/login");
+  const handleLogout = async () => {
+    if (isAuth0Enabled) {
+      await authLogout();
+    } else {
+      removeAuthToken();
+      router.push("/login");
+    }
   };
 
   const navItems = [
@@ -136,12 +142,21 @@ export function Sidebar() {
       <div className="p-4 border-t border-[#E5E7EB] dark:border-[#1E293B]">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300 dark:border-slate-600">
-              <User className="w-4 h-4" />
+            <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300 dark:border-slate-600 overflow-hidden">
+              {auth0User?.picture ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={auth0User.picture} alt={auth0User.name || "User"} className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-4 h-4" />
+              )}
             </div>
             <div className="text-xs">
-              <div className="font-bold text-[#0F172A] dark:text-white">Admin</div>
-              <div className="text-[10px] text-slate-500">admin@greenline.local</div>
+              <div className="font-bold text-[#0F172A] dark:text-white truncate max-w-[120px]">
+                {auth0User?.name || "Admin"}
+              </div>
+              <div className="text-[10px] text-slate-500 truncate max-w-[120px]">
+                {auth0User?.email || "admin@greenline.local"}
+              </div>
             </div>
           </div>
           <Link href="/settings" className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">

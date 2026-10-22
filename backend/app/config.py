@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     ORACLE_PASSWORD: Optional[str] = None
     ORACLE_DSN: Optional[str] = None
     
+    # Auth0 OIDC Settings
+    AUTH0_DOMAIN: Optional[str] = os.getenv("AUTH0_DOMAIN")
+    AUTH0_AUDIENCE: Optional[str] = os.getenv("AUTH0_AUDIENCE")
+    AUTH0_ISSUER: Optional[str] = os.getenv("AUTH0_ISSUER")
+    AUTH0_ALGORITHMS: list[str] = ["RS256"]
+    
     DEFAULT_ADMIN_USER: str = os.getenv("DEFAULT_ADMIN_USER", "admin")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 

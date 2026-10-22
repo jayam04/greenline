@@ -5,9 +5,11 @@ from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.config import settings
 from app.db.database import get_db
 from app.db.models import User, ApiKey
-from app.services.auth_service import decode_access_token
+from app.services.auth_service import decode_access_token, get_password_hash
+from app.services.auth0_service import verify_auth0_token
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -65,7 +67,29 @@ async def get_current_user(
             if user:
                 return user
 
-    # 2. Try decoding candidates as JWT Bearer tokens
+    # 2. Try validating candidates as Auth0 RS256 Bearer tokens
+    if settings.AUTH0_DOMAIN:
+        for candidate in cleaned_candidates:
+            auth0_payload = await verify_auth0_token(candidate)
+            if auth0_payload is not None:
+                # In single-tenant phase, map to the existing primary user record
+                user_stmt = select(User).order_by(User.user_id.asc())
+                user_res = await db.execute(user_stmt)
+                primary_user = user_res.scalars().first()
+                if primary_user:
+                    return primary_user
+
+                # If no user exists yet in the database, automatically initialize one
+                new_user = User(
+                    username=settings.DEFAULT_ADMIN_USER,
+                    password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD),
+                )
+                db.add(new_user)
+                await db.commit()
+                await db.refresh(new_user)
+                return new_user
+
+    # 3. Try decoding candidates as local JWT Bearer tokens (HS256)
     for candidate in cleaned_candidates:
         payload = decode_access_token(candidate)
         if payload is not None:

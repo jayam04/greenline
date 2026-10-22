@@ -36,35 +36,41 @@ async def _startup_backfill():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Run deterministic versioned schema and data migrations
-    async with AsyncSessionLocal() as session:
+    async def _init_db_in_background():
         try:
-            await run_db_migrations(session)
-        except Exception as me:
-            print(f"[DB Migration Error] {me}")
+            # Run deterministic versioned schema and data migrations
+            async with AsyncSessionLocal() as session:
+                try:
+                    await run_db_migrations(session)
+                except Exception as me:
+                    print(f"[DB Migration Error] {me}")
 
-    # Seed default user if none exists & seed default categories
-    async with AsyncSessionLocal() as session:
-        stmt = select(User)
-        res = await session.execute(stmt)
-        user = res.scalar_one_or_none()
-        if not user:
-            default_user = User(
-                username=settings.DEFAULT_ADMIN_USER,
-                password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
-            )
-            session.add(default_user)
-            await session.commit()
-            print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER}")
+            # Seed default user if none exists & seed default categories
+            async with AsyncSessionLocal() as session:
+                stmt = select(User)
+                res = await session.execute(stmt)
+                user = res.scalar_one_or_none()
+                if not user:
+                    default_user = User(
+                        username=settings.DEFAULT_ADMIN_USER,
+                        password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
+                    )
+                    session.add(default_user)
+                    await session.commit()
+                    print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER}")
 
-        # Seed categories
-        try:
-            await seed_default_categories(session)
-        except Exception as ce:
-            print(f"[Init Categories Error] {ce}")
-            
-    asyncio.create_task(_startup_backfill())
-    start_scheduler()
+                # Seed categories
+                try:
+                    await seed_default_categories(session)
+                except Exception as ce:
+                    print(f"[Init Categories Error] {ce}")
+                    
+            await _startup_backfill()
+            start_scheduler()
+        except Exception as e:
+            print(f"[Startup Database Error] Could not connect to database on startup: {e}")
+
+    asyncio.create_task(_init_db_in_background())
     yield
 
 app = FastAPI(

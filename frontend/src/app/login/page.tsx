@@ -3,20 +3,26 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { setAuthToken } from "@/lib/api";
-import { TrendingUp, Lock, User } from "lucide-react";
+import { useGreenlineAuth } from "@/components/AuthProvider";
+import { TrendingUp, Lock, User, ShieldCheck } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { isAuth0Enabled, isAuthenticated, loginWithAuth0 } = useGreenlineAuth();
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPasswordLogin, setShowPasswordLogin] = useState(!isAuth0Enabled);
 
   useEffect(() => {
     document.title = "Login · greenline";
-  }, []);
+    if (isAuthenticated) {
+      router.push("/");
+    }
+  }, [isAuthenticated, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,43 +73,69 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-4 text-sm">
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">Username</label>
-            <div className="relative">
-              <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-semibold rounded-2xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9FE837]"
-                required
-              />
+        {isAuth0Enabled && (
+          <div className="mb-6 space-y-4">
+            <button
+              type="button"
+              onClick={() => loginWithAuth0()}
+              className="w-full flex items-center justify-center gap-3 py-3.5 bg-[#635BFF] hover:bg-[#5248E5] text-white font-bold text-sm rounded-2xl shadow-md transition-all active:scale-[0.98]"
+            >
+              <ShieldCheck className="w-5 h-5" />
+              <span>Continue with Auth0</span>
+            </button>
+
+            <div className="relative flex items-center justify-center py-2">
+              <div className="border-t border-slate-200 w-full" />
+              <button
+                type="button"
+                onClick={() => setShowPasswordLogin(!showPasswordLogin)}
+                className="bg-white px-3 text-[11px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-wider relative whitespace-nowrap"
+              >
+                {showPasswordLogin ? "Hide Password Login" : "Or use password"}
+              </button>
             </div>
           </div>
+        )}
 
-          <div>
-            <label className="block text-xs font-bold text-slate-600 mb-1">Password</label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-semibold rounded-2xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9FE837]"
-                required
-              />
+        {(!isAuth0Enabled || showPasswordLogin) && (
+          <form onSubmit={handleLogin} className="space-y-4 text-sm">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Username</label>
+              <div className="relative">
+                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-semibold rounded-2xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9FE837]"
+                  required
+                />
+              </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-[#0F172A] hover:bg-slate-800 font-extrabold text-white text-xs uppercase tracking-wider rounded-full shadow-md transition-all btn-press mt-2 disabled:opacity-50"
-          >
-            {loading ? "Signing in..." : "Sign In to Portfolio"}
-          </button>
-        </form>
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Password</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 font-semibold rounded-2xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#9FE837]"
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 bg-[#0F172A] hover:bg-slate-800 font-extrabold text-white text-xs uppercase tracking-wider rounded-full shadow-md transition-all btn-press mt-2 disabled:opacity-50"
+            >
+              {loading ? "Signing in..." : "Sign In with Password"}
+            </button>
+          </form>
+        )}
 
         <p className="text-center text-xs font-semibold text-slate-400 mt-6 pt-4 border-t border-slate-100">
           Default seed credentials: <code className="text-slate-700 font-mono bg-slate-100 px-1.5 py-0.5 rounded-md">admin</code> / <code className="text-slate-700 font-mono bg-slate-100 px-1.5 py-0.5 rounded-md">admin123</code>

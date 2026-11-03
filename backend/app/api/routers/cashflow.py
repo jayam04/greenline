@@ -44,8 +44,12 @@ async def list_cashflow_transactions(
     if end_date:
         stmt = stmt.where(CashflowTransaction.transaction_date <= end_date)
 
+    import time
+    print(f"Database exec started: {time.time()}")
     res = await db.execute(stmt)
+    print(f"Database exec started: {time.time()}")
     transactions = res.scalars().all()
+    print(f"Database exec started: {time.time()}")
 
     lineage_map = await build_category_lineage_map(db)
     results = []
@@ -75,7 +79,7 @@ async def list_cashflow_transactions(
         for i in tx.items:
             cat_meta = lineage_map.get(i.category_id)
             eff_label = i.label or (cat_meta["effective_label"] if cat_meta else None)
-            
+
             # Filter by label if specified
             if label and eff_label != label.upper():
                 continue

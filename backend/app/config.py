@@ -1,6 +1,7 @@
 import os
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
+from typing import Optional
 
 def _get_default_data_dir() -> str:
     env_dir = os.getenv("DATA_DIR")
@@ -45,6 +46,12 @@ class Settings(BaseSettings):
     BACKUP_DIR: str = os.getenv("BACKUP_DIR", os.path.join(_get_default_data_dir(), "backups"))
     
     DATABASE_URL: str = _get_default_database_url(_get_default_data_dir(), _get_default_database_file())
+
+    # Oracle Autonomous Database one-way TLS credentials. Supply these through
+    # a secret manager/environment; never store them in repository files.
+    ORACLE_USER: Optional[str] = None
+    ORACLE_PASSWORD: Optional[str] = None
+    ORACLE_DSN: Optional[str] = None
     
     DEFAULT_ADMIN_USER: str = os.getenv("DEFAULT_ADMIN_USER", "admin")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")

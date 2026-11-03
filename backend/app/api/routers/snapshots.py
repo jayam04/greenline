@@ -7,7 +7,7 @@ import datetime
 from app.db.database import get_db
 from app.db.models import NetworthSnapshot, Account, User
 from app.schemas.schemas import NetworthSnapshotResponse
-from app.services.snapshot_engine import calculate_account_snapshots
+from app.services.snapshot_engine import calculate_account_snapshots, calculate_all_accounts_snapshots
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
@@ -54,17 +54,11 @@ async def list_snapshots(
         res = await db.execute(stmt)
         return res.scalars().all()
 
-    # Calculate timeline for each account
-    account_timelines: Dict[int, Dict[datetime.date, Dict]] = {}
+    # Calculate timeline for all accounts in a single batch pass
+    account_timelines = await calculate_all_accounts_snapshots(db, accounts=all_accounts)
     all_dates_set = set()
-
-    for acc in all_accounts:
-        snaps = await calculate_account_snapshots(db, account_id=acc.account_id)
-        account_timelines[acc.account_id] = {}
-        for s in snaps:
-            d = s["snapshot_date"]
-            all_dates_set.add(d)
-            account_timelines[acc.account_id][d] = s
+    for acc_id, dates_map in account_timelines.items():
+        all_dates_set.update(dates_map.keys())
 
     if not all_dates_set:
         stmt = (

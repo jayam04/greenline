@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import datetime
 import asyncio
+import base64
 from typing import List, Dict, Optional, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
@@ -15,6 +16,8 @@ from app.db.models import (
     CashflowItem, AppSetting, Dividend, Lot, LotSale, NetworthSnapshot, 
     NetworthByAssetClass, CashFlow, XIRRCache, Benchmark
 )
+from app.db.database import get_tables_in_dependency_order, sync_oracle_identity_values
+from app.db import models as _all_models  # noqa: F401 - register all mapped tables
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import recalculate_past_snapshots
 
@@ -30,6 +33,8 @@ def get_active_db_path() -> str:
             raw_path = match.group(1)
             if raw_path != ":memory:":
                 return os.path.abspath(raw_path)
+    if db_url.startswith("oracle+"):
+        return ""
     data_dir = getattr(settings, "DATA_DIR", "./data")
     db_file = getattr(settings, "DATABASE_FILE", "investments.db")
     return os.path.abspath(os.path.join(data_dir, db_file))
@@ -166,10 +171,11 @@ async def get_autobackup_config(db: AsyncSession) -> Dict[str, Any]:
     else:
         is_overdue = True
 
+    is_oracle = str(getattr(settings, "DATABASE_URL", "")).startswith("oracle+")
     return {
-        "database_file": getattr(settings, "DATABASE_FILE", "investments.db"),
+        "database_file": "Oracle Autonomous Database" if is_oracle else getattr(settings, "DATABASE_FILE", "investments.db"),
         "data_dir": getattr(settings, "DATA_DIR", "./data"),
-        "active_db_path": get_active_db_path(),
+        "active_db_path": "Oracle Autonomous Database" if is_oracle else get_active_db_path(),
         "autobackup_enabled": enabled,
         "autobackup_interval_hours": interval_hours,
         "autobackup_max_copies": max_copies,
@@ -244,24 +250,30 @@ async def create_backup(
     max_copies: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Creates a new timestamped backup copy of the active database file in the backups directory.
-    Uses atomic temp writes and prunes excess old backups.
+    Creates an SQLite file backup or a portable logical server database backup.
     """
     async with _backup_lock:
         backup_dir = ensure_backup_dir()
         db_path = get_active_db_path()
         timestamp_str = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
-        backup_filename = f"greenline_backup_{kind}_{timestamp_str}.db"
+        is_sqlite = "sqlite" in getattr(settings, "DATABASE_URL", "")
+        extension = "db" if is_sqlite else "json"
+        backup_filename = f"greenline_backup_{kind}_{timestamp_str}.{extension}"
         dest_path = os.path.join(backup_dir, backup_filename)
         temp_dest = os.path.join(backup_dir, f".tmp_{timestamp_str}_{backup_filename}")
 
         try:
-            if os.path.exists(db_path):
+            if is_sqlite and os.path.exists(db_path):
                 shutil.copy2(db_path, temp_dest)
                 os.replace(temp_dest, dest_path)
-            else:
+            elif is_sqlite:
                 with open(temp_dest, "w") as f:
                     f.write("")
+                os.replace(temp_dest, dest_path)
+            else:
+                payload = await _export_database_rows(db)
+                with open(temp_dest, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, default=_json_value, separators=(",", ":"))
                 os.replace(temp_dest, dest_path)
         finally:
             if os.path.exists(temp_dest):
@@ -930,6 +942,14 @@ async def restore_from_backup(filename: str, db: AsyncSession) -> Dict[str, Any]
     if filename.endswith(".json"):
         with open(validated_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        if data.get("format") == "greenline-db-backup-v1":
+            await _restore_database_rows(data, db)
+            return {
+                "status": "success",
+                "restored_from": filename,
+                "restored_at": datetime.datetime.utcnow().isoformat(),
+                "details": {"tables": len(data.get("tables", {}))},
+            }
         import_res = await restore_from_json_data(data, db)
         return {
             "status": "success",
@@ -938,9 +958,100 @@ async def restore_from_backup(filename: str, db: AsyncSession) -> Dict[str, Any]
             "details": import_res
         }
     elif filename.endswith(".db"):
+        if "sqlite" not in getattr(settings, "DATABASE_URL", ""):
+            raise ValueError("SQLite database files cannot be restored while Oracle is active.")
         return await restore_from_sqlite_file(validated_path, filename)
     else:
         raise ValueError("Unsupported backup format. Only .db and .json files are supported.")
+
+
+def _json_value(value):
+    if isinstance(value, (datetime.date, datetime.datetime)):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        return {"__bytes__": base64.b64encode(value).decode("ascii")}
+    return str(value)
+
+
+async def _export_database_rows(db: AsyncSession) -> Dict[str, Any]:
+    tables = {}
+    for table in get_tables_in_dependency_order():
+        result = await db.execute(select(table))
+        tables[table.name] = [dict(row) for row in result.mappings().all()]
+    return {
+        "format": "greenline-db-backup-v1",
+        "created_at": datetime.datetime.utcnow().isoformat(),
+        "tables": tables,
+    }
+
+
+def _restore_value(value, column):
+    if isinstance(value, dict) and "__bytes__" in value:
+        return base64.b64decode(value["__bytes__"])
+    if not isinstance(value, str):
+        return value
+    try:
+        python_type = column.type.python_type
+    except (AttributeError, NotImplementedError):
+        return value
+    if python_type is datetime.datetime:
+        return datetime.datetime.fromisoformat(value)
+    if python_type is datetime.date:
+        return datetime.date.fromisoformat(value)
+    return value
+
+
+async def _restore_database_rows(data: Dict[str, Any], db: AsyncSession) -> None:
+    tables = get_tables_in_dependency_order()
+    payload = data.get("tables")
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid logical database backup format.")
+
+    try:
+        for table in reversed(tables):
+            await db.execute(table.delete())
+
+        copied = set()
+        deferred = []
+        for table in tables:
+            rows = payload.get(table.name, [])
+            if not isinstance(rows, list):
+                raise ValueError(f"Invalid rows for table {table.name}.")
+            prepared = []
+            primary_keys = [column.name for column in table.primary_key.columns]
+            for raw_row in rows:
+                row = {
+                    name: _restore_value(value, table.c[name])
+                    for name, value in raw_row.items()
+                    if name in table.c
+                }
+                delayed = {}
+                for foreign_key in table.foreign_keys:
+                    name = foreign_key.parent.name
+                    if foreign_key.column.table.name not in copied and row.get(name) is not None:
+                        if not table.c[name].nullable:
+                            raise ValueError(f"Unsupported required circular reference {table.name}.{name}.")
+                        delayed[name] = row[name]
+                        row[name] = None
+                prepared.append(row)
+                if delayed:
+                    deferred.append((table, {name: row[name] for name in primary_keys}, delayed))
+            for start in range(0, len(prepared), 500):
+                batch = prepared[start:start + 500]
+                if batch:
+                    await db.execute(table.insert(), batch)
+            copied.add(table.name)
+
+        for table, key, values in deferred:
+            await db.execute(
+                table.update().where(*[table.c[name] == value for name, value in key.items()]).values(**values)
+            )
+        await db.commit()
+        await sync_oracle_identity_values(db)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
 
 def delete_backup(filename: str) -> bool:
     """Deletes a specific backup file from the backups directory."""

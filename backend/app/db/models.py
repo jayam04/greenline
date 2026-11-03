@@ -1,15 +1,22 @@
 import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, Date, DateTime, ForeignKey, 
+    Column, Integer, Identity, String as SQLString, Float, Date, DateTime, ForeignKey,
     UniqueConstraint, Text, Index, Boolean
 )
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
+
+class String(SQLString):
+    """Use a bounded default width so Oracle can index string columns safely."""
+
+    def __init__(self, length=255, **kwargs):
+        super().__init__(length=length, **kwargs)
+
 class User(Base):
     __tablename__ = "users"
     
-    user_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, Identity(), primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -17,7 +24,7 @@ class User(Base):
 class Account(Base):
     __tablename__ = "accounts"
     
-    account_id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, Identity(), primary_key=True, index=True)
     account_name = Column(String, nullable=False)
     broker_name = Column(String, nullable=True)
     account_type = Column(String, nullable=False) # demat, mutual_fund, pf, nps, crypto_exchange, bank
@@ -33,7 +40,7 @@ class Account(Base):
 class Asset(Base):
     __tablename__ = "assets"
     
-    asset_id = Column(Integer, primary_key=True, index=True)
+    asset_id = Column(Integer, Identity(), primary_key=True, index=True)
     symbol = Column(String, index=True, nullable=False) # e.g. AAPL, RELIANCE
     isin = Column(String, index=True, nullable=True)
     name = Column(String, nullable=False)
@@ -52,7 +59,7 @@ class Asset(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
     
-    transaction_id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(Integer, Identity(), primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
     funding_account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=True) # Null for cash-only entries
@@ -65,7 +72,7 @@ class Transaction(Base):
     taxes = Column(Float, default=0.0)
     source = Column(String, default="manual") # manual, yfinance_auto, csv_import
     notes = Column(Text, nullable=True)
-    expected_dividend_id = Column(Integer, ForeignKey("expected_dividends.expected_dividend_id", ondelete="SET NULL"), nullable=True, index=True)
+    expected_dividend_id = Column(Integer, ForeignKey("expected_dividends.expected_dividend_id", ondelete="SET NULL", name="fk_transactions_expected_dividend"), nullable=True, index=True)
 
     account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])
     funding_account = relationship("Account", foreign_keys=[funding_account_id])
@@ -76,7 +83,7 @@ class Transaction(Base):
 class Lot(Base):
     __tablename__ = "lots"
     
-    lot_id = Column(Integer, primary_key=True, index=True)
+    lot_id = Column(Integer, Identity(), primary_key=True, index=True)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
     asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=False)
     buy_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id", ondelete="CASCADE"), nullable=False)
@@ -93,7 +100,7 @@ class Lot(Base):
 class LotSale(Base):
     __tablename__ = "lot_sales"
     
-    lot_sale_id = Column(Integer, primary_key=True, index=True)
+    lot_sale_id = Column(Integer, Identity(), primary_key=True, index=True)
     lot_id = Column(Integer, ForeignKey("lots.lot_id"), nullable=False)
     sell_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id"), nullable=False)
     quantity_sold = Column(Float, nullable=False)
@@ -108,7 +115,7 @@ class LotSale(Base):
 class PriceHistory(Base):
     __tablename__ = "price_history"
     
-    price_id = Column(Integer, primary_key=True, index=True)
+    price_id = Column(Integer, Identity(), primary_key=True, index=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id"), nullable=False)
     price_date = Column(Date, nullable=False)
     close_price = Column(Float, nullable=False)
@@ -124,7 +131,7 @@ class PriceHistory(Base):
 class Dividend(Base):
     __tablename__ = "dividends"
     
-    dividend_id = Column(Integer, primary_key=True, index=True)
+    dividend_id = Column(Integer, Identity(), primary_key=True, index=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id"), nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.account_id"), nullable=False)
     ex_date = Column(Date, nullable=True)
@@ -139,7 +146,7 @@ class Dividend(Base):
 class ExpectedDividend(Base):
     __tablename__ = "expected_dividends"
     
-    expected_dividend_id = Column(Integer, primary_key=True, index=True)
+    expected_dividend_id = Column(Integer, Identity(), primary_key=True, index=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=False, index=True)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False, index=True)
     ex_date = Column(Date, nullable=False, index=True)
@@ -149,7 +156,7 @@ class ExpectedDividend(Base):
     expected_amount = Column(Float, nullable=False, default=0.0)
     currency = Column(String(3), nullable=False, default="USD")
     source = Column(String, default="yfinance")
-    matched_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id", ondelete="SET NULL"), nullable=True, index=True)
+    matched_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id", ondelete="SET NULL", name="fk_expected_dividends_matched_tx"), nullable=True, index=True)
     status = Column(String, nullable=False, default="UNMATCHED") # UNMATCHED, MATCHED, AMOUNT_MISMATCH, DISMISSED, ORPHAN
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
@@ -166,7 +173,7 @@ class ExpectedDividend(Base):
 class CashFlow(Base):
     __tablename__ = "cash_flows"
     
-    cash_flow_id = Column(Integer, primary_key=True, index=True)
+    cash_flow_id = Column(Integer, Identity(), primary_key=True, index=True)
     scope_type = Column(String, nullable=False) # portfolio, account, asset
     scope_id = Column(Integer, nullable=True) # account_id or asset_id depending on scope_type
     flow_date = Column(Date, nullable=False)
@@ -180,7 +187,7 @@ class CashFlow(Base):
 class NetworthSnapshot(Base):
     __tablename__ = "networth_snapshots"
     
-    snapshot_id = Column(Integer, primary_key=True, index=True)
+    snapshot_id = Column(Integer, Identity(), primary_key=True, index=True)
     snapshot_date = Column(Date, unique=True, nullable=False)
     total_invested = Column(Float, nullable=False)
     total_current_value = Column(Float, nullable=False)
@@ -194,7 +201,7 @@ class NetworthSnapshot(Base):
 class NetworthByAssetClass(Base):
     __tablename__ = "networth_by_asset_class"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, Identity(), primary_key=True, index=True)
     snapshot_id = Column(Integer, ForeignKey("networth_snapshots.snapshot_id"), nullable=False)
     asset_class = Column(String, nullable=False) # stock, etf, mutual_fund, gold, crypto, fd, cash
     value = Column(Float, nullable=False)
@@ -204,7 +211,7 @@ class NetworthByAssetClass(Base):
 class Benchmark(Base):
     __tablename__ = "benchmarks"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, Identity(), primary_key=True, index=True)
     benchmark_name = Column(String, nullable=False) # e.g. S&P 500, Nifty 50
     price_date = Column(Date, nullable=False)
     close_value = Column(Float, nullable=False)
@@ -216,7 +223,7 @@ class Benchmark(Base):
 class XIRRCache(Base):
     __tablename__ = "xirr_cache"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, Identity(), primary_key=True, index=True)
     scope_type = Column(String, nullable=False) # portfolio, account, asset
     scope_id = Column(Integer, nullable=True)
     as_of_date = Column(Date, nullable=False)
@@ -227,7 +234,7 @@ class XIRRCache(Base):
 class Category(Base):
     __tablename__ = "categories"
 
-    category_id = Column(Integer, primary_key=True, index=True)
+    category_id = Column(Integer, Identity(), primary_key=True, index=True)
     parent_id = Column(Integer, ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True)
     name = Column(String, nullable=False, index=True)
     category_type = Column(String, nullable=False, default="EXPENSE") # INCOME, EXPENSE, INVESTMENT, TRANSFER
@@ -243,7 +250,7 @@ class Category(Base):
 class CashflowTransaction(Base):
     __tablename__ = "cashflow_transactions"
 
-    cashflow_id = Column(Integer, primary_key=True, index=True)
+    cashflow_id = Column(Integer, Identity(), primary_key=True, index=True)
     transaction_date = Column(Date, nullable=False, index=True)
     title = Column(String, nullable=False)
     total_amount = Column(Float, nullable=False)
@@ -258,7 +265,7 @@ class CashflowTransaction(Base):
 class CashflowPayment(Base):
     __tablename__ = "cashflow_payments"
 
-    payment_id = Column(Integer, primary_key=True, index=True)
+    payment_id = Column(Integer, Identity(), primary_key=True, index=True)
     cashflow_id = Column(Integer, ForeignKey("cashflow_transactions.cashflow_id", ondelete="CASCADE"), nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
     amount = Column(Float, nullable=False)
@@ -269,7 +276,7 @@ class CashflowPayment(Base):
 class CashflowItem(Base):
     __tablename__ = "cashflow_items"
 
-    item_id = Column(Integer, primary_key=True, index=True)
+    item_id = Column(Integer, Identity(), primary_key=True, index=True)
     cashflow_id = Column(Integer, ForeignKey("cashflow_transactions.cashflow_id", ondelete="CASCADE"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.category_id", ondelete="RESTRICT"), nullable=False)
     amount = Column(Float, nullable=False)
@@ -282,14 +289,14 @@ class CashflowItem(Base):
 class AppSetting(Base):
     __tablename__ = "app_settings"
 
-    key = Column(String, primary_key=True, index=True)
+    key = Column("key", String, primary_key=True, index=True, quote=True)
     value = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
 class ImportBatch(Base):
     __tablename__ = "import_batches"
 
-    batch_id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, Identity(), primary_key=True, index=True)
     filename = Column(String, nullable=False)
     file_type = Column(String, nullable=False)  # pdf, csv, xlsx, image, json
     file_size_bytes = Column(Integer, default=0)
@@ -318,7 +325,7 @@ class ImportBatch(Base):
 class StagedRecord(Base):
     __tablename__ = "staged_records"
 
-    staged_id = Column(Integer, primary_key=True, index=True)
+    staged_id = Column(Integer, Identity(), primary_key=True, index=True)
     batch_id = Column(Integer, ForeignKey("import_batches.batch_id", ondelete="CASCADE"), nullable=False, index=True)
 
     record_type = Column(String, nullable=False)  # investment | cashflow
@@ -365,7 +372,7 @@ class StagedRecord(Base):
 class ApiKey(Base):
     __tablename__ = "api_keys"
 
-    key_id = Column(Integer, primary_key=True, index=True)
+    key_id = Column(Integer, Identity(), primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
     name = Column(String, nullable=False)
     key_prefix = Column(String, nullable=False) # e.g. gl_mcp_3a9f...

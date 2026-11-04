@@ -428,11 +428,14 @@ async def migrate_legacy_payment_signs(db: AsyncSession):
         await db.commit()
         print(f"[Migration] Migrated {migrated_count} legacy expense payments to negative outflow signs.")
 
-async def build_category_lineage_map(db: AsyncSession) -> Dict[int, Dict[str, Any]]:
+async def build_category_lineage_map(db: AsyncSession, user_id: Optional[int] = None) -> Dict[int, Dict[str, Any]]:
     """
-    Loads all categories and computes ancestors, level (1..5), full path, and effective label.
+    Loads categories and computes ancestors, level (1..5), full path, and effective label.
+    If user_id is provided, includes system categories (user_id=0) and user's custom categories.
     """
     stmt = select(Category)
+    if user_id is not None:
+        stmt = stmt.where(Category.user_id.in_([0, user_id]))
     res = await db.execute(stmt)
     all_cats = res.scalars().all()
     
@@ -478,6 +481,7 @@ async def load_unified_cashflow_flows(
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
     master_currency: str = "EUR",
+    user_id: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Extracts and standardizes all financial flow events across:
@@ -494,6 +498,8 @@ async def load_unified_cashflow_flows(
     stmt = select(CashflowTransaction).options(
         selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
     )
+    if user_id is not None:
+        stmt = stmt.where(CashflowTransaction.user_id == user_id)
     if start_date:
         stmt = stmt.where(CashflowTransaction.transaction_date >= start_date)
     if end_date:
@@ -540,6 +546,8 @@ async def load_unified_cashflow_flows(
         selectinload(Transaction.account),
         selectinload(Transaction.asset)
     )
+    if user_id is not None:
+        tx_stmt = tx_stmt.where(Transaction.user_id == user_id)
     if start_date:
         tx_stmt = tx_stmt.where(Transaction.transaction_date >= start_date)
     if end_date:
@@ -668,7 +676,8 @@ async def generate_sankey_data(
     end_date: Optional[datetime.date] = None,
     depth: int = 2,
     include_investments: bool = True,
-    master_currency: str = "EUR"
+    master_currency: str = "EUR",
+    user_id: Optional[int] = None,
 ) -> SankeyDataResponse:
     """
     Generates Sankey Nodes and Links with true multi-layer expansion:
@@ -682,7 +691,7 @@ async def generate_sankey_data(
     target_currency = (master_currency or "EUR").strip().upper()
 
     flows = await load_unified_cashflow_flows(
-        db, start_date=start_date, end_date=end_date, master_currency=target_currency
+        db, start_date=start_date, end_date=end_date, master_currency=target_currency, user_id=user_id
     )
     if not include_investments:
         flows = [f for f in flows if f["flow_type"] != "INVESTMENT" and f.get("effective_label") != LABEL_INVESTMENT]
@@ -822,7 +831,8 @@ async def get_cashflow_summary(
     start_date: Optional[datetime.date] = None,
     end_date: Optional[datetime.date] = None,
     include_investments: bool = True,
-    master_currency: str = "EUR"
+    master_currency: str = "EUR",
+    user_id: Optional[int] = None,
 ) -> CashflowSummaryResponse:
     """
     Computes summary KPI metrics and label distribution for Income & Spends dashboard.
@@ -830,7 +840,7 @@ async def get_cashflow_summary(
     target_currency = (master_currency or "EUR").strip().upper()
 
     flows = await load_unified_cashflow_flows(
-        db, start_date=start_date, end_date=end_date, master_currency=target_currency
+        db, start_date=start_date, end_date=end_date, master_currency=target_currency, user_id=user_id
     )
     if not include_investments:
         flows = [f for f in flows if f["flow_type"] != "INVESTMENT" and f.get("effective_label") != LABEL_INVESTMENT]

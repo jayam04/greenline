@@ -2,7 +2,7 @@ import datetime
 from typing import Set
 
 from sqlalchemy import (
-    Column, DateTime, MetaData, String, Table, inspect, select, update,
+    Column, DateTime, MetaData, String, Table, inspect, select, update, text,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.schema import CreateColumn
@@ -30,6 +30,7 @@ _VERSIONS = (
     ("v008_expected_dividends_table", "Create expected dividends schema"),
     ("v009_ai_import_staging_tables", "Create import staging schema"),
     ("v010_api_keys_table", "Create API keys schema"),
+    ("v011_user_row_level_security", "Add user_id to all user entities with default 0"),
 )
 
 
@@ -123,6 +124,49 @@ async def _migrate_legacy_cashflow_signs(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _migrate_user_rls(session: AsyncSession) -> None:
+    from app.db.models import User
+    from app.config import settings
+
+    admin_res = await session.execute(select(User).order_by(User.user_id.asc()))
+    users = admin_res.scalars().all()
+    if not users:
+        return
+
+    res = await session.execute(select(User).where(User.user_id == 0))
+    user0 = res.scalars().first()
+    if not user0:
+        admin_existing = next((u for u in users if u.username == settings.DEFAULT_ADMIN_USER), None)
+        if admin_existing and admin_existing.user_id != 0:
+            await session.execute(
+                text("UPDATE users SET user_id = 0 WHERE user_id = :uid"),
+                {"uid": admin_existing.user_id}
+            )
+            await session.commit()
+        else:
+            first_user = users[0]
+            if first_user.user_id != 0:
+                await session.execute(
+                    text("UPDATE users SET user_id = 0 WHERE user_id = :uid"),
+                    {"uid": first_user.user_id}
+                )
+                await session.commit()
+
+    table_names = [
+        "accounts", "transactions", "lots", "lot_sales", "dividends",
+        "expected_dividends", "cash_flows", "networth_snapshots",
+        "networth_by_asset_class", "categories", "cashflow_transactions",
+        "cashflow_payments", "cashflow_items", "import_batches",
+        "staged_records", "app_settings", "xirr_cache", "price_history"
+    ]
+    for tname in table_names:
+        try:
+            await session.execute(text(f"UPDATE {tname} SET user_id = 0 WHERE user_id IS NULL"))
+        except Exception:
+            pass
+    await session.commit()
+
+
 async def run_db_migrations(session: AsyncSession) -> None:
     """Bring the database to the current ORM schema using dialect-portable DDL."""
     await init_migrations_table(session)
@@ -134,5 +178,7 @@ async def run_db_migrations(session: AsyncSession) -> None:
             continue
         if version == "v005_signed_cashflow_amounts":
             await _migrate_legacy_cashflow_signs(session)
+        elif version == "v011_user_row_level_security":
+            await _migrate_user_rls(session)
         await mark_migration_applied(session, version, description)
         applied.add(version)

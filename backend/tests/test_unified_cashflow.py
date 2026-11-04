@@ -31,7 +31,7 @@ async def test_unified_transactions_all_types():
         await session.refresh(bank_b)
         await session.refresh(cash_wallet)
 
-        user = User(user_id=1, username="admin", password_hash="dummy")
+        user = User(user_id=0, username="admin", password_hash="dummy")
 
         salary_cat = next(v["category"] for v in lineage_map.values() if v["category"].name == "Base Salary")
         groceries_cat = next(v["category"] for v in lineage_map.values() if v["category"].name == "Groceries")

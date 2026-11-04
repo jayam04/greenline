@@ -13,7 +13,7 @@ from app.schemas.schemas import (
     DiscrepancyActionRequest,
     CandidateMatchItem,
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.dividend_engine import sync_all_dividends
 
@@ -30,6 +30,7 @@ async def list_discrepancies(
     """
     Returns all unresolved discrepancies from Table B (ExpectedDividend) and any unlinked dividend transactions.
     """
+    u_id = get_user_id(current_user)
     # 1. Query Expected Dividends from Table B with status UNMATCHED, AMOUNT_MISMATCH, ORPHAN
     stmt = (
         select(
@@ -50,6 +51,7 @@ async def list_discrepancies(
         .join(Asset, ExpectedDividend.asset_id == Asset.asset_id)
         .outerjoin(Transaction, ExpectedDividend.matched_transaction_id == Transaction.transaction_id)
         .where(
+            ExpectedDividend.user_id == u_id,
             ExpectedDividend.status.in_(["UNMATCHED", "AMOUNT_MISMATCH", "ORPHAN"])
         )
         .order_by(desc(ExpectedDividend.ex_date), desc(ExpectedDividend.expected_dividend_id))
@@ -59,7 +61,10 @@ async def list_discrepancies(
     rows = res.all()
 
     # Pre-fetch all bank accounts with currency for candidate matching
-    bank_stmt = select(Account.account_id, Account.account_name, Account.currency).where(Account.account_type == "bank")
+    bank_stmt = select(Account.account_id, Account.account_name, Account.currency).where(
+        Account.account_type == "bank",
+        Account.user_id == u_id
+    )
     bank_res = await db.execute(bank_stmt)
     bank_rows = bank_res.all()
     bank_map = {row[0]: row[1] for row in bank_rows}
@@ -81,6 +86,7 @@ async def list_discrepancies(
         .outerjoin(SuggestedFundingAccount, Account.default_dividend_account_id == SuggestedFundingAccount.account_id)
         .join(Asset, Transaction.asset_id == Asset.asset_id)
         .where(
+            Transaction.user_id == u_id,
             Transaction.transaction_type == "dividend",
             Transaction.funding_account_id.is_(None),
             Transaction.expected_dividend_id.is_(None)
@@ -114,6 +120,7 @@ async def list_discrepancies(
             )
             .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
             .where(
+                CashflowTransaction.user_id == u_id,
                 CashflowPayment.account_id.in_(bank_ids),
                 CashflowPayment.amount > 0,
                 CashflowTransaction.transaction_date >= min_date,
@@ -292,6 +299,7 @@ async def resolve_discrepancies(
     Applies bank account assignments, custom credit dates, and tax adjustments to discrepancies.
     Creates or updates real records in the transactions table (Table C) and links to ExpectedDividend (Table B).
     """
+    u_id = get_user_id(current_user)
     if payload.set_default_for_demat:
         demat_id = payload.set_default_for_demat.get("demat_account_id")
         def_bank_id = payload.set_default_for_demat.get("default_dividend_account_id")
@@ -299,10 +307,15 @@ async def resolve_discrepancies(
             if def_bank_id and def_bank_id == demat_id:
                 raise HTTPException(status_code=400, detail="Account cannot be its own default dividend account")
             if def_bank_id:
-                target_bank = await db.get(Account, def_bank_id)
+                target_bank_res = await db.execute(
+                    select(Account).where(Account.account_id == def_bank_id, Account.user_id == u_id)
+                )
+                target_bank = target_bank_res.scalar_one_or_none()
                 if not target_bank or target_bank.account_type != "bank":
                     raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account")
-            acc_res = await db.execute(select(Account).where(Account.account_id == demat_id))
+            acc_res = await db.execute(
+                select(Account).where(Account.account_id == demat_id, Account.user_id == u_id)
+            )
             acc = acc_res.scalar_one_or_none()
             if acc:
                 acc.default_dividend_account_id = def_bank_id
@@ -311,7 +324,10 @@ async def resolve_discrepancies(
         if not item.expected_dividend_id and not item.transaction_id:
             raise HTTPException(status_code=400, detail="Either expected_dividend_id or transaction_id must be provided")
 
-        funding_acc = await db.get(Account, item.funding_account_id)
+        f_res = await db.execute(
+            select(Account).where(Account.account_id == item.funding_account_id, Account.user_id == u_id)
+        )
+        funding_acc = f_res.scalar_one_or_none()
         if not funding_acc:
             raise HTTPException(status_code=400, detail=f"Funding account {item.funding_account_id} not found")
         if funding_acc.account_type != "bank":
@@ -323,7 +339,13 @@ async def resolve_discrepancies(
             raise HTTPException(status_code=400, detail="Taxes cannot be negative")
 
         if item.expected_dividend_id:
-            exp = await db.get(ExpectedDividend, item.expected_dividend_id)
+            exp_res = await db.execute(
+                select(ExpectedDividend).where(
+                    ExpectedDividend.expected_dividend_id == item.expected_dividend_id,
+                    ExpectedDividend.user_id == u_id
+                )
+            )
+            exp = exp_res.scalar_one_or_none()
             if not exp:
                 raise HTTPException(status_code=404, detail=f"Expected dividend {item.expected_dividend_id} not found")
 
@@ -335,7 +357,13 @@ async def resolve_discrepancies(
 
             if exp.matched_transaction_id:
                 # Update existing matched transaction
-                mtx = await db.get(Transaction, exp.matched_transaction_id)
+                mtx_res = await db.execute(
+                    select(Transaction).where(
+                        Transaction.transaction_id == exp.matched_transaction_id,
+                        Transaction.user_id == u_id
+                    )
+                )
+                mtx = mtx_res.scalar_one_or_none()
                 if mtx:
                     mtx.funding_account_id = item.funding_account_id
                     mtx.transaction_date = credit_date
@@ -349,6 +377,7 @@ async def resolve_discrepancies(
                 asset = await db.get(Asset, exp.asset_id)
                 symbol = asset.symbol if asset else "Stock"
                 new_tx = Transaction(
+                    user_id=u_id,
                     account_id=exp.account_id,
                     funding_account_id=item.funding_account_id,
                     asset_id=exp.asset_id,
@@ -370,7 +399,13 @@ async def resolve_discrepancies(
                 exp.status = "MATCHED"
 
         elif item.transaction_id:
-            target_tx = await db.get(Transaction, item.transaction_id)
+            target_tx_res = await db.execute(
+                select(Transaction).where(
+                    Transaction.transaction_id == item.transaction_id,
+                    Transaction.user_id == u_id
+                )
+            )
+            target_tx = target_tx_res.scalar_one_or_none()
             if not target_tx:
                 raise HTTPException(status_code=404, detail=f"Transaction {item.transaction_id} not found")
 
@@ -390,7 +425,7 @@ async def resolve_discrepancies(
                 target_tx.notes = item.notes
 
     await db.commit()
-    await recalculate_all_lots(db)
+    await recalculate_all_lots(db, user_id=u_id)
 
     return {"status": "success", "resolved_count": len(payload.resolutions)}
 
@@ -401,7 +436,11 @@ async def dismiss_expected_dividends(
     current_user: User = Depends(get_current_user)
 ):
     """Marks expected dividends as DISMISSED so they do not show up in active discrepancies."""
-    stmt = select(ExpectedDividend).where(ExpectedDividend.expected_dividend_id.in_(payload.expected_dividend_ids))
+    u_id = get_user_id(current_user)
+    stmt = select(ExpectedDividend).where(
+        ExpectedDividend.expected_dividend_id.in_(payload.expected_dividend_ids),
+        ExpectedDividend.user_id == u_id
+    )
     res = await db.execute(stmt)
     for exp in res.scalars().all():
         exp.status = "DISMISSED"
@@ -415,12 +454,16 @@ async def unlink_expected_dividends(
     current_user: User = Depends(get_current_user)
 ):
     """Unlinks expected dividends from their matched transactions without deleting the actual cash transaction in Table C."""
-    stmt = select(ExpectedDividend).where(ExpectedDividend.expected_dividend_id.in_(payload.expected_dividend_ids))
+    u_id = get_user_id(current_user)
+    stmt = select(ExpectedDividend).where(
+        ExpectedDividend.expected_dividend_id.in_(payload.expected_dividend_ids),
+        ExpectedDividend.user_id == u_id
+    )
     res = await db.execute(stmt)
     for exp in res.scalars().all():
         if exp.matched_transaction_id:
             tx = await db.get(Transaction, exp.matched_transaction_id)
-            if tx:
+            if tx and tx.user_id == u_id:
                 tx.expected_dividend_id = None
             exp.matched_transaction_id = None
             exp.status = "UNMATCHED"

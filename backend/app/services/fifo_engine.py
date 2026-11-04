@@ -15,6 +15,7 @@ async def process_transaction_event(
     """
     t_type = tx.transaction_type.lower()
     auto_flush = open_lots_cache is None
+    tx_user_id = getattr(tx, "user_id", 0)
     
     if t_type == "buy":
         if tx.quantity is None or tx.quantity <= 0:
@@ -29,6 +30,7 @@ async def process_transaction_event(
         cost_per_unit = total_buy_cost / float(tx.quantity)
         
         lot = Lot(
+            user_id=tx_user_id,
             account_id=tx.account_id,
             asset_id=tx.asset_id,
             buy_transaction_id=tx.transaction_id,
@@ -44,6 +46,7 @@ async def process_transaction_event(
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         # Cash flows (Negative for investments, full outlay including fees & taxes)
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="portfolio",
             scope_id=None,
             flow_date=tx.transaction_date,
@@ -51,6 +54,7 @@ async def process_transaction_event(
             flow_type="buy"
         ))
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="account",
             scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
@@ -59,6 +63,7 @@ async def process_transaction_event(
         ))
         if tx.asset_id:
             db.add(CashFlow(
+                user_id=tx_user_id,
                 scope_type="asset",
                 scope_id=tx.asset_id,
                 flow_date=tx.transaction_date,
@@ -73,6 +78,7 @@ async def process_transaction_event(
             return
             
         lot = Lot(
+            user_id=tx_user_id,
             account_id=tx.account_id,
             asset_id=tx.asset_id,
             buy_transaction_id=tx.transaction_id,
@@ -131,6 +137,7 @@ async def process_transaction_event(
             holding_days = (tx.transaction_date - lot.buy_date).days
             
             lot_sale_kwargs = {
+                "user_id": tx_user_id,
                 "sell_transaction_id": tx.transaction_id,
                 "quantity_sold": qty_to_take,
                 "sale_price_per_unit": net_sale_price_per_unit,
@@ -149,6 +156,7 @@ async def process_transaction_event(
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         # Cash flows (Positive for sales, net proceeds after fees & taxes)
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="portfolio",
             scope_id=None,
             flow_date=tx.transaction_date,
@@ -156,6 +164,7 @@ async def process_transaction_event(
             flow_type="sell"
         ))
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="account",
             scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
@@ -164,6 +173,7 @@ async def process_transaction_event(
         ))
         if tx.asset_id:
             db.add(CashFlow(
+                user_id=tx_user_id,
                 scope_type="asset",
                 scope_id=tx.asset_id,
                 flow_date=tx.transaction_date,
@@ -176,6 +186,7 @@ async def process_transaction_event(
     elif t_type == "deposit":
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="portfolio",
             scope_id=None,
             flow_date=tx.transaction_date,
@@ -183,6 +194,7 @@ async def process_transaction_event(
             flow_type="deposit"
         ))
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="account",
             scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
@@ -195,6 +207,7 @@ async def process_transaction_event(
     elif t_type == "withdrawal":
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="portfolio",
             scope_id=None,
             flow_date=tx.transaction_date,
@@ -202,6 +215,7 @@ async def process_transaction_event(
             flow_type="withdrawal"
         ))
         db.add(CashFlow(
+            user_id=tx_user_id,
             scope_type="account",
             scope_id=funding_acc_id,
             flow_date=tx.transaction_date,
@@ -215,6 +229,7 @@ async def process_transaction_event(
         funding_acc_id = getattr(tx, "funding_account_id", None) or tx.account_id
         if tx.asset_id:
             div = Dividend(
+                user_id=tx_user_id,
                 asset_id=tx.asset_id,
                 account_id=tx.account_id,
                 pay_date=tx.transaction_date,
@@ -226,6 +241,7 @@ async def process_transaction_event(
             
             net_dividend = abs(float(tx.total_amount or 0.0)) - float(tx.taxes or 0.0)
             db.add(CashFlow(
+                user_id=tx_user_id,
                 scope_type="portfolio",
                 scope_id=None,
                 flow_date=tx.transaction_date,
@@ -233,6 +249,7 @@ async def process_transaction_event(
                 flow_type="dividend"
             ))
             db.add(CashFlow(
+                user_id=tx_user_id,
                 scope_type="account",
                 scope_id=funding_acc_id,
                 flow_date=tx.transaction_date,
@@ -240,6 +257,7 @@ async def process_transaction_event(
                 flow_type="dividend"
             ))
             db.add(CashFlow(
+                user_id=tx_user_id,
                 scope_type="asset",
                 scope_id=tx.asset_id,
                 flow_date=tx.transaction_date,
@@ -249,18 +267,29 @@ async def process_transaction_event(
             if auto_flush:
                 await db.flush()
 
-async def recalculate_all_lots(db: AsyncSession) -> None:
+async def recalculate_all_lots(db: AsyncSession, user_id: Optional[int] = None) -> None:
     """
-    Clears all derived state (lot_sales, lots, cash_flows, dividends)
-    and re-processes all transactions chronologically with batch in-memory FIFO.
+    Clears derived state (lot_sales, lots, cash_flows, dividends) for the specified user (or all if None)
+    and re-processes transactions chronologically with batch in-memory FIFO.
     """
     db.expire_all()
-    await db.execute(delete(LotSale))
-    await db.execute(delete(Lot))
-    await db.execute(delete(CashFlow))
-    await db.execute(delete(Dividend))
+    if user_id is not None:
+        await db.execute(delete(LotSale).where(LotSale.user_id == user_id))
+        await db.execute(delete(Lot).where(Lot.user_id == user_id))
+        await db.execute(delete(CashFlow).where(CashFlow.user_id == user_id))
+        await db.execute(delete(Dividend).where(Dividend.user_id == user_id))
+        stmt = (
+            select(Transaction)
+            .where(Transaction.user_id == user_id)
+            .order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
+        )
+    else:
+        await db.execute(delete(LotSale))
+        await db.execute(delete(Lot))
+        await db.execute(delete(CashFlow))
+        await db.execute(delete(Dividend))
+        stmt = select(Transaction).order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
 
-    stmt = select(Transaction).order_by(asc(Transaction.transaction_date), asc(Transaction.transaction_id))
     result = await db.execute(stmt)
     all_txs = list(result.scalars().all())
 

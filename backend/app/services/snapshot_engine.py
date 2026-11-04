@@ -28,12 +28,12 @@ def to_eur(amount: float, curr: str) -> float:
     rate = FX_RATES_TO_EUR.get((curr or "EUR").upper(), 1.0)
     return amount * rate
 
-async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date = None) -> NetworthSnapshot:
+async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date = None, user_id: int = 0) -> NetworthSnapshot:
     if snapshot_date is None:
         snapshot_date = datetime.date.today()
 
-    # 1. Fetch all lots bought on or before snapshot_date
-    lot_stmt = select(Lot).where(Lot.buy_date <= snapshot_date)
+    # 1. Fetch all lots bought on or before snapshot_date for this user
+    lot_stmt = select(Lot).where(Lot.user_id == user_id, Lot.buy_date <= snapshot_date)
     lot_res = await db.execute(lot_stmt)
     all_lots: List[Lot] = lot_res.scalars().all()
 
@@ -45,6 +45,7 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
             select(LotSale.lot_id, func.sum(LotSale.quantity_sold))
             .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
             .where(
+                LotSale.user_id == user_id,
                 LotSale.lot_id.in_(lot_ids),
                 Transaction.transaction_date <= snapshot_date
             )
@@ -121,18 +122,25 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     realized_stmt = (
         select(func.sum(LotSale.realized_pnl))
         .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
-        .where(Transaction.transaction_date <= snapshot_date)
+        .where(
+            LotSale.user_id == user_id,
+            Transaction.user_id == user_id,
+            Transaction.transaction_date <= snapshot_date
+        )
     )
     realized_res = await db.execute(realized_stmt)
     total_realized_pnl = realized_res.scalar_one_or_none() or 0.0
 
     # 5. Cash balance and total invested as of snapshot_date
-    acc_stmt = select(Account)
+    acc_stmt = select(Account).where(Account.user_id == user_id)
     acc_res = await db.execute(acc_stmt)
     accounts_map = {a.account_id: a for a in acc_res.scalars().all()}
     valid_acc_ids = set(accounts_map.keys())
 
-    tx_stmt = select(Transaction).where(Transaction.transaction_date <= snapshot_date)
+    tx_stmt = select(Transaction).where(
+        Transaction.user_id == user_id,
+        Transaction.transaction_date <= snapshot_date
+    )
     tx_res = await db.execute(tx_stmt)
     all_txs: List[Transaction] = tx_res.scalars().all()
 
@@ -156,7 +164,10 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     cf_stmt = select(CashflowTransaction, CashflowPayment)\
         .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)\
         .options(selectinload(CashflowTransaction.items).selectinload(CashflowItem.category))\
-        .where(CashflowTransaction.transaction_date <= snapshot_date)
+        .where(
+            CashflowTransaction.user_id == user_id,
+            CashflowTransaction.transaction_date <= snapshot_date
+        )
     cf_res = await db.execute(cf_stmt)
     for ctx, pmt in cf_res.all():
         tkind = resolve_transaction_kind(ctx)
@@ -171,12 +182,16 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     net_worth = total_current_value + cash_balance
 
     # Check existing snapshot for date to overwrite or insert
-    snap_stmt = select(NetworthSnapshot).where(NetworthSnapshot.snapshot_date == snapshot_date)
+    snap_stmt = select(NetworthSnapshot).where(
+        NetworthSnapshot.user_id == user_id,
+        NetworthSnapshot.snapshot_date == snapshot_date
+    )
     snap_res = await db.execute(snap_stmt)
     snapshot = snap_res.scalar_one_or_none()
 
     if snapshot is None:
         snapshot = NetworthSnapshot(
+            user_id=user_id,
             snapshot_date=snapshot_date,
             total_invested=total_invested,
             total_current_value=total_current_value,
@@ -203,6 +218,7 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
 
     for aclass, val in allocation_by_class.items():
         db.add(NetworthByAssetClass(
+            user_id=user_id,
             snapshot_id=snapshot.snapshot_id,
             asset_class=aclass,
             value=val
@@ -212,22 +228,26 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     await db.refresh(snapshot)
     return snapshot
 
-async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date, end_date: datetime.date = None) -> int:
+async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date, end_date: datetime.date = None, user_id: int = 0) -> int:
     if end_date is None:
         end_date = datetime.date.today()
 
     if start_date > end_date:
         start_date = end_date
 
-    # 1. Pre-fetch all lots up to end_date
-    lot_stmt = select(Lot).where(Lot.buy_date <= end_date)
+    # 1. Pre-fetch all lots up to end_date for user
+    lot_stmt = select(Lot).where(Lot.user_id == user_id, Lot.buy_date <= end_date)
     all_lots = list((await db.execute(lot_stmt)).scalars().all())
 
-    # 2. Pre-fetch all lot sales up to end_date
+    # 2. Pre-fetch all lot sales up to end_date for user
     sale_stmt = (
         select(LotSale.lot_id, Transaction.transaction_date, LotSale.quantity_sold, LotSale.realized_pnl)
         .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
-        .where(Transaction.transaction_date <= end_date)
+        .where(
+            LotSale.user_id == user_id,
+            Transaction.user_id == user_id,
+            Transaction.transaction_date <= end_date
+        )
     )
     all_sales = (await db.execute(sale_stmt)).all()
     sales_by_lot: Dict[int, List[Tuple[datetime.date, float]]] = {}
@@ -259,9 +279,9 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
                 prices_by_asset.setdefault(aid, []).append((pdate, float(cprice)))
 
     # 5. Pre-fetch transactions cash movements
-    acc_res = await db.execute(select(Account))
+    acc_res = await db.execute(select(Account).where(Account.user_id == user_id))
     valid_acc_ids = {a.account_id for a in acc_res.scalars().all()}
-    tx_stmt = select(Transaction).where(Transaction.transaction_date <= end_date).order_by(asc(Transaction.transaction_date))
+    tx_stmt = select(Transaction).where(Transaction.user_id == user_id, Transaction.transaction_date <= end_date).order_by(asc(Transaction.transaction_date))
     all_txs = list((await db.execute(tx_stmt)).scalars().all())
     tx_events = []
     for tx in all_txs:
@@ -286,7 +306,10 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
             CashflowPayment.amount
         )
         .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
-        .where(CashflowTransaction.transaction_date <= end_date)
+        .where(
+            CashflowTransaction.user_id == user_id,
+            CashflowTransaction.transaction_date <= end_date
+        )
         .order_by(asc(CashflowTransaction.transaction_date))
     )
     cf_records = (await db.execute(cf_stmt)).all()
@@ -303,6 +326,7 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
                 select(NetworthSnapshot)
                 .options(selectinload(NetworthSnapshot.asset_class_breakdowns))
                 .where(
+                    NetworthSnapshot.user_id == user_id,
                     NetworthSnapshot.snapshot_date >= start_date,
                     NetworthSnapshot.snapshot_date <= end_date
                 )
@@ -365,11 +389,12 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
             snap.total_unrealized_pnl = total_unrealized_pnl
             snap.net_worth = net_worth
             snap.asset_class_breakdowns = [
-                NetworthByAssetClass(asset_class=k, value=v)
+                NetworthByAssetClass(user_id=user_id, asset_class=k, value=v)
                 for k, v in allocation_by_class.items()
             ]
         else:
             snap = NetworthSnapshot(
+                user_id=user_id,
                 snapshot_date=curr_date,
                 total_invested=total_invested,
                 total_current_value=total_curr_val,
@@ -379,7 +404,7 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
                 net_worth=net_worth
             )
             snap.asset_class_breakdowns = [
-                NetworthByAssetClass(asset_class=k, value=v)
+                NetworthByAssetClass(user_id=user_id, asset_class=k, value=v)
                 for k, v in allocation_by_class.items()
             ]
             db.add(snap)

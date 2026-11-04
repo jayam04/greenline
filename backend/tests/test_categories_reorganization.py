@@ -114,7 +114,7 @@ async def test_investments_used_in_both_income_and_spends():
         div_cat = next(v["category"] for v in lineage_map.values() if v["category"].name == "Dividends")
         stock_cat = next(v["category"] for v in lineage_map.values() if v["category"].name == "Stock & ETF Purchases")
 
-        user = User(user_id=1, username="admin", password_hash="dummy")
+        user = User(user_id=0, username="admin", password_hash="dummy")
 
         # 1. Record Dividend Income: +500 EUR
         tx_div = CashflowTransactionCreate(

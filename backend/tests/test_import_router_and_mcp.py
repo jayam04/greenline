@@ -28,7 +28,7 @@ async def app_client():
         async with TestSession() as session:
             yield session
 
-    test_user = User(user_id=1, username="testadmin", password_hash="hash")
+    test_user = User(user_id=0, username="testadmin", password_hash="hash")
     async def override_get_current_user():
         return test_user
 

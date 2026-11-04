@@ -31,7 +31,7 @@ async def test_fees_taxes_included_in_stock_pnl():
         await session.refresh(tcs)
         asset_id = tcs.asset_id
 
-        user = User(user_id=1, username="admin", password_hash="dummy")
+        user = User(user_id=0, username="admin", password_hash="dummy")
 
         # 2. Buy 100 shares of TCS @ 3,000 INR with 300 INR fees and 100 INR taxes
         # Gross = 300,000. Total Cost Basis = 300,400. Cost/unit = 3,004.00

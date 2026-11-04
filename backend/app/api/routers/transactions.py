@@ -10,7 +10,7 @@ from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import recalculate_past_snapshots
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.services.price_engine import cleanup_orphan_transaction_prices
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -109,6 +109,7 @@ async def list_transactions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = select(
         Transaction, 
         Account.account_name, 
@@ -120,7 +121,8 @@ async def list_transactions(
     )\
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
         .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
-        .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)
+        .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
+        .where(Transaction.user_id == u_id)
         
     if account_id:
         stmt = stmt.where(Transaction.account_id == account_id)
@@ -148,6 +150,7 @@ async def get_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = select(
         Transaction, 
         Account.account_name, 
@@ -160,7 +163,7 @@ async def get_transaction(
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
         .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
-        .where(Transaction.transaction_id == transaction_id)
+        .where(Transaction.transaction_id == transaction_id, Transaction.user_id == u_id)
         
     res = await db.execute(stmt)
     row = res.first()
@@ -176,7 +179,16 @@ async def create_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    tx = Transaction(**tx_in.model_dump())
+    u_id = current_user.user_id
+    acc = await db.get(Account, tx_in.account_id)
+    if not acc or acc.user_id != u_id:
+        raise HTTPException(status_code=404, detail="Target account not found or access denied")
+    if tx_in.funding_account_id:
+        f_acc = await db.get(Account, tx_in.funding_account_id)
+        if not f_acc or f_acc.user_id != u_id:
+            raise HTTPException(status_code=404, detail="Funding account not found or access denied")
+
+    tx = Transaction(**tx_in.model_dump(), user_id=u_id)
     db.add(tx)
     await db.commit()
     await db.refresh(tx)
@@ -185,16 +197,21 @@ async def create_transaction(
     await _ensure_price_history_for_tx(db, tx)
     await _adjust_price_history_for_split(db, tx)
 
+    tx_date = tx.transaction_date
+    tx_asset_id = tx.asset_id
+    tx_type = tx.transaction_type
+    tx_id = tx.transaction_id
+
     # Run FIFO & Cash flow engine
-    await recalculate_all_lots(db)
+    await recalculate_all_lots(db, user_id=u_id)
     
     # Recalculate past snapshots from transaction date to today
-    await recalculate_past_snapshots(db, start_date=tx.transaction_date)
+    await recalculate_past_snapshots(db, start_date=tx_date, user_id=u_id)
 
     # Sync dividends for asset if it's a buy/sell trade
-    if tx.asset_id and tx.transaction_type in ["buy", "sell"]:
+    if tx_asset_id and tx_type in ["buy", "sell"]:
         try:
-            await sync_dividends_for_asset(db, tx.asset_id)
+            await sync_dividends_for_asset(db, tx_asset_id)
         except Exception as de:
             print(f"[Dividend Sync Error on Create] {de}")
     
@@ -211,7 +228,7 @@ async def create_transaction(
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
         .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
-        .where(Transaction.transaction_id == tx.transaction_id)
+        .where(Transaction.transaction_id == tx_id, Transaction.user_id == u_id)
     res = await db.execute(stmt)
     row = res.first()
     
@@ -224,13 +241,23 @@ async def update_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Transaction).where(Transaction.transaction_id == transaction_id)
+    u_id = current_user.user_id
+    stmt = select(Transaction).where(Transaction.transaction_id == transaction_id, Transaction.user_id == u_id)
     res = await db.execute(stmt)
     tx = res.scalar_one_or_none()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     update_data = tx_in.model_dump(exclude_unset=True)
+    if "account_id" in update_data and update_data["account_id"] is not None:
+        acc = await db.get(Account, update_data["account_id"])
+        if not acc or acc.user_id != u_id:
+            raise HTTPException(status_code=404, detail="Target account not found or access denied")
+    if "funding_account_id" in update_data and update_data["funding_account_id"] is not None:
+        f_acc = await db.get(Account, update_data["funding_account_id"])
+        if not f_acc or f_acc.user_id != u_id:
+            raise HTTPException(status_code=404, detail="Funding account not found or access denied")
+
     for field, val in update_data.items():
         setattr(tx, field, val)
 
@@ -242,14 +269,19 @@ async def update_transaction(
     if tx.asset_id:
         await cleanup_orphan_transaction_prices(db, tx.asset_id)
         await db.commit()
+
+    tx_date = tx.transaction_date
+    tx_asset_id = tx.asset_id
+    tx_type = tx.transaction_type
+    tx_id = tx.transaction_id
     
     # Recalculate derived state
-    await recalculate_all_lots(db)
-    await recalculate_past_snapshots(db, start_date=tx.transaction_date)
+    await recalculate_all_lots(db, user_id=u_id)
+    await recalculate_past_snapshots(db, start_date=tx_date, user_id=u_id)
 
-    if tx.asset_id and tx.transaction_type in ["buy", "sell"]:
+    if tx_asset_id and tx_type in ["buy", "sell"]:
         try:
-            await sync_dividends_for_asset(db, tx.asset_id)
+            await sync_dividends_for_asset(db, tx_asset_id)
         except Exception as de:
             print(f"[Dividend Sync Error on Update] {de}")
 
@@ -265,7 +297,7 @@ async def update_transaction(
         .outerjoin(Account, Transaction.account_id == Account.account_id)\
         .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)\
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
-        .where(Transaction.transaction_id == tx.transaction_id)
+        .where(Transaction.transaction_id == tx_id, Transaction.user_id == u_id)
     res_resp = await db.execute(stmt_resp)
     row = res_resp.first()
 
@@ -277,7 +309,8 @@ async def delete_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Transaction).where(Transaction.transaction_id == transaction_id)
+    u_id = current_user.user_id
+    stmt = select(Transaction).where(Transaction.transaction_id == transaction_id, Transaction.user_id == u_id)
     res = await db.execute(stmt)
     tx = res.scalar_one_or_none()
     if not tx:
@@ -294,8 +327,8 @@ async def delete_transaction(
         await db.commit()
 
     # Recalculate derived state
-    await recalculate_all_lots(db)
-    await recalculate_past_snapshots(db, start_date=tx_date)
+    await recalculate_all_lots(db, user_id=u_id)
+    await recalculate_past_snapshots(db, start_date=tx_date, user_id=u_id)
 
     if target_asset_id and is_trade:
         try:

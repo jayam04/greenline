@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc
 from sqlalchemy.orm import selectinload
@@ -8,7 +8,7 @@ from app.db.database import get_db
 from app.db.models import NetworthSnapshot, Account, User
 from app.schemas.schemas import NetworthSnapshotResponse
 from app.services.snapshot_engine import calculate_account_snapshots, calculate_all_accounts_snapshots
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
 
@@ -35,13 +35,18 @@ async def list_snapshots(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     # 1. If specific account requested, calculate its native timeline
     if account_id is not None:
+        acc_stmt = select(Account).where(Account.account_id == account_id, Account.user_id == u_id)
+        acc_res = await db.execute(acc_stmt)
+        if not acc_res.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Account not found")
         acc_snaps = await calculate_account_snapshots(db, account_id=account_id)
         return [NetworthSnapshotResponse(**s) for s in acc_snaps]
 
     # 2. In Aggregated mode, fetch all accounts and aggregate them converted to EUR
-    acc_stmt = select(Account)
+    acc_stmt = select(Account).where(Account.user_id == u_id)
     acc_res = await db.execute(acc_stmt)
     all_accounts = acc_res.scalars().all()
 
@@ -49,6 +54,7 @@ async def list_snapshots(
         stmt = (
             select(NetworthSnapshot)
             .options(selectinload(NetworthSnapshot.asset_class_breakdowns))
+            .where(NetworthSnapshot.user_id == u_id)
             .order_by(asc(NetworthSnapshot.snapshot_date))
         )
         res = await db.execute(stmt)
@@ -64,6 +70,7 @@ async def list_snapshots(
         stmt = (
             select(NetworthSnapshot)
             .options(selectinload(NetworthSnapshot.asset_class_breakdowns))
+            .where(NetworthSnapshot.user_id == u_id)
             .order_by(asc(NetworthSnapshot.snapshot_date))
         )
         res = await db.execute(stmt)

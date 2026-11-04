@@ -20,9 +20,11 @@ async def create_import_batch(
     target_account_id: Optional[int] = None,
     default_currency: str = "USD",
     custom_instructions: Optional[str] = None,
-    scope: str = "unified"
+    scope: str = "unified",
+    user_id: int = 0
 ) -> ImportBatch:
     batch = ImportBatch(
+        user_id=user_id,
         filename=filename,
         file_type=file_type,
         file_size_bytes=file_size_bytes,
@@ -79,6 +81,7 @@ async def stage_parsed_records(
             res_acc_id = acc_name_map.get(acc_raw.lower().strip())
 
         staged = StagedRecord(
+            user_id=getattr(batch, "user_id", 0),
             batch_id=batch_id,
             record_type=rec_type,
             transaction_date=t_date,
@@ -231,6 +234,8 @@ async def commit_import_batch(
     all_accounts = {a.account_id: a for a in acc_res.scalars().all()}
     first_acc_id = next(iter(all_accounts.keys())) if all_accounts else None
 
+    batch_user_id = getattr(batch, "user_id", 0)
+
     for rec in to_commit:
         if rec.review_status == "skipped":
             skipped_count += 1
@@ -264,6 +269,7 @@ async def commit_import_batch(
                     created_assets += 1
 
             new_tx = Transaction(
+                user_id=batch_user_id,
                 account_id=acc_id,
                 asset_id=ast_id,
                 transaction_type=rec.action_type.lower(),
@@ -288,6 +294,7 @@ async def commit_import_batch(
                 ph_res = await db.execute(ph_stmt)
                 if not ph_res.scalar_one_or_none():
                     db.add(PriceHistory(
+                        user_id=batch_user_id,
                         asset_id=ast_id,
                         price_date=rec.transaction_date,
                         close_price=rec.price_per_unit,
@@ -306,6 +313,7 @@ async def commit_import_batch(
                 else:
                     cat_type = "INCOME" if rec.action_type.lower() == "income" else "EXPENSE"
                     new_cat = Category(
+                        user_id=batch_user_id,
                         name=rec.category_name_raw.strip(),
                         category_type=cat_type
                     )
@@ -317,6 +325,7 @@ async def commit_import_batch(
 
             title = rec.notes or rec.category_name_raw or f"Imported {rec.action_type}"
             new_cf = CashflowTransaction(
+                user_id=batch_user_id,
                 transaction_date=rec.transaction_date,
                 title=title,
                 total_amount=rec.total_amount,
@@ -329,6 +338,7 @@ async def commit_import_batch(
             # Payment
             pmt_amount = rec.total_amount if rec.action_type.lower() == "income" else -abs(rec.total_amount)
             new_pmt = CashflowPayment(
+                user_id=batch_user_id,
                 cashflow_id=new_cf.cashflow_id,
                 account_id=acc_id,
                 amount=pmt_amount
@@ -338,6 +348,7 @@ async def commit_import_batch(
             # Item
             if cat_id:
                 new_item = CashflowItem(
+                    user_id=batch_user_id,
                     cashflow_id=new_cf.cashflow_id,
                     category_id=cat_id,
                     amount=abs(rec.total_amount),
@@ -352,9 +363,9 @@ async def commit_import_batch(
 
     # Post-merge lot & snapshot recalculations
     try:
-        await recalculate_all_lots(db)
+        await recalculate_all_lots(db, user_id=batch_user_id)
         if earliest_date:
-            await recalculate_past_snapshots(db, start_date=earliest_date)
+            await recalculate_past_snapshots(db, start_date=earliest_date, user_id=batch_user_id)
     except Exception as e:
         print(f"[Import Commit Warning] Recalculation error: {e}")
 

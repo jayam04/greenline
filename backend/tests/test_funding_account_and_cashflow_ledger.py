@@ -35,7 +35,7 @@ async def test_funding_account_ipo_and_trades():
         axis_id = axis_bank.account_id
         hdfc_id = hdfc.asset_id
 
-        user = User(user_id=1, username="admin", password_hash="dummy")
+        user = User(user_id=0, username="admin", password_hash="dummy")
 
         # 3. Buy 100 shares of HDFCBANK @ 1000 INR (1,00,000 INR total)
         # Holding Account: Zerodha Demat

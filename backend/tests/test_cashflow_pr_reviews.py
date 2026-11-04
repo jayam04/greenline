@@ -26,7 +26,7 @@ async def test_db_session():
 @pytest.fixture
 async def client(test_db_session):
     session, session_maker = test_db_session
-    mock_user = User(user_id=1, username="testadmin")
+    mock_user = User(user_id=0, username="testadmin")
 
     async def override_get_db():
         yield session

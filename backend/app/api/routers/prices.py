@@ -7,7 +7,7 @@ from app.db.models import PriceHistory, Asset, User
 from app.schemas.schemas import PriceHistoryCreate, PriceHistoryResponse, CustomPriceResponse
 from app.services.price_engine import update_prices_for_assets, cleanup_orphan_transaction_prices
 from app.services.snapshot_engine import generate_daily_snapshot
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/prices", tags=["prices"])
 
@@ -17,10 +17,11 @@ async def list_custom_prices(
     current_user: User = Depends(get_current_user)
 ):
     """Lists all manual/custom valuation points recorded by users."""
+    u_id = get_user_id(current_user)
     stmt = (
         select(PriceHistory, Asset.symbol, Asset.name, Asset.currency)
         .join(Asset, PriceHistory.asset_id == Asset.asset_id)
-        .where(PriceHistory.source == "manual")
+        .where(PriceHistory.source == "manual", PriceHistory.user_id == u_id)
         .order_by(desc(PriceHistory.price_date), desc(PriceHistory.price_id))
     )
     res = await db.execute(stmt)
@@ -44,9 +45,10 @@ async def get_price_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = (
         select(PriceHistory)
-        .where(PriceHistory.asset_id == asset_id)
+        .where(PriceHistory.asset_id == asset_id, PriceHistory.user_id.in_([0, u_id]))
         .order_by(desc(PriceHistory.price_date))
     )
     res = await db.execute(stmt)
@@ -58,6 +60,7 @@ async def add_manual_price(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     import math
     if price_in.close_price is None or math.isnan(price_in.close_price) or math.isinf(price_in.close_price) or price_in.close_price <= 0:
         raise HTTPException(status_code=400, detail="Close price must be a valid positive number.")
@@ -67,7 +70,8 @@ async def add_manual_price(
     # Upsert manual price
     stmt = select(PriceHistory).where(
         PriceHistory.asset_id == price_in.asset_id,
-        PriceHistory.price_date == price_in.price_date
+        PriceHistory.price_date == price_in.price_date,
+        PriceHistory.user_id == u_id
     )
     res = await db.execute(stmt)
     ph = res.scalar_one_or_none()
@@ -81,15 +85,17 @@ async def add_manual_price(
         ph.close_price = price_in.close_price
         ph.source = price_in.source or "manual"
     else:
-        ph = PriceHistory(**price_in.model_dump())
-        ph.source = price_in.source or "manual"
+        ph_data = price_in.model_dump()
+        ph_data["user_id"] = u_id
+        ph_data["source"] = price_in.source or "manual"
+        ph = PriceHistory(**ph_data)
         db.add(ph)
         
     await db.commit()
     await db.refresh(ph)
     
     # Re-trigger snapshot calculation
-    await generate_daily_snapshot(db, price_in.price_date)
+    await generate_daily_snapshot(db, price_in.price_date, user_id=u_id)
     return ph
 
 @router.delete("/{price_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -98,7 +104,8 @@ async def delete_price(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(PriceHistory).where(PriceHistory.price_id == price_id)
+    u_id = get_user_id(current_user)
+    stmt = select(PriceHistory).where(PriceHistory.price_id == price_id, PriceHistory.user_id == u_id)
     res = await db.execute(stmt)
     ph = res.scalar_one_or_none()
     if not ph:
@@ -109,7 +116,7 @@ async def delete_price(
     await db.commit()
 
     # Re-trigger daily snapshot from that date
-    await generate_daily_snapshot(db, p_date)
+    await generate_daily_snapshot(db, p_date, user_id=u_id)
 
 @router.post("/refresh", status_code=status.HTTP_200_OK)
 async def trigger_price_refresh(
@@ -117,9 +124,10 @@ async def trigger_price_refresh(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     # Clean up orphan transaction prices first
     await cleanup_orphan_transaction_prices(db, asset_id)
     asset_ids = [asset_id] if asset_id else None
     count = await update_prices_for_assets(db, asset_ids)
-    await generate_daily_snapshot(db)
+    await generate_daily_snapshot(db, user_id=u_id)
     return {"message": f"Price update completed. {count} new price records added."}

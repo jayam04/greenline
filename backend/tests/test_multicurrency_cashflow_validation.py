@@ -24,7 +24,7 @@ async def test_server_validation_rejects_unbalanced_cashflow():
         await session.refresh(acc)
         await session.refresh(cat)
 
-        dummy_user = User(user_id=1, username="test_user", password_hash="hash")
+        dummy_user = User(user_id=0, username="test_user", password_hash="hash")
 
         # Unbalanced: Payment is -50 EUR, but Item is 100 EUR
         tx_unbalanced = CashflowTransactionCreate(
@@ -59,7 +59,7 @@ async def test_multicurrency_transfer_validation():
         await session.refresh(acc_usd)
         await session.refresh(trans_cat)
 
-        dummy_user = User(user_id=1, username="test_user", password_hash="hash")
+        dummy_user = User(user_id=0, username="test_user", password_hash="hash")
 
         # 1. Valid transfer: -100 EUR (100 EUR) -> +108.70 USD (100 EUR)
         valid_transfer = CashflowTransactionCreate(

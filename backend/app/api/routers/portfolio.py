@@ -12,7 +12,7 @@ from app.services.xirr_engine import calculate_xirr_for_scope
 from app.services.cashflow_engine import convert_currency
 from app.services.snapshot_engine import calculate_account_snapshots
 from app.api.routers.accounts import calculate_all_account_balances, calculate_all_account_cash_balances
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 import pyxirr
 
 router = APIRouter(prefix="/portfolio", tags=["portfolio"])
@@ -47,15 +47,18 @@ async def get_portfolio_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     if not isinstance(account_id, int):
         account_id = None
 
     # Pre-fetch all accounts map for instant currency & balance lookups
-    all_accounts_res = await db.execute(select(Account))
+    all_accounts_res = await db.execute(select(Account).where(Account.user_id == u_id))
     all_accounts: Dict[int, Account] = {a.account_id: a for a in all_accounts_res.scalars().all()}
+    if account_id and account_id not in all_accounts:
+        raise HTTPException(status_code=404, detail="Account not found or access denied")
 
     # 1. Fetch active open lots
-    lot_stmt = select(Lot).where(Lot.quantity_remaining > 0)
+    lot_stmt = select(Lot).where(Lot.user_id == u_id, Lot.quantity_remaining > 0)
     if account_id:
         lot_stmt = lot_stmt.where(Lot.account_id == account_id)
     lot_res = await db.execute(lot_stmt)
@@ -145,6 +148,7 @@ async def get_portfolio_summary(
 
     # Pre-fetch net dividends grouped by asset
     div_stmt = select(Transaction).where(
+        Transaction.user_id == u_id,
         Transaction.transaction_type == "dividend",
         Transaction.asset_id.isnot(None)
     )
@@ -166,6 +170,7 @@ async def get_portfolio_summary(
             func.min(Lot.account_id)
         )
         .join(LotSale, Lot.lot_id == LotSale.lot_id)
+        .where(Lot.user_id == u_id)
     )
     if account_id:
         rpnl_stmt = rpnl_stmt.where(Lot.account_id == account_id)
@@ -185,7 +190,7 @@ async def get_portfolio_summary(
     # Pre-fetch asset cashflows for in-memory XIRR calculation in a single query
     cf_stmt = (
         select(CashFlow.scope_id, CashFlow.flow_date, CashFlow.amount)
-        .where(CashFlow.scope_type == "asset")
+        .where(CashFlow.user_id == u_id, CashFlow.scope_type == "asset")
         .order_by(asc(CashFlow.flow_date))
     )
     cf_res = await db.execute(cf_stmt)
@@ -453,6 +458,7 @@ async def get_portfolio_summary(
     
     # Fetch transaction fees and taxes in a lightweight projection
     tx_stmt = select(Transaction.account_id, Transaction.fees, Transaction.taxes).where(
+        Transaction.user_id == u_id,
         or_(Transaction.fees.isnot(None), Transaction.taxes.isnot(None))
     )
     if account_id:
@@ -534,10 +540,12 @@ async def get_realized_pnl(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = select(LotSale, Lot.buy_date, Transaction.transaction_date, Asset.symbol)\
         .join(Lot, LotSale.lot_id == Lot.lot_id)\
         .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)\
         .join(Asset, Lot.asset_id == Asset.asset_id)\
+        .where(LotSale.user_id == u_id)\
         .order_by(desc(Transaction.transaction_date))
         
     res = await db.execute(stmt)
@@ -568,6 +576,7 @@ async def get_annual_snapshot(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     if not isinstance(fiscal_year_start, str):
         fiscal_year_start = "01-01"
     if not isinstance(master_currency, str):
@@ -598,7 +607,11 @@ async def get_annual_snapshot(
     # 1. Fetch Income & Expenses from CashflowTransaction
     c_stmt = select(CashflowTransaction).options(
         selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
-    ).where(CashflowTransaction.transaction_date >= start_date, CashflowTransaction.transaction_date <= end_date)
+    ).where(
+        CashflowTransaction.user_id == u_id,
+        CashflowTransaction.transaction_date >= start_date,
+        CashflowTransaction.transaction_date <= end_date
+    )
     c_res = await db.execute(c_stmt)
     c_txs = c_res.scalars().all()
 
@@ -624,7 +637,11 @@ async def get_annual_snapshot(
     # 2. Fetch Investment transactions in date range
     tx_stmt = select(Transaction, Account.currency)\
         .join(Account, Transaction.account_id == Account.account_id)\
-        .where(Transaction.transaction_date >= start_date, Transaction.transaction_date <= end_date)
+        .where(
+            Transaction.user_id == u_id,
+            Transaction.transaction_date >= start_date,
+            Transaction.transaction_date <= end_date
+        )
     tx_res = await db.execute(tx_stmt)
     inv_txs = tx_res.all()
 
@@ -644,8 +661,8 @@ async def get_annual_snapshot(
             total_income += amt
 
     # 3. Calculate current net worth & estimated delta
-    all_balances = await calculate_all_account_balances(db)
-    acc_map_res = await db.execute(select(Account))
+    all_balances = await calculate_all_account_balances(db, user_id=u_id)
+    acc_map_res = await db.execute(select(Account).where(Account.user_id == u_id))
     all_accs = acc_map_res.scalars().all()
     
     current_total_nw = sum(

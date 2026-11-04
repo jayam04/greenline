@@ -75,7 +75,7 @@ async def test_splitwise_dinner_expense_and_balances():
             ]
         )
 
-        user = User(user_id=1, username="admin", password_hash="dummy")
+        user = User(user_id=0, username="admin", password_hash="dummy")
         res = await create_cashflow_transaction(tx_in, db=session, current_user=user)
 
         assert res.total_amount == 500.0
@@ -138,7 +138,7 @@ async def test_splitwise_multi_account_settlement():
             ]
         )
 
-        user = User(user_id=1, username="admin", password_hash="dummy")
+        user = User(user_id=0, username="admin", password_hash="dummy")
         res = await create_cashflow_transaction(tx_in, db=session, current_user=user)
 
         assert res.total_amount == 500.0

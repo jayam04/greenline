@@ -78,7 +78,7 @@ async def test_generate_daily_snapshot_multicurrency_and_funding():
         assert round(snap.net_worth, 2) == 10000.0
 
         # And verify list_snapshots normalizes USD to EUR: 9,000 * 0.92 + 1,000 * 1.0 = 8,280 + 1,000 = 9,280 EUR
-        dummy_user = User(user_id=1, username="test_user", password_hash="hash")
+        dummy_user = User(user_id=0, username="test_user", password_hash="hash")
         from app.api.routers.snapshots import list_snapshots
         aggregated = await list_snapshots(account_id=None, db=session, current_user=dummy_user)
         assert len(aggregated) > 0

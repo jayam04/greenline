@@ -72,7 +72,7 @@ async def test_annual_snapshot_includes_securities_valuation():
         # Demat cash = -20,000 USD, Bank cash = +5,000 USD -> Total cash = -15,000 USD
         # Total Net Worth in USD = 25,000 (securities) - 15,000 (cash) = 10,000 USD
 
-        dummy_user = User(user_id=1, username="test_user", password_hash="hash")
+        dummy_user = User(user_id=0, username="test_user", password_hash="hash")
         annual_resp = await get_annual_snapshot(
             fiscal_year_start="01-01",
             master_currency="USD",

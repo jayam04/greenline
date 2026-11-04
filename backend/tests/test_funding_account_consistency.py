@@ -72,7 +72,7 @@ async def test_funding_account_consistency_between_accounts_and_portfolio_summar
         assert total_balances[demat.account_id] == 2010.0
 
         # 5. Check portfolio summary cash balance
-        dummy_user = User(user_id=1, username="test_user", password_hash="hash")
+        dummy_user = User(user_id=0, username="test_user", password_hash="hash")
         port_summary = await get_portfolio_summary(db=session, current_user=dummy_user)
         # Overall cash balance must match the sum of bank liquid cash balances
         assert port_summary.cash_balance == 2990.0

@@ -1,13 +1,31 @@
 import hashlib
 import datetime
-from typing import Optional
+from typing import Optional, Any
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, inspect
 from app.db.database import get_db
 from app.db.models import User, ApiKey
 from app.services.auth_service import decode_access_token
+
+def get_user_id(user: Any) -> int:
+    if user is None:
+        return 0
+    if isinstance(user, int):
+        return user
+    if hasattr(user, "__dict__") and "user_id" in user.__dict__:
+        return user.__dict__["user_id"]
+    insp = inspect(user, raiseerr=False)
+    if insp is not None:
+        if insp.key is not None and len(insp.key) > 1 and insp.key[1]:
+            return insp.key[1][0]
+        if insp.identity is not None and len(insp.identity) > 0:
+            return insp.identity[0]
+    try:
+        return getattr(user, "user_id", 0)
+    except Exception:
+        return 0
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 

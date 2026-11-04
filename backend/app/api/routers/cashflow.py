@@ -15,7 +15,7 @@ from app.services.cashflow_engine import (
     generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur,
     convert_currency, resolve_transaction_kind
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
 
@@ -30,12 +30,14 @@ async def list_cashflow_transactions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = (
         select(CashflowTransaction)
         .options(
             selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
             selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
         )
+        .where(CashflowTransaction.user_id == u_id)
         .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
     )
 
@@ -51,7 +53,7 @@ async def list_cashflow_transactions(
     transactions = res.scalars().all()
     print(f"Database exec started: {time.time()}")
 
-    lineage_map = await build_category_lineage_map(db)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
     results = []
 
     for tx in transactions:
@@ -126,12 +128,14 @@ async def get_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     return await get_cashflow_summary(
         db,
         start_date=start_date,
         end_date=end_date,
         include_investments=include_investments,
-        master_currency=master_currency or "EUR"
+        master_currency=master_currency or "EUR",
+        user_id=u_id
     )
 
 @router.get("/sankey", response_model=SankeyDataResponse)
@@ -144,13 +148,15 @@ async def get_sankey(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     return await generate_sankey_data(
         db=db,
         start_date=start_date,
         end_date=end_date,
         depth=depth,
         include_investments=include_investments,
-        master_currency=master_currency or "EUR"
+        master_currency=master_currency or "EUR",
+        user_id=u_id
     )
 
 @router.get("/{cashflow_id}", response_model=CashflowTransactionResponse)
@@ -159,6 +165,7 @@ async def get_cashflow_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = (
         select(CashflowTransaction)
         .options(
@@ -166,14 +173,17 @@ async def get_cashflow_transaction(
             selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
         )
         .execution_options(populate_existing=True)
-        .where(CashflowTransaction.cashflow_id == cashflow_id)
+        .where(
+            CashflowTransaction.cashflow_id == cashflow_id,
+            CashflowTransaction.user_id == u_id
+        )
     )
     res = await db.execute(stmt)
     tx = res.scalar_one_or_none()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    lineage_map = await build_category_lineage_map(db)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
 
     payments_out = [
         CashflowPaymentResponse(
@@ -225,20 +235,23 @@ async def create_cashflow_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     if not tx_in.payments:
         raise HTTPException(status_code=400, detail="At least one funding payment method is required")
     if not tx_in.items:
         raise HTTPException(status_code=400, detail="At least one category line item is required")
 
-    # 1. Fetch accounts to verify currencies
+    # 1. Fetch accounts to verify currencies and ownership
     acc_ids = [p.account_id for p in tx_in.payments]
-    acc_stmt = select(Account).where(Account.account_id.in_(acc_ids))
+    acc_stmt = select(Account).where(Account.account_id.in_(acc_ids), Account.user_id == u_id)
     acc_res = await db.execute(acc_stmt)
     accounts = {a.account_id: a for a in acc_res.scalars().all()}
+    if len(accounts) != len(set(acc_ids)):
+        raise HTTPException(status_code=404, detail="One or more accounts not found")
 
     # 2. Fetch categories to verify categorical intent
     cat_ids = [i.category_id for i in tx_in.items]
-    cat_stmt = select(Category).where(Category.category_id.in_(cat_ids))
+    cat_stmt = select(Category).where(Category.category_id.in_(cat_ids), Category.user_id.in_([0, u_id]))
     cat_res = await db.execute(cat_stmt)
     categories_map = {c.category_id: c for c in cat_res.scalars().all()}
 
@@ -315,6 +328,7 @@ async def create_cashflow_transaction(
 
     # Create parent transaction
     tx = CashflowTransaction(
+        user_id=u_id,
         transaction_date=tx_in.transaction_date,
         title=tx_in.title,
         total_amount=round(abs(final_total), 2),
@@ -329,6 +343,7 @@ async def create_cashflow_transaction(
     # Create payments
     for p in tx_in.payments:
         pmt = CashflowPayment(
+            user_id=u_id,
             cashflow_id=tx.cashflow_id,
             account_id=p.account_id,
             amount=p.amount
@@ -338,6 +353,7 @@ async def create_cashflow_transaction(
     # Create items
     for i in tx_in.items:
         itm = CashflowItem(
+            user_id=u_id,
             cashflow_id=tx.cashflow_id,
             category_id=i.category_id,
             amount=i.amount,
@@ -356,7 +372,11 @@ async def update_cashflow_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(CashflowTransaction).where(CashflowTransaction.cashflow_id == cashflow_id)
+    u_id = get_user_id(current_user)
+    stmt = select(CashflowTransaction).where(
+        CashflowTransaction.cashflow_id == cashflow_id,
+        CashflowTransaction.user_id == u_id
+    )
     res = await db.execute(stmt)
     tx = res.scalar_one_or_none()
     if not tx:
@@ -380,12 +400,14 @@ async def update_cashflow_transaction(
     # If payments or items provided, replace and validate
     if tx_in.payments is not None and tx_in.items is not None:
         acc_ids = [p.account_id for p in tx_in.payments]
-        acc_stmt = select(Account).where(Account.account_id.in_(acc_ids))
+        acc_stmt = select(Account).where(Account.account_id.in_(acc_ids), Account.user_id == u_id)
         acc_res = await db.execute(acc_stmt)
         accounts = {a.account_id: a for a in acc_res.scalars().all()}
+        if len(accounts) != len(set(acc_ids)):
+            raise HTTPException(status_code=404, detail="One or more accounts not found")
 
         cat_ids = [i.category_id for i in tx_in.items]
-        cat_stmt = select(Category).where(Category.category_id.in_(cat_ids))
+        cat_stmt = select(Category).where(Category.category_id.in_(cat_ids), Category.user_id.in_([0, u_id]))
         cat_res = await db.execute(cat_stmt)
         categories_map = {c.category_id: c for c in cat_res.scalars().all()}
 
@@ -468,7 +490,12 @@ async def update_cashflow_transaction(
             await db.delete(old_p)
         # Insert new payments
         for p in tx_in.payments:
-            db.add(CashflowPayment(cashflow_id=tx.cashflow_id, account_id=p.account_id, amount=p.amount))
+            db.add(CashflowPayment(
+                user_id=u_id,
+                cashflow_id=tx.cashflow_id,
+                account_id=p.account_id,
+                amount=p.amount
+            ))
 
         # Delete old items
         del_i_stmt = select(CashflowItem).where(CashflowItem.cashflow_id == cashflow_id)
@@ -478,6 +505,7 @@ async def update_cashflow_transaction(
         # Insert new items
         for i in tx_in.items:
             db.add(CashflowItem(
+                user_id=u_id,
                 cashflow_id=tx.cashflow_id,
                 category_id=i.category_id,
                 amount=i.amount,
@@ -494,7 +522,11 @@ async def delete_cashflow_transaction(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(CashflowTransaction).where(CashflowTransaction.cashflow_id == cashflow_id)
+    u_id = get_user_id(current_user)
+    stmt = select(CashflowTransaction).where(
+        CashflowTransaction.cashflow_id == cashflow_id,
+        CashflowTransaction.user_id == u_id
+    )
     res = await db.execute(stmt)
     tx = res.scalar_one_or_none()
     if not tx:

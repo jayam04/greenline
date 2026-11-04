@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.db.models import Account, User, Transaction, CashflowTransaction, CashflowItem, CashflowPayment, Lot, PriceHistory
 from app.schemas.schemas import AccountCreate, AccountUpdate, AccountResponse
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot
 from app.services.cashflow_engine import compute_transaction_cash_movement
@@ -17,13 +17,16 @@ router = APIRouter(prefix="/accounts", tags=["accounts"])
 async def calculate_all_account_details(
     db: AsyncSession,
     accounts: Optional[List[Account]] = None,
-    include_securities: bool = True
+    include_securities: bool = True,
+    user_id: Optional[int] = None
 ) -> Dict[int, Dict[str, float]]:
     """
     Computes detailed cash_balance, securities_value, and current_balance for every account in a single pass.
     """
     if accounts is None:
         acc_stmt = select(Account)
+        if user_id is not None:
+            acc_stmt = acc_stmt.where(Account.user_id == user_id)
         acc_res = await db.execute(acc_stmt)
         accounts = acc_res.scalars().all()
     account_ids = {a.account_id for a in accounts}
@@ -33,6 +36,8 @@ async def calculate_all_account_details(
 
     # 1. Investment transactions cash movements
     tx_stmt = select(Transaction)
+    if user_id is not None:
+        tx_stmt = tx_stmt.where(Transaction.user_id == user_id)
     tx_res = await db.execute(tx_stmt)
     for tx in tx_res.scalars().all():
         cash_acc_id, delta = compute_transaction_cash_movement(tx, account_ids)
@@ -44,6 +49,13 @@ async def calculate_all_account_details(
         select(CashflowPayment.account_id, func.sum(CashflowPayment.amount))
         .group_by(CashflowPayment.account_id)
     )
+    if user_id is not None:
+        cf_stmt = (
+            select(CashflowPayment.account_id, func.sum(CashflowPayment.amount))
+            .join(Account, CashflowPayment.account_id == Account.account_id)
+            .where(Account.user_id == user_id)
+            .group_by(CashflowPayment.account_id)
+        )
     cf_res = await db.execute(cf_stmt)
     for acc_id, total_amt in cf_res.all():
         if acc_id in cash_balances and total_amt is not None:
@@ -52,6 +64,8 @@ async def calculate_all_account_details(
     # 3. Securities valuation for open lots with single batch price fetch
     if include_securities:
         lot_stmt = select(Lot).where(Lot.quantity_remaining > 0)
+        if user_id is not None:
+            lot_stmt = lot_stmt.where(Lot.user_id == user_id)
         lot_res = await db.execute(lot_stmt)
         open_lots = lot_res.scalars().all()
 
@@ -100,26 +114,29 @@ async def calculate_all_account_details(
 
 async def calculate_all_account_cash_balances(
     db: AsyncSession,
-    accounts: Optional[List[Account]] = None
+    accounts: Optional[List[Account]] = None,
+    user_id: Optional[int] = None
 ) -> Dict[int, float]:
     """Computes pure uninvested liquid cash for every account."""
-    details = await calculate_all_account_details(db, accounts=accounts, include_securities=False)
+    details = await calculate_all_account_details(db, accounts=accounts, include_securities=False, user_id=user_id)
     return {k: v["cash_balance"] for k, v in details.items()}
 
 async def calculate_all_account_balances(
     db: AsyncSession,
-    accounts: Optional[List[Account]] = None
+    accounts: Optional[List[Account]] = None,
+    user_id: Optional[int] = None
 ) -> Dict[int, float]:
     """Computes total valuation (cash + open securities) for every account."""
-    details = await calculate_all_account_details(db, accounts=accounts)
+    details = await calculate_all_account_details(db, accounts=accounts, user_id=user_id)
     return {k: v["current_balance"] for k, v in details.items()}
 
 async def calculate_all_account_securities_values(
     db: AsyncSession,
-    accounts: Optional[List[Account]] = None
+    accounts: Optional[List[Account]] = None,
+    user_id: Optional[int] = None
 ) -> Dict[int, float]:
     """Computes securities valuation for every account."""
-    details = await calculate_all_account_details(db, accounts=accounts)
+    details = await calculate_all_account_details(db, accounts=accounts, user_id=user_id)
     return {k: v["securities_value"] for k, v in details.items()}
 
 @router.get("", response_model=List[AccountResponse])
@@ -128,10 +145,11 @@ async def list_accounts(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Account)
+    u_id = get_user_id(current_user)
+    stmt = select(Account).where(Account.user_id == u_id)
     res = await db.execute(stmt)
     accounts = res.scalars().all()
-    details = await calculate_all_account_details(db, accounts=accounts)
+    details = await calculate_all_account_details(db, accounts=accounts, user_id=u_id)
 
     acc_map = {a.account_id: a for a in accounts}
     results = []
@@ -154,12 +172,13 @@ async def create_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     if account_in.default_dividend_account_id is not None:
         bank_acc = await db.get(Account, account_in.default_dividend_account_id)
-        if not bank_acc or bank_acc.account_type != "bank":
-            raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account")
+        if not bank_acc or bank_acc.account_type != "bank" or bank_acc.user_id != u_id:
+            raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account owned by user")
 
-    account = Account(**account_in.model_dump())
+    account = Account(**account_in.model_dump(), user_id=u_id)
     db.add(account)
     await db.commit()
     await db.refresh(account)
@@ -179,12 +198,13 @@ async def get_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Account).where(Account.account_id == account_id)
+    u_id = get_user_id(current_user)
+    stmt = select(Account).where(Account.account_id == account_id, Account.user_id == u_id)
     res = await db.execute(stmt)
     account = res.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    details = await calculate_all_account_details(db)
+    details = await calculate_all_account_details(db, accounts=[account], user_id=u_id)
     d = details.get(account.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
     resp = AccountResponse.model_validate(account)
     resp.cash_balance = d["cash_balance"]
@@ -203,7 +223,8 @@ async def update_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Account).where(Account.account_id == account_id)
+    u_id = get_user_id(current_user)
+    stmt = select(Account).where(Account.account_id == account_id, Account.user_id == u_id)
     res = await db.execute(stmt)
     account = res.scalar_one_or_none()
     if not account:
@@ -215,15 +236,15 @@ async def update_account(
         if target_id == account_id:
             raise HTTPException(status_code=400, detail="Account cannot be its own default dividend account")
         bank_acc = await db.get(Account, target_id)
-        if not bank_acc or bank_acc.account_type != "bank":
-            raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account")
+        if not bank_acc or bank_acc.account_type != "bank" or bank_acc.user_id != u_id:
+            raise HTTPException(status_code=400, detail="Default dividend account must be an existing bank account owned by user")
 
     for field, val in update_data.items():
         setattr(account, field, val)
 
     await db.commit()
     await db.refresh(account)
-    details = await calculate_all_account_details(db)
+    details = await calculate_all_account_details(db, accounts=[account], user_id=u_id)
     d = details.get(account.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
     resp = AccountResponse.model_validate(account)
     resp.cash_balance = d["cash_balance"]
@@ -241,17 +262,18 @@ async def delete_account(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Account).where(Account.account_id == account_id)
+    u_id = get_user_id(current_user)
+    stmt = select(Account).where(Account.account_id == account_id, Account.user_id == u_id)
     res = await db.execute(stmt)
     account = res.scalar_one_or_none()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     await db.execute(
         update(Account)
-        .where(Account.default_dividend_account_id == account_id)
+        .where(Account.default_dividend_account_id == account_id, Account.user_id == u_id)
         .values(default_dividend_account_id=None)
     )
     await db.delete(account)
     await db.commit()
-    await recalculate_all_lots(db)
-    await generate_daily_snapshot(db)
+    await recalculate_all_lots(db, user_id=u_id)
+    await generate_daily_snapshot(db, user_id=u_id)

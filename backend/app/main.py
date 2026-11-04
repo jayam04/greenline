@@ -45,17 +45,34 @@ async def lifespan(app: FastAPI):
 
     # Seed default user if none exists & seed default categories
     async with AsyncSessionLocal() as session:
-        stmt = select(User)
-        res = await session.execute(stmt)
-        user = res.scalar_one_or_none()
-        if not user:
-            default_user = User(
-                username=settings.DEFAULT_ADMIN_USER,
-                password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
-            )
-            session.add(default_user)
-            await session.commit()
-            print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER}")
+        user0_stmt = select(User).where(User.user_id == 0)
+        user0_res = await session.execute(user0_stmt)
+        user0 = user0_res.scalars().first()
+
+        if not user0:
+            admin_stmt = select(User).where(User.username == settings.DEFAULT_ADMIN_USER)
+            admin_res = await session.execute(admin_stmt)
+            admin_user = admin_res.scalars().first()
+
+            if admin_user:
+                from sqlalchemy import text
+                await session.execute(
+                    text("UPDATE users SET user_id = 0 WHERE username = :uname"),
+                    {"uname": settings.DEFAULT_ADMIN_USER}
+                )
+                await session.commit()
+                print(f"[Init] Re-mapped existing admin user '{settings.DEFAULT_ADMIN_USER}' to user_id=0")
+            else:
+                default_user = User(
+                    user_id=0,
+                    username=settings.DEFAULT_ADMIN_USER,
+                    password_hash=get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
+                )
+                session.add(default_user)
+                await session.commit()
+                print(f"[Init] Created default admin user: {settings.DEFAULT_ADMIN_USER} (user_id=0)")
+        else:
+            print(f"[Init] Verified default admin user: {user0.username} (user_id=0)")
 
         # Seed categories
         try:
@@ -63,8 +80,15 @@ async def lifespan(app: FastAPI):
         except Exception as ce:
             print(f"[Init Categories Error] {ce}")
             
-    asyncio.create_task(_startup_backfill())
-    start_scheduler()
+    try:
+        asyncio.create_task(_startup_backfill())
+    except Exception as be:
+        print(f"[Init Backfill Task Error] {be}")
+
+    try:
+        start_scheduler()
+    except Exception as se:
+        print(f"[Init Scheduler Error] {se}")
     yield
 
 app = FastAPI(

@@ -17,7 +17,7 @@ async def test_closed_holdings_multiple_lots_portfolio_summary():
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with TestSession() as session:
-        user = User(user_id=1, username="closed_lot_user", password_hash="hash")
+        user = User(user_id=0, username="closed_lot_user", password_hash="hash")
         session.add(user)
 
         demat_acc = Account(account_name="Trading Demat", account_type="demat", currency="USD")

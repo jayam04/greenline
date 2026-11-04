@@ -11,7 +11,7 @@ from app.schemas.import_schemas import (
     ImportBatchResponse, StagedRecordResponse, StagedRecordCreate,
     StagedRecordUpdate, BatchCommitRequest, BatchCommitResponse
 )
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 from app.services.ai.chunker import decrypt_and_extract_pdf_pages, chunk_pdf_pages, chunk_tabular_data
 from app.services.ai.providers import get_ai_provider
 from app.services.ai.base import DocumentContext
@@ -72,9 +72,15 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     content = await file.read()
     filename = file.filename or "upload"
     file_type = filename.split(".")[-1].lower() if "." in filename else "csv"
+
+    if target_account_id:
+        acc_chk = await db.execute(select(Account).where(Account.account_id == target_account_id, Account.user_id == u_id))
+        if not acc_chk.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Target account not found.")
 
     # 1. Create Staging Batch
     batch = await create_import_batch(
@@ -84,7 +90,8 @@ async def upload_document(
         file_size_bytes=len(content),
         target_account_id=target_account_id,
         default_currency=default_currency,
-        custom_instructions=custom_instructions
+        custom_instructions=custom_instructions,
+        user_id=u_id
     )
 
     # 2. Extract Chunks based on file type
@@ -105,9 +112,9 @@ async def upload_document(
         raise HTTPException(status_code=400, detail=str(e))
 
     # 3. Build Document Context
-    acc_res = await db.execute(select(Account))
+    acc_res = await db.execute(select(Account).where(Account.user_id == u_id))
     accounts = [{"account_id": a.account_id, "account_name": a.account_name, "currency": a.currency} for a in acc_res.scalars().all()]
-    cat_res = await db.execute(select(Category))
+    cat_res = await db.execute(select(Category).where(Category.user_id.in_([0, u_id])))
     categories = [{"category_id": c.category_id, "name": c.name} for c in cat_res.scalars().all()]
     ast_res = await db.execute(select(Asset))
     assets = [{"asset_id": a.asset_id, "symbol": a.symbol, "name": a.name} for a in ast_res.scalars().all()]
@@ -156,9 +163,11 @@ async def list_import_batches(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     stmt = (
         select(ImportBatch)
         .options(selectinload(ImportBatch.target_account))
+        .where(ImportBatch.user_id == u_id)
         .order_by(desc(ImportBatch.created_at))
         .limit(limit)
         .offset(offset)
@@ -179,7 +188,12 @@ async def get_import_batch(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(ImportBatch).options(selectinload(ImportBatch.target_account)).where(ImportBatch.batch_id == batch_id)
+    u_id = get_user_id(current_user)
+    stmt = (
+        select(ImportBatch)
+        .options(selectinload(ImportBatch.target_account))
+        .where(ImportBatch.batch_id == batch_id, ImportBatch.user_id == u_id)
+    )
     res = await db.execute(stmt)
     batch = res.scalar_one_or_none()
     if not batch:
@@ -197,6 +211,12 @@ async def list_staged_records(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
+    batch_stmt = select(ImportBatch).where(ImportBatch.batch_id == batch_id, ImportBatch.user_id == u_id)
+    b_res = await db.execute(batch_stmt)
+    if not b_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Import batch not found.")
+
     stmt = (
         select(StagedRecord)
         .options(
@@ -224,6 +244,12 @@ async def edit_staged_record(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
+    batch_stmt = select(ImportBatch).where(ImportBatch.batch_id == batch_id, ImportBatch.user_id == u_id)
+    b_res = await db.execute(batch_stmt)
+    if not b_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Import batch not found.")
+
     try:
         updated = await update_staged_record(db, staged_id, **update_in.model_dump(exclude_unset=True))
         # Re-fetch with relationships
@@ -249,6 +275,12 @@ async def remove_staged_record(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
+    batch_stmt = select(ImportBatch).where(ImportBatch.batch_id == batch_id, ImportBatch.user_id == u_id)
+    b_res = await db.execute(batch_stmt)
+    if not b_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Import batch not found.")
+
     success = await delete_staged_record(db, staged_id)
     if not success:
         raise HTTPException(status_code=404, detail="Staged record not found.")
@@ -260,6 +292,12 @@ async def add_manual_staged_record(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
+    batch_stmt = select(ImportBatch).where(ImportBatch.batch_id == batch_id, ImportBatch.user_id == u_id)
+    b_res = await db.execute(batch_stmt)
+    if not b_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Import batch not found.")
+
     created_list = await stage_parsed_records(db, batch_id, [record_in.model_dump()])
     if not created_list:
         raise HTTPException(status_code=400, detail="Failed to add staged record.")
@@ -287,6 +325,12 @@ async def commit_batch(
     The Final Green Flag: merges approved staged records into the live ledger,
     recalculates lots & snapshots, and marks batch as merged.
     """
+    u_id = get_user_id(current_user)
+    batch_stmt = select(ImportBatch).where(ImportBatch.batch_id == batch_id, ImportBatch.user_id == u_id)
+    b_res = await db.execute(batch_stmt)
+    if not b_res.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Import batch not found.")
+
     rec_ids = commit_req.record_ids if commit_req else None
     try:
         res = await commit_import_batch(db, batch_id, record_ids=rec_ids)

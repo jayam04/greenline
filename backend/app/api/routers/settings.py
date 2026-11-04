@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.db.database import get_db
 from app.db.models import AppSetting, User
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -22,11 +22,16 @@ async def get_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> AppSettingsSchema:
+    u_id = get_user_id(current_user)
     stmt = select(AppSetting).where(
+        AppSetting.user_id.in_([0, u_id]),
         AppSetting.key.in_(["link_brokerage_with_bank", "master_currency", "fiscal_year_start", "app_font"])
     )
     res = await db.execute(stmt)
-    settings_map = {s.key: s.value for s in res.scalars().all()}
+    # Order by user_id so user's own setting overrides default user 0 setting
+    all_settings = res.scalars().all()
+    all_settings.sort(key=lambda s: s.user_id)
+    settings_map = {s.key: s.value for s in all_settings}
 
     link_val = False
     if "link_brokerage_with_bank" in settings_map:
@@ -74,35 +79,36 @@ async def update_settings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> AppSettingsSchema:
+    u_id = get_user_id(current_user)
     # 1. Update link_brokerage_with_bank
-    stmt_link = select(AppSetting).where(AppSetting.key == "link_brokerage_with_bank")
+    stmt_link = select(AppSetting).where(AppSetting.user_id == u_id, AppSetting.key == "link_brokerage_with_bank")
     res_link = await db.execute(stmt_link)
     s_link = res_link.scalar_one_or_none()
     link_json = json.dumps(payload.link_brokerage_with_bank)
     if not s_link:
-        db.add(AppSetting(key="link_brokerage_with_bank", value=link_json))
+        db.add(AppSetting(user_id=u_id, key="link_brokerage_with_bank", value=link_json))
     else:
         s_link.value = link_json
 
     # 2. Update master_currency
     norm_curr = payload.master_currency.strip().upper() or "EUR"
-    stmt_curr = select(AppSetting).where(AppSetting.key == "master_currency")
+    stmt_curr = select(AppSetting).where(AppSetting.user_id == u_id, AppSetting.key == "master_currency")
     res_curr = await db.execute(stmt_curr)
     s_curr = res_curr.scalar_one_or_none()
     curr_json = json.dumps(norm_curr)
     if not s_curr:
-        db.add(AppSetting(key="master_currency", value=curr_json))
+        db.add(AppSetting(user_id=u_id, key="master_currency", value=curr_json))
     else:
         s_curr.value = curr_json
 
     # 3. Update fiscal_year_start
     norm_fy = payload.fiscal_year_start.strip() or "01-01"
-    stmt_fy = select(AppSetting).where(AppSetting.key == "fiscal_year_start")
+    stmt_fy = select(AppSetting).where(AppSetting.user_id == u_id, AppSetting.key == "fiscal_year_start")
     res_fy = await db.execute(stmt_fy)
     s_fy = res_fy.scalar_one_or_none()
     fy_json = json.dumps(norm_fy)
     if not s_fy:
-        db.add(AppSetting(key="fiscal_year_start", value=fy_json))
+        db.add(AppSetting(user_id=u_id, key="fiscal_year_start", value=fy_json))
     else:
         s_fy.value = fy_json
 
@@ -110,12 +116,12 @@ async def update_settings(
     norm_font = payload.app_font.strip().lower()
     if norm_font not in ("general-sans", "inter", "rx100"):
         norm_font = "general-sans"
-    stmt_font = select(AppSetting).where(AppSetting.key == "app_font")
+    stmt_font = select(AppSetting).where(AppSetting.user_id == u_id, AppSetting.key == "app_font")
     res_font = await db.execute(stmt_font)
     s_font = res_font.scalar_one_or_none()
     font_json = json.dumps(norm_font)
     if not s_font:
-        db.add(AppSetting(key="app_font", value=font_json))
+        db.add(AppSetting(user_id=u_id, key="app_font", value=font_json))
     else:
         s_font.value = font_json
 

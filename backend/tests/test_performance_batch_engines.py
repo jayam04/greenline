@@ -163,7 +163,7 @@ async def test_portfolio_summary_batching():
 
     Session = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
     async with Session() as session:
-        user = User(user_id=1, username="admin", password_hash="hash")
+        user = User(user_id=0, username="admin", password_hash="hash")
         acc = Account(account_id=1, account_name="Demat", account_type="demat", currency="EUR")
         ast1 = Asset(asset_id=1, symbol="OPEN_ASSET", name="Open Asset Corp", asset_type="stock", currency="EUR")
         ast2 = Asset(asset_id=2, symbol="CLOSED_ASSET", name="Closed Asset Corp", asset_type="stock", currency="EUR")

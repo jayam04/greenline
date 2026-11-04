@@ -9,7 +9,7 @@ from app.db.database import get_db
 from app.db.models import Category, CashflowItem, CashflowTransaction, User
 from app.schemas.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryTreeResponse
 from app.services.cashflow_engine import build_category_lineage_map, convert_currency
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -20,7 +20,8 @@ async def list_categories(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    lineage_map = await build_category_lineage_map(db)
+    u_id = get_user_id(current_user)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
     results = []
 
     for cid, meta in lineage_map.items():
@@ -51,7 +52,8 @@ async def get_category_tree(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    lineage_map = await build_category_lineage_map(db)
+    u_id = get_user_id(current_user)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
 
     # Build node map
     node_map: Dict[int, CategoryTreeResponse] = {}
@@ -91,9 +93,14 @@ async def get_category_totals(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Dict[str, float]:
+    u_id = get_user_id(current_user)
     target_currency = (master_currency or "EUR").strip().upper()
-    lineage_map = await build_category_lineage_map(db)
-    stmt = select(CashflowTransaction).options(selectinload(CashflowTransaction.items))
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
+    stmt = (
+        select(CashflowTransaction)
+        .options(selectinload(CashflowTransaction.items))
+        .where(CashflowTransaction.user_id == u_id)
+    )
     if start_date:
         stmt = stmt.where(CashflowTransaction.transaction_date >= start_date)
     if end_date:
@@ -121,7 +128,8 @@ async def get_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    lineage_map = await build_category_lineage_map(db)
+    u_id = get_user_id(current_user)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
     meta = lineage_map.get(category_id)
     if not meta:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -148,11 +156,16 @@ async def create_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    u_id = get_user_id(current_user)
     cat_dict = category_in.model_dump()
+    cat_dict["user_id"] = u_id
     cat_dict["category_type"] = cat_dict.get("category_type", "EXPENSE").upper()
 
     if cat_dict.get("parent_id"):
-        parent_stmt = select(Category).where(Category.category_id == cat_dict["parent_id"])
+        parent_stmt = select(Category).where(
+            Category.category_id == cat_dict["parent_id"],
+            Category.user_id.in_([0, u_id])
+        )
         parent_res = await db.execute(parent_stmt)
         parent = parent_res.scalar_one_or_none()
         if not parent:
@@ -165,7 +178,7 @@ async def create_category(
     await db.commit()
     await db.refresh(category)
 
-    lineage_map = await build_category_lineage_map(db)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
     meta = lineage_map[category.category_id]
 
     return CategoryResponse(
@@ -189,7 +202,8 @@ async def update_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Category).where(Category.category_id == category_id)
+    u_id = get_user_id(current_user)
+    stmt = select(Category).where(Category.category_id == category_id, Category.user_id == u_id)
     res = await db.execute(stmt)
     category = res.scalar_one_or_none()
     if not category:
@@ -202,8 +216,8 @@ async def update_category(
             if new_parent_id == category_id:
                 raise HTTPException(status_code=400, detail="A category cannot be its own parent")
 
-            # Fetch all categories to check existence and prevent cycles
-            all_cats_res = await db.execute(select(Category))
+            # Fetch accessible categories to check existence and prevent cycles
+            all_cats_res = await db.execute(select(Category).where(Category.user_id.in_([0, u_id])))
             all_cats = all_cats_res.scalars().all()
             cat_by_id = {c.category_id: c for c in all_cats}
 
@@ -226,7 +240,7 @@ async def update_category(
     await db.commit()
     await db.refresh(category)
 
-    lineage_map = await build_category_lineage_map(db)
+    lineage_map = await build_category_lineage_map(db, user_id=u_id)
     meta = lineage_map[category.category_id]
 
     return CategoryResponse(
@@ -249,7 +263,8 @@ async def delete_category(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    stmt = select(Category).where(Category.category_id == category_id)
+    u_id = get_user_id(current_user)
+    stmt = select(Category).where(Category.category_id == category_id, Category.user_id == u_id)
     res = await db.execute(stmt)
     category = res.scalar_one_or_none()
     if not category:

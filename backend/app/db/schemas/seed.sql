@@ -358,7 +358,6 @@ CREATE INDEX ix_assets_symbol ON assets (symbol);
 
 CREATE INDEX ix_benchmarks_id ON benchmarks (id);
 
-CREATE INDEX ix_users_user_id ON users (user_id);
 
 CREATE UNIQUE INDEX ix_users_username ON users (username);
 

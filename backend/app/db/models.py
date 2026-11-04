@@ -16,7 +16,7 @@ class String(SQLString):
 class User(Base):
     __tablename__ = "users"
     
-    user_id = Column(Integer, Identity(), primary_key=True, default=0, index=True)
+    user_id = Column(Integer, Identity(), primary_key=True, default=0)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

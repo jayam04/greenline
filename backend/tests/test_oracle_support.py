@@ -130,6 +130,43 @@ async def test_migrations_are_idempotent_on_sqlite():
 
 
 @pytest.mark.anyio
+async def test_migrate_user_rls_handles_foreign_key_children_safely():
+    from app.db.models import ApiKey
+    from app.db.migrations import _migrate_user_rls
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.execute(select(1))
+        # Ensure foreign keys are strictly enforced
+        await conn.exec_driver_sql("PRAGMA foreign_keys = ON")
+        await conn.run_sync(Base.metadata.create_all)
+
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with Session() as session:
+        # Create user 1 and a child record (ApiKey) referencing user 1
+        user1 = User(user_id=1, username="admin", password_hash="hash")
+        session.add(user1)
+        await session.flush()
+
+        key = ApiKey(user_id=1, name="CLI Key", key_prefix="gl_1234", key_hash="hash", is_active=1)
+        session.add(key)
+        await session.commit()
+
+        # Run migration - must not violate foreign key constraints (ORA-02292 equivalent)
+        await _migrate_user_rls(session)
+        session.expire_all()
+
+        # Verify admin is now user_id = 0 and child record points to user_id = 0
+        admin_u = (await session.execute(select(User).where(User.username == "admin"))).scalar_one()
+        assert admin_u.user_id == 0
+
+        child_key = (await session.execute(select(ApiKey))).scalar_one()
+        assert child_key.user_id == 0
+
+    await engine.dispose()
+
+
+@pytest.mark.anyio
 async def test_oracle_logical_backup_round_trips_all_model_tables(tmp_path, monkeypatch):
     from app.config import settings
 

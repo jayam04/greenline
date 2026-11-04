@@ -64,7 +64,10 @@ async def _ensure_latest_schema(session: AsyncSession) -> None:
         for table in get_tables_in_dependency_order():
             if table.name in existing_tables:
                 for index in table.indexes:
-                    index.create(sync_connection, checkfirst=True)
+                    try:
+                        index.create(sync_connection, checkfirst=True)
+                    except Exception:
+                        pass
 
     await connection.run_sync(add_missing_columns)
     await session.commit()
@@ -133,32 +136,56 @@ async def _migrate_user_rls(session: AsyncSession) -> None:
     if not users:
         return
 
-    res = await session.execute(select(User).where(User.user_id == 0))
-    user0 = res.scalars().first()
-    if not user0:
-        admin_existing = next((u for u in users if u.username == settings.DEFAULT_ADMIN_USER), None)
-        if admin_existing and admin_existing.user_id != 0:
-            await session.execute(
-                text("UPDATE users SET user_id = 0 WHERE user_id = :uid"),
-                {"uid": admin_existing.user_id}
-            )
-            await session.commit()
-        else:
-            first_user = users[0]
-            if first_user.user_id != 0:
-                await session.execute(
-                    text("UPDATE users SET user_id = 0 WHERE user_id = :uid"),
-                    {"uid": first_user.user_id}
-                )
-                await session.commit()
-
     table_names = [
         "accounts", "transactions", "lots", "lot_sales", "dividends",
         "expected_dividends", "cash_flows", "networth_snapshots",
         "networth_by_asset_class", "categories", "cashflow_transactions",
         "cashflow_payments", "cashflow_items", "import_batches",
-        "staged_records", "app_settings", "xirr_cache", "price_history"
+        "staged_records", "app_settings", "xirr_cache", "price_history",
+        "api_keys"
     ]
+
+    res = await session.execute(select(User).where(User.user_id == 0))
+    user0 = res.scalars().first()
+    if not user0:
+        admin_existing = next((u for u in users if u.username == settings.DEFAULT_ADMIN_USER), users[0])
+        old_uid = admin_existing.user_id
+        if old_uid != 0:
+            target_username = admin_existing.username
+            target_pwd = admin_existing.password_hash
+            target_created = admin_existing.created_at or datetime.datetime.utcnow()
+
+            # 1. Rename existing user temporarily to avoid unique username collisions
+            await session.execute(
+                text("UPDATE users SET username = :temp_name WHERE user_id = :old_uid"),
+                {"temp_name": f"{target_username}_migrating", "old_uid": old_uid}
+            )
+            # 2. Insert new user 0 with target credentials so parent key exists
+            await session.execute(
+                text("INSERT INTO users (user_id, username, password_hash, created_at) "
+                     "VALUES (0, :uname, :pwd, :created)"),
+                {
+                    "uname": target_username,
+                    "pwd": target_pwd,
+                    "created": target_created,
+                }
+            )
+            # 3. Update all child tables pointing to old_uid to 0
+            for tname in table_names:
+                try:
+                    await session.execute(
+                        text(f"UPDATE {tname} SET user_id = 0 WHERE user_id = :old_uid"),
+                        {"old_uid": old_uid}
+                    )
+                except Exception:
+                    pass
+            # 4. Safely delete the temporary user
+            await session.execute(
+                text("DELETE FROM users WHERE user_id = :old_uid"),
+                {"old_uid": old_uid}
+            )
+            await session.commit()
+
     for tname in table_names:
         try:
             await session.execute(text(f"UPDATE {tname} SET user_id = 0 WHERE user_id IS NULL"))

@@ -11,8 +11,7 @@ services:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
     environment:
-      DATABASE_FILE: ${DATABASE_FILE:-investments.db}
-      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////data/investments.db}
+      DATABASE_URL: ${DATABASE_URL:-oracle+oracledb://@}
       ORACLE_USER: ${ORACLE_USER:-}
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:-}
       ORACLE_DSN: ${ORACLE_DSN:-}

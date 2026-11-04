@@ -1,0 +1,15 @@
+services:
+  oracle-test:
+    image: gvenzl/oracle-free:slim-faststart
+    container_name: greenline-oracle-test
+    environment:
+      ORACLE_PASSWORD: test_password
+      APP_USER: greenline_test
+      APP_USER_PASSWORD: test_password
+    ports:
+      - "1521:1521"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

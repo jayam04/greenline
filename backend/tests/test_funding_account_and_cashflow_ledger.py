@@ -10,7 +10,7 @@ from app.api.routers.accounts import calculate_all_account_balances, calculate_a
 
 @pytest.mark.anyio
 async def test_funding_account_ipo_and_trades():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:

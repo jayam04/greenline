@@ -1,20 +1,10 @@
-import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import text
 from sqlalchemy.schema import sort_tables_and_constraints
 from app.config import settings
 
-# Extract DB directory and ensure it exists locally if SQLite file path
 db_url = settings.DATABASE_URL
-if db_url.startswith("sqlite+aiosqlite:///"):
-    path = db_url.replace("sqlite+aiosqlite:///", "")
-    dir_path = os.path.dirname(path)
-    if dir_path:
-        try:
-            os.makedirs(dir_path, exist_ok=True)
-        except OSError:
-            pass
 
 def _clean_credential(value):
     if isinstance(value, str):
@@ -23,7 +13,7 @@ def _clean_credential(value):
 
 
 def create_database_engine(database_url: str, connect_args=None) -> AsyncEngine:
-    """Build an async SQLAlchemy engine for the configured database URL."""
+    """Build an async SQLAlchemy engine for Oracle Database."""
     driver_args = dict(connect_args or {})
     engine_kwargs = {"echo": False}
     if database_url.startswith("oracle+oracledb://"):
@@ -45,9 +35,7 @@ def create_database_engine(database_url: str, connect_args=None) -> AsyncEngine:
         })
     return create_async_engine(
         database_url,
-        connect_args=(
-            {"check_same_thread": False} if "sqlite" in database_url else driver_args
-        ),
+        connect_args=driver_args,
         **engine_kwargs
     )
 

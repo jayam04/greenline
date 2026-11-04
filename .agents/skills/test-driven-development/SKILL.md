@@ -2,7 +2,7 @@
 name: test-driven-development
 description: >-
   Provides end-to-end Test-Driven Development (TDD) procedures, test scaffolding patterns,
-  and verification runbooks for backend (pytest/aiosqlite) and frontend (vitest/playwright).
+  and verification runbooks for backend (pytest/Oracle) and frontend (vitest/playwright).
   Activate when writing new features, debugging calculations, fixing bugs, or implementing tests.
 ---
 
@@ -64,5 +64,5 @@ graph LR
 
 ## Reference Guides
 
-- [Backend Testing Guide](./references/backend_testing_guide.md): In-memory async SQLite fixtures, API client overrides, and engine testing patterns.
+- [Backend Testing Guide](./references/backend_testing_guide.md): Oracle async test fixtures, API client overrides, and engine testing patterns.
 - [Frontend Testing Guide](./references/frontend_testing_guide.md): Component tests, TypeScript validation, and Playwright E2E scenarios.

@@ -1,19 +1,8 @@
 import datetime
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Base, CashFlow
 from app.services.xirr_engine import calculate_xirr_for_scope
-
-@pytest.fixture
-async def db_session():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
-    async with TestSession() as session:
-        yield session
-    await test_engine.dispose()
 
 @pytest.mark.anyio
 async def test_xirr_positive_return(db_session: AsyncSession):
@@ -133,22 +122,19 @@ async def test_xirr_insufficient_cash_flows(db_session: AsyncSession):
     assert xirr_2 is None
 
     # Scenario C: Multiple flows but all are positive (no negative outflow)
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
-    async with TestSession() as session:
-        session.add(CashFlow(scope_type="portfolio", scope_id=None, flow_date=datetime.date(2025, 1, 1), amount=100.0, flow_type="dividend"))
-        await session.commit()
-        xirr_3 = await calculate_xirr_for_scope(
-            db=session,
-            scope_type="portfolio",
-            scope_id=None,
-            current_valuation=500.0,
-            as_of_date=datetime.date(2026, 1, 1)
-        )
-        assert xirr_3 is None
-    await test_engine.dispose()
+    from sqlalchemy import delete
+    await db_session.execute(delete(CashFlow))
+    await db_session.commit()
+    db_session.add(CashFlow(scope_type="portfolio", scope_id=None, flow_date=datetime.date(2025, 1, 1), amount=100.0, flow_type="dividend"))
+    await db_session.commit()
+    xirr_3 = await calculate_xirr_for_scope(
+        db=db_session,
+        scope_type="portfolio",
+        scope_id=None,
+        current_valuation=500.0,
+        as_of_date=datetime.date(2026, 1, 1)
+    )
+    assert xirr_3 is None
 
 @pytest.mark.anyio
 async def test_xirr_scope_isolation(db_session: AsyncSession):

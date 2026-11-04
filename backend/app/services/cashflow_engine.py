@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Category, CashflowTransaction, CashflowPayment, CashflowItem, Transaction, LotSale
+from app.db.models import Category, CashflowTransaction, CashflowPayment, CashflowItem, Transaction, LotSale, User
 from app.schemas.schemas import SankeyNode, SankeyLink, SankeyDataResponse, CashflowSummaryResponse
 
 # Standard Classification Labels
@@ -316,6 +316,11 @@ async def seed_default_categories(db: AsyncSession):
     2. Decouples Investments & Passive from Income and reparents subcategories under root Investments.
     3. Renames Expenses to Spends.
     """
+    user0 = await db.get(User, 0)
+    if not user0:
+        db.add(User(user_id=0, username="system", password_hash="system"))
+        await db.flush()
+
     stmt = select(func.count(Category.category_id))
     res = await db.execute(stmt)
     count = res.scalar() or 0

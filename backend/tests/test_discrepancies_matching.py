@@ -9,7 +9,7 @@ from app.db.models import Account, Asset, Transaction, Category, CashflowTransac
 
 @pytest.mark.anyio
 async def test_discrepancy_credit_date_and_candidate_matching():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -151,7 +151,7 @@ async def test_discrepancy_credit_date_and_candidate_matching():
 
 @pytest.mark.anyio
 async def test_candidate_matching_currency_and_scoring():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -275,7 +275,7 @@ async def test_candidate_matching_currency_and_scoring():
 
 @pytest.mark.anyio
 async def test_candidate_matching_identical_scores_deterministic_ordering():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -11,7 +11,7 @@ from app.api.routers.portfolio import get_portfolio_summary
 
 @pytest.mark.anyio
 async def test_fees_taxes_included_in_stock_pnl():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:
@@ -52,6 +52,7 @@ async def test_fees_taxes_included_in_stock_pnl():
         # Verify Lot cost_per_unit includes fees and taxes
         lot_res = await session.execute(select(Lot).where(Lot.asset_id == asset_id))
         lot = lot_res.scalar_one()
+        target_lot_id = lot.lot_id
         assert lot.quantity_original == 100.0
         assert lot.quantity_remaining == 100.0
         assert round(lot.cost_per_unit, 2) == 3004.00
@@ -91,7 +92,9 @@ async def test_fees_taxes_included_in_stock_pnl():
         await create_transaction(sell_tx, db=session, current_user=user)
 
         # Check LotSale record
-        sale_res = await session.execute(select(LotSale).where(LotSale.lot_id == lot.lot_id))
+        lot_res2 = await session.execute(select(Lot).where(Lot.asset_id == asset_id))
+        new_lot = lot_res2.scalar_one()
+        sale_res = await session.execute(select(LotSale).where(LotSale.lot_id == new_lot.lot_id))
         lot_sale = sale_res.scalar_one()
         assert lot_sale.quantity_sold == 50.0
         assert round(lot_sale.cost_basis, 2) == 150200.00

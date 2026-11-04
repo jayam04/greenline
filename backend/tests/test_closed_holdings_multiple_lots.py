@@ -10,7 +10,7 @@ from app.services.fifo_engine import recalculate_all_lots
 
 @pytest.mark.anyio
 async def test_closed_holdings_multiple_lots_portfolio_summary():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -19,6 +19,7 @@ async def test_closed_holdings_multiple_lots_portfolio_summary():
     async with TestSession() as session:
         user = User(user_id=0, username="closed_lot_user", password_hash="hash")
         session.add(user)
+        await session.flush()
 
         demat_acc = Account(account_name="Trading Demat", account_type="demat", currency="USD")
         session.add(demat_acc)

@@ -159,7 +159,7 @@ CREATE TABLE cashflow_items (
 	PRIMARY KEY (item_id), 
 	FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE, 
 	FOREIGN KEY(cashflow_id) REFERENCES cashflow_transactions (cashflow_id) ON DELETE CASCADE, 
-	FOREIGN KEY(category_id) REFERENCES categories (category_id) ON DELETE RESTRICT
+	FOREIGN KEY(category_id) REFERENCES categories (category_id)
 );
 
 CREATE TABLE cashflow_payments (

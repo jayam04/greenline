@@ -133,7 +133,7 @@ jobs:
 
       - name: Start Backend Server
         env:
-          DATABASE_URL: sqlite+aiosqlite:///./data/investments.db
+          DATABASE_URL: oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1
         run: |
           mkdir -p data
           PYTHONPATH=backend python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &

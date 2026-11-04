@@ -2,7 +2,6 @@ import os
 import re
 import json
 import shutil
-import sqlite3
 import datetime
 import asyncio
 import base64
@@ -21,23 +20,8 @@ from app.db import models as _all_models  # noqa: F401 - register all mapped tab
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import recalculate_past_snapshots
 
-FILENAME_REGEX = re.compile(r"^[a-zA-Z0-9_\-\.]+\.(db|json)$")
+FILENAME_REGEX = re.compile(r"^[a-zA-Z0-9_\-\.]+\.json$")
 _backup_lock = asyncio.Lock()
-
-def get_active_db_path() -> str:
-    """Returns the absolute filesystem path to the active SQLite database file."""
-    db_url = getattr(settings, "DATABASE_URL", "")
-    if db_url and "sqlite" in db_url:
-        match = re.search(r"^sqlite(?:\+[a-zA-Z0-9_]+)?:///(.+)$", db_url)
-        if match:
-            raw_path = match.group(1)
-            if raw_path != ":memory:":
-                return os.path.abspath(raw_path)
-    if db_url.startswith("oracle+"):
-        return ""
-    data_dir = getattr(settings, "DATA_DIR", "./data")
-    db_file = getattr(settings, "DATABASE_FILE", "investments.db")
-    return os.path.abspath(os.path.join(data_dir, db_file))
 
 def ensure_backup_dir() -> str:
     """Ensures the backup directory exists and returns its absolute path."""
@@ -171,11 +155,10 @@ async def get_autobackup_config(db: AsyncSession) -> Dict[str, Any]:
     else:
         is_overdue = True
 
-    is_oracle = str(getattr(settings, "DATABASE_URL", "")).startswith("oracle+")
     return {
-        "database_file": "Oracle Autonomous Database" if is_oracle else getattr(settings, "DATABASE_FILE", "investments.db"),
+        "database_file": "Oracle Autonomous Database",
         "data_dir": getattr(settings, "DATA_DIR", "./data"),
-        "active_db_path": "Oracle Autonomous Database" if is_oracle else get_active_db_path(),
+        "active_db_path": "Oracle Autonomous Database",
         "autobackup_enabled": enabled,
         "autobackup_interval_hours": interval_hours,
         "autobackup_max_copies": max_copies,
@@ -243,6 +226,59 @@ def prune_old_backups(max_copies: int = 10, exclude_filename: Optional[str] = No
 
     return removed_count
 
+async def _create_backup_unlocked(
+    db: AsyncSession, 
+    kind: str = "manual", 
+    note: Optional[str] = None, 
+    max_copies: Optional[int] = None
+) -> Dict[str, Any]:
+    backup_dir = ensure_backup_dir()
+    timestamp_str = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
+    backup_filename = f"greenline_backup_{kind}_{timestamp_str}.json"
+    dest_path = os.path.join(backup_dir, backup_filename)
+    temp_dest = os.path.join(backup_dir, f".tmp_{timestamp_str}_{backup_filename}")
+
+    try:
+        payload = await _export_database_rows(db)
+        with open(temp_dest, "w", encoding="utf-8") as f:
+            json.dump(payload, f, default=_json_value, separators=(",", ":"))
+        os.replace(temp_dest, dest_path)
+    finally:
+        if os.path.exists(temp_dest):
+            try:
+                os.remove(temp_dest)
+            except OSError:
+                pass
+
+    stat = os.stat(dest_path)
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    # Update last_backup_timestamp in AppSetting
+    stmt = select(AppSetting).where(AppSetting.key == "last_backup_timestamp")
+    res = await db.execute(stmt)
+    ts_setting = res.scalar_one_or_none()
+    if ts_setting:
+        ts_setting.value = now_iso
+    else:
+        db.add(AppSetting(key="last_backup_timestamp", value=now_iso))
+    await db.commit()
+
+    if max_copies is None:
+        cfg = await get_autobackup_config(db)
+        max_copies = cfg["autobackup_max_copies"]
+
+    prune_old_backups(max_copies=max_copies, exclude_filename=backup_filename)
+
+    return {
+        "filename": backup_filename,
+        "filepath": dest_path,
+        "size_bytes": stat.st_size,
+        "size_formatted": _format_file_size(stat.st_size),
+        "created_at": now_iso,
+        "kind": kind,
+        "note": note
+    }
+
 async def create_backup(
     db: AsyncSession, 
     kind: str = "manual", 
@@ -250,66 +286,10 @@ async def create_backup(
     max_copies: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Creates an SQLite file backup or a portable logical server database backup.
+    Creates a portable logical server database backup in JSON format.
     """
     async with _backup_lock:
-        backup_dir = ensure_backup_dir()
-        db_path = get_active_db_path()
-        timestamp_str = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
-        is_sqlite = "sqlite" in getattr(settings, "DATABASE_URL", "")
-        extension = "db" if is_sqlite else "json"
-        backup_filename = f"greenline_backup_{kind}_{timestamp_str}.{extension}"
-        dest_path = os.path.join(backup_dir, backup_filename)
-        temp_dest = os.path.join(backup_dir, f".tmp_{timestamp_str}_{backup_filename}")
-
-        try:
-            if is_sqlite and os.path.exists(db_path):
-                shutil.copy2(db_path, temp_dest)
-                os.replace(temp_dest, dest_path)
-            elif is_sqlite:
-                with open(temp_dest, "w") as f:
-                    f.write("")
-                os.replace(temp_dest, dest_path)
-            else:
-                payload = await _export_database_rows(db)
-                with open(temp_dest, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, default=_json_value, separators=(",", ":"))
-                os.replace(temp_dest, dest_path)
-        finally:
-            if os.path.exists(temp_dest):
-                try:
-                    os.remove(temp_dest)
-                except OSError:
-                    pass
-
-        stat = os.stat(dest_path)
-        now_iso = datetime.datetime.utcnow().isoformat()
-
-        # Update last_backup_timestamp in AppSetting
-        stmt = select(AppSetting).where(AppSetting.key == "last_backup_timestamp")
-        res = await db.execute(stmt)
-        ts_setting = res.scalar_one_or_none()
-        if ts_setting:
-            ts_setting.value = now_iso
-        else:
-            db.add(AppSetting(key="last_backup_timestamp", value=now_iso))
-        await db.commit()
-
-        if max_copies is None:
-            cfg = await get_autobackup_config(db)
-            max_copies = cfg["autobackup_max_copies"]
-
-        prune_old_backups(max_copies=max_copies, exclude_filename=backup_filename)
-
-        return {
-            "filename": backup_filename,
-            "filepath": dest_path,
-            "size_bytes": stat.st_size,
-            "size_formatted": _format_file_size(stat.st_size),
-            "created_at": now_iso,
-            "kind": kind,
-            "note": note
-        }
+        return await _create_backup_unlocked(db, kind=kind, note=note, max_copies=max_copies)
 
 async def check_and_trigger_autobackup(db: AsyncSession) -> Optional[str]:
     """
@@ -557,21 +537,13 @@ async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]
     validate_backup_payload(data)
 
     async with _backup_lock:
-        db_path = get_active_db_path()
         backup_dir = ensure_backup_dir()
 
-        # Take pre-restore safety backup if active DB file exists on disk
-        safety_filename = None
-        if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-            ts_str = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
-            safety_filename = f"greenline_pre_restore_safety_{ts_str}.db"
-            safety_path = os.path.join(backup_dir, safety_filename)
-            temp_safety = os.path.join(backup_dir, f".tmp_safety_{ts_str}.db")
-            try:
-                shutil.copy2(db_path, temp_safety)
-                os.replace(temp_safety, safety_path)
-            except Exception as e:
-                print(f"[Backup] Warning: Could not create pre-restore safety backup: {e}")
+        # Take pre-restore safety backup in JSON format
+        try:
+            await _create_backup_unlocked(db, kind="safety")
+        except Exception as e:
+            print(f"[Backup] Warning: Could not create pre-restore safety backup: {e}")
 
         account_map: Dict[int, int] = {}
         asset_map: Dict[int, int] = {}
@@ -591,6 +563,11 @@ async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]
                 await db.flush()
             except Exception:
                 pass
+
+            # Break circular and self-referencing foreign keys before deleting
+            await db.execute(update(Transaction).values(expected_dividend_id=None))
+            await db.execute(update(ExpectedDividend).values(matched_transaction_id=None))
+            await db.execute(update(Account).values(default_dividend_account_id=None))
 
             await db.execute(delete(CashflowItem))
             await db.execute(delete(CashflowPayment))
@@ -854,88 +831,9 @@ async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]
             }
         }
 
-async def restore_from_sqlite_file(backup_path: str, filename: str) -> Dict[str, Any]:
-    """
-    Restores the active database file from an existing SQLite backup file.
-    Validates SQLite file integrity, performs pre-restore safety copy,
-    disposes the connection pool, and executes atomic file swap.
-    """
-    async with _backup_lock:
-        db_path = get_active_db_path()
-        backup_dir = ensure_backup_dir()
-
-        # Check SQLite integrity if file is non-empty
-        if not os.path.exists(backup_path) or os.path.getsize(backup_path) == 0:
-            raise ValueError("Backup file is empty or does not exist.")
-
-        with open(backup_path, "rb") as f:
-            header = f.read(16)
-        if not header.startswith(b"SQLite format 3\x00"):
-            raise ValueError("Backup file is not a valid SQLite database.")
-
-        try:
-            conn = sqlite3.connect(backup_path)
-            res = conn.execute("PRAGMA integrity_check;").fetchall()
-            conn.close()
-            if not res or res[0][0].lower() != "ok":
-                raise ValueError("Backup database file failed integrity check.")
-        except sqlite3.DatabaseError:
-            raise ValueError("Backup file is not a valid SQLite database.")
-
-        # Create pre-restore safety snapshot
-        safety_filename = None
-        safety_path = None
-        if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-            ts_str = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
-            safety_filename = f"greenline_pre_restore_safety_{ts_str}.db"
-            safety_path = os.path.join(backup_dir, safety_filename)
-            temp_safety = os.path.join(backup_dir, f".tmp_safety_{ts_str}.db")
-            try:
-                shutil.copy2(db_path, temp_safety)
-                os.replace(temp_safety, safety_path)
-            except Exception as e:
-                print(f"[Backup] Warning: Could not create pre-restore safety backup: {e}")
-            finally:
-                if os.path.exists(temp_safety):
-                    try:
-                        os.remove(temp_safety)
-                    except OSError:
-                        pass
-
-        # Invalidate SQLAlchemy connection pool before replacing database file
-        from app.db.database import engine
-        if engine is not None:
-            await engine.dispose()
-
-        # Atomic replacement via temporary file swap
-        ts_swap = datetime.datetime.utcnow().strftime("%Y-%m-%d_%H%M%S_%f")
-        temp_active = f"{db_path}.tmp_restore_{ts_swap}"
-        try:
-            shutil.copy2(backup_path, temp_active)
-            os.replace(temp_active, db_path)
-        except Exception:
-            # Rollback to safety copy if available
-            if safety_path and os.path.exists(safety_path):
-                shutil.copy2(safety_path, db_path)
-            raise ValueError("Failed to replace active database file.")
-        finally:
-            if os.path.exists(temp_active):
-                try:
-                    os.remove(temp_active)
-                except OSError:
-                    pass
-
-        return {
-            "status": "success",
-            "restored_from": filename,
-            "safety_backup": safety_filename,
-            "restored_at": datetime.datetime.utcnow().isoformat()
-        }
-
 async def restore_from_backup(filename: str, db: AsyncSession) -> Dict[str, Any]:
     """
-    Restores active database from a specified backup file (.db or .json).
-    Routes to appropriate restore handler.
+    Restores active database from a specified JSON backup file.
     """
     validated_path = validate_and_resolve_backup_path(filename, must_exist=True)
 
@@ -957,12 +855,8 @@ async def restore_from_backup(filename: str, db: AsyncSession) -> Dict[str, Any]
             "restored_at": datetime.datetime.utcnow().isoformat(),
             "details": import_res
         }
-    elif filename.endswith(".db"):
-        if "sqlite" not in getattr(settings, "DATABASE_URL", ""):
-            raise ValueError("SQLite database files cannot be restored while Oracle is active.")
-        return await restore_from_sqlite_file(validated_path, filename)
     else:
-        raise ValueError("Unsupported backup format. Only .db and .json files are supported.")
+        raise ValueError("Unsupported backup format. Only .json backup files are supported.")
 
 
 def _json_value(value):
@@ -1008,6 +902,11 @@ async def _restore_database_rows(data: Dict[str, Any], db: AsyncSession) -> None
         raise ValueError("Invalid logical database backup format.")
 
     try:
+        # Break circular and self-referencing foreign keys before deleting
+        await db.execute(update(Transaction).values(expected_dividend_id=None))
+        await db.execute(update(ExpectedDividend).values(matched_transaction_id=None))
+        await db.execute(update(Account).values(default_dividend_account_id=None))
+
         for table in reversed(tables):
             await db.execute(table.delete())
 

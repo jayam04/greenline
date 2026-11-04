@@ -697,7 +697,7 @@ export default function SettingsPage() {
                       </span>
                     </div>
                     <p className="text-[11px] font-medium text-slate-400">
-                      Creates timestamped SQLite snapshots and purges old files automatically
+                      Creates timestamped database backups and purges old files automatically
                     </p>
                   </div>
 

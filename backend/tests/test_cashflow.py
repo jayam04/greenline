@@ -8,7 +8,7 @@ from app.services.cashflow_engine import seed_default_categories, build_category
 
 @pytest.mark.anyio
 async def test_category_seeding_and_lineage():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:
@@ -31,7 +31,7 @@ async def test_category_seeding_and_lineage():
 
 @pytest.mark.anyio
 async def test_cashflow_splits_and_sankey():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:

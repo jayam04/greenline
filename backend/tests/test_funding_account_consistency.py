@@ -9,7 +9,7 @@ from app.services.fifo_engine import process_transaction_event
 
 @pytest.mark.anyio
 async def test_funding_account_consistency_between_accounts_and_portfolio_summary():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         

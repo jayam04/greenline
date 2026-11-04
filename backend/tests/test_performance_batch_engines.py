@@ -11,7 +11,7 @@ from app.api.routers.accounts import calculate_all_account_details
 
 @pytest.mark.anyio
 async def test_recalculate_all_lots_batch_preserves_fifo():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -72,7 +72,7 @@ async def test_recalculate_all_lots_batch_preserves_fifo():
 
 @pytest.mark.anyio
 async def test_recalculate_past_snapshots_batch():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -119,7 +119,7 @@ async def test_recalculate_past_snapshots_batch():
 
 @pytest.mark.anyio
 async def test_calculate_all_account_details_fast_grouping():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -157,7 +157,7 @@ async def test_portfolio_summary_batching():
     from app.api.routers.portfolio import get_portfolio_summary
     from app.db.models import User
 
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -11,9 +11,11 @@ services:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
     environment:
-      - DATABASE_FILE=investments.demo_site.db
-      - DATABASE_URL=sqlite+aiosqlite:////data/investments.demo_site.db
-      - SECRET_KEY=demo-secret-investment-tracker-key-2026
+      - DATABASE_URL=${DATABASE_URL:-oracle+oracledb://@}
+      - ORACLE_USER=${ORACLE_USER:-}
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD:-}
+      - ORACLE_DSN=${ORACLE_DSN:-}
+      - SECRET_KEY=${SECRET_KEY:-demo-secret-investment-tracker-key-2026}
       - DEFAULT_ADMIN_USER=admin
       - DEFAULT_ADMIN_PASSWORD=admin123
       - PYTHONPATH=/app

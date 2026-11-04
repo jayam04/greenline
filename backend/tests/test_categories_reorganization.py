@@ -11,7 +11,7 @@ from app.api.routers.accounts import calculate_all_account_balances
 
 @pytest.mark.anyio
 async def test_3_root_categories_structure():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:
@@ -51,7 +51,7 @@ async def test_existing_category_hierarchy_migration():
     Test that an existing database with 'Investments & Passive' under 'Income'
     and 'Expenses' gets automatically migrated into the 3 decoupled root categories.
     """
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:
@@ -96,7 +96,7 @@ async def test_investments_used_in_both_income_and_spends():
     2. An EXPENSE transaction using category 'Stock & ETF Purchases' (INVESTMENT type) decreases
        bank balance and is counted as invested capital.
     """
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:

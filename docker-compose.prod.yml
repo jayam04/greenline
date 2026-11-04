@@ -8,8 +8,11 @@ services:
     volumes:
       - ./data:/data
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:////data/investments.db
-      - SECRET_KEY=super-secret-investment-tracker-key-change-in-prod-2026
+      - DATABASE_URL=${DATABASE_URL:-oracle+oracledb://@}
+      - ORACLE_USER=${ORACLE_USER:-}
+      - ORACLE_PASSWORD=${ORACLE_PASSWORD:-}
+      - ORACLE_DSN=${ORACLE_DSN:-}
+      - SECRET_KEY=${SECRET_KEY:-super-secret-investment-tracker-key-change-in-prod-2026}
       - DEFAULT_ADMIN_USER=admin
       - DEFAULT_ADMIN_PASSWORD=admin123
       - PYTHONPATH=/app

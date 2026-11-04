@@ -13,7 +13,7 @@ from app.services.snapshot_engine import generate_daily_snapshot
 @pytest.mark.anyio
 @patch("app.api.routers.transactions.sync_dividends_for_asset", new_callable=AsyncMock)
 async def test_price_history_cleanup_on_transaction_deletion(mock_sync_div):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

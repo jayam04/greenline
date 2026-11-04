@@ -9,7 +9,7 @@ from app.services.snapshot_engine import generate_daily_snapshot, recalculate_pa
 
 @pytest.mark.anyio
 async def test_date_specific_snapshot_calculation():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
@@ -79,7 +79,7 @@ async def test_date_specific_snapshot_calculation():
 
 @pytest.mark.anyio
 async def test_recalculate_past_snapshots_range():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
@@ -117,7 +117,7 @@ async def test_recalculate_past_snapshots_range():
 
 @pytest.mark.anyio
 async def test_historical_asset_backfill_from_past_date():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
@@ -162,7 +162,7 @@ async def test_historical_asset_backfill_from_past_date():
 
 @pytest.mark.anyio
 async def test_funding_account_timeline_start_date():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         

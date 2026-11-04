@@ -35,7 +35,7 @@ For complete fixtures, scaffolding patterns, and runbooks, refer to [`.agents/sk
 
 - **Backend**:
   - Test runner: `pytest` with `@pytest.mark.anyio`
-  - In-memory database fixture: `sqlite+aiosqlite:///:memory:`
+  - Database fixture: Local Oracle Free 23ai (`FREEPDB1`, `docker-compose.test.yml`) via `conftest.py`
   - Run command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
 - **Frontend**:
   - Type checking: `npx tsc --noEmit`

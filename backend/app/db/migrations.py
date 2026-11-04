@@ -55,7 +55,7 @@ async def _ensure_latest_schema(session: AsyncSession) -> None:
                             ddl += f" CONSTRAINT {constraint.name}"
                         ddl += f" REFERENCES {foreign_key.column.table.name} ({foreign_key.column.name})"
                         ondelete = constraint.ondelete
-                        if ondelete:
+                        if ondelete and ondelete.upper() != "RESTRICT":
                             ddl += f" ON DELETE {ondelete}"
                     sync_connection.exec_driver_sql(f"ALTER TABLE {table.name} ADD {ddl}")
                     existing_columns.add(column.name)

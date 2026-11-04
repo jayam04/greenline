@@ -12,7 +12,7 @@ from app.services.dividend_engine import (
 
 @pytest.mark.anyio
 async def test_calculate_shares_on_date_with_splits_and_sells():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -83,7 +83,7 @@ async def test_calculate_shares_on_date_with_splits_and_sells():
 
 @pytest.mark.anyio
 async def test_sync_dividends_for_asset_auto_creation_and_orphan_cleanup():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -194,7 +194,7 @@ async def test_sync_dividends_for_asset_auto_creation_and_orphan_cleanup():
 
 @pytest.mark.anyio
 async def test_calculate_shares_on_ex_date_boundary_and_deterministic_matching():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -321,7 +321,7 @@ async def test_dividend_processing_and_resolution_idempotency():
     from app.api.deps import get_current_user
     from app.db.models import ExpectedDividend
 
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

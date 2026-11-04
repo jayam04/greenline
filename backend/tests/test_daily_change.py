@@ -10,7 +10,7 @@ from app.services.fifo_engine import process_transaction_event
 
 @pytest.mark.anyio
 async def test_portfolio_summary_1day_price_change():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -86,7 +86,7 @@ async def test_portfolio_summary_1day_price_change():
 
 @pytest.mark.anyio
 async def test_portfolio_summary_one_price_record():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -161,7 +161,7 @@ async def test_portfolio_summary_one_price_record():
 
 @pytest.mark.anyio
 async def test_portfolio_summary_no_price_records():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -230,7 +230,7 @@ async def test_portfolio_summary_no_price_records():
 
 @pytest.mark.anyio
 async def test_portfolio_summary_zero_previous_price():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -304,7 +304,7 @@ async def test_portfolio_summary_zero_previous_price():
 
 @pytest.mark.anyio
 async def test_portfolio_summary_multiple_assets_and_non_consecutive_dates():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -411,7 +411,7 @@ async def test_portfolio_summary_multiple_assets_and_non_consecutive_dates():
 
 @pytest.mark.anyio
 async def test_price_history_rejects_duplicate_dates_per_schema():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -428,11 +428,11 @@ async def test_price_history_rejects_duplicate_dates_per_schema():
         session.add_all([ph1, ph2])
         with pytest.raises(Exception) as exc_info:
             await session.commit()
-        assert "UNIQUE constraint failed" in str(exc_info.value)
+        assert "unique constraint" in str(exc_info.value).lower() or "unique constraint failed" in str(exc_info.value).lower()
 
 @pytest.mark.anyio
 async def test_portfolio_summary_three_or_more_price_records():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -510,7 +510,7 @@ async def test_portfolio_summary_three_or_more_price_records():
 
 @pytest.mark.anyio
 async def test_portfolio_summary_multiple_holdings_and_varied_quantities():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

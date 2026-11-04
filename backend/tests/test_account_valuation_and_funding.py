@@ -11,15 +11,17 @@ from app.api.routers.accounts import calculate_all_account_balances, calculate_a
 
 @pytest.mark.anyio
 async def test_precize_wallet_zero_and_demat_valuation():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     async with async_session() as session:
-        user = User(username="admin", password_hash="hash")
-        session.add(user)
+        user = await session.get(User, 0)
+        if not user:
+            user = User(user_id=0, username="admin", password_hash="hash")
+            session.add(user)
 
         # 1. Accounts: Bank of India (5), Precize Wallet (3), Jhaveri Securities (4)
         boi = Account(account_id=5, account_name="Bank of India", account_type="bank", currency="INR", created_at=datetime.date(2025, 9, 1))

@@ -18,7 +18,7 @@ from app.mcp.server import (
 
 @pytest.fixture
 async def app_client():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -28,15 +28,17 @@ async def app_client():
         async with TestSession() as session:
             yield session
 
-    test_user = User(user_id=0, username="testadmin", password_hash="hash")
-    async def override_get_current_user():
-        return test_user
-
     # Seed initial account and test user
     async with TestSession() as session:
-        session.add(test_user)
+        test_user = await session.get(User, 0)
+        if not test_user:
+            test_user = User(user_id=0, username="testadmin", password_hash="hash")
+            session.add(test_user)
         session.add(Account(account_id=1, account_name="Interactive Brokers", account_type="demat", currency="USD"))
         await session.commit()
+
+    async def override_get_current_user():
+        return test_user
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
@@ -117,21 +119,9 @@ async def test_import_upload_and_review_workflow(app_client: AsyncClient):
 
 @pytest.mark.anyio
 async def test_mcp_server_tools_direct(app_client: AsyncClient, monkeypatch):
-    # Test mcp tool functions using in-memory session override
-    from app.db.database import get_db
-    override_gen = app.dependency_overrides[get_db]
-    async def get_test_session():
-        async for s in override_gen():
-            return s
-    
-    class TestSessionContext:
-        async def __aenter__(self):
-            self.s = await get_test_session()
-            return self.s
-        async def __aexit__(self, *args):
-            pass
-
-    monkeypatch.setattr("app.mcp.server.AsyncSessionLocal", lambda: TestSessionContext())
+    from conftest import get_test_sessionmaker
+    TestSession = get_test_sessionmaker()
+    monkeypatch.setattr("app.mcp.server.AsyncSessionLocal", TestSession)
 
     context = await get_ledger_context()
     assert "accounts" in context

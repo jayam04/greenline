@@ -5,7 +5,7 @@ from app.db.migrations import run_db_migrations, get_applied_migrations
 
 @pytest.mark.anyio
 async def test_db_migrations_idempotency():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
     
     async with TestSession() as session:
@@ -26,7 +26,7 @@ async def test_db_migrations_idempotency():
 
 @pytest.mark.anyio
 async def test_schema_migrations_table_exists():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
     
     async with TestSession() as session:

@@ -13,8 +13,8 @@ You are an expert Principal QA and Full-Stack Test Automation Engineer. Your obj
 
 ## 1. System Context & Architecture Overview
 
-- **Backend**: FastAPI, Python 3.10+, SQLAlchemy 2.0 (asyncio with `aiosqlite`), Pydantic v2, `pyxirr`, `yfinance`.
-  - Database: SQLite with WAL mode.
+- **Backend**: FastAPI, Python 3.10+, SQLAlchemy 2.0 (asyncio with `oracledb`), Pydantic v2, `pyxirr`, `yfinance`.
+  - Database: Oracle Autonomous Database & Oracle 23ai Free.
   - Core Business Engines:
     1. `fifo_engine.py`: First-In, First-Out lot allocation, lot depletion on sales, cost-basis tracking, realized P&L.
     2. `xirr_engine.py`: Cashflow IRR calculations per holding, account, and aggregated portfolio.
@@ -112,6 +112,6 @@ Configure a GitHub Actions workflow with the following jobs:
 
 1. Write clean, self-contained test files with clear assertions and descriptive docstrings.
 2. Do not use hardcoded sleep intervals; use async waits and deterministic polling.
-3. Ensure all tests run with in-memory or ephemeral databases (`sqlite+aiosqlite:///:memory:`) so production database files are untouched.
+3. Ensure all tests run with isolated Oracle Free test database (`docker-compose.test.yml`) so production database files are untouched.
 4. Verify all tests pass locally before completing the task.
 ```

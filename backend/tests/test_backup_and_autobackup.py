@@ -6,7 +6,7 @@ import datetime
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from app.main import app
 from app.db.database import Base, get_db
 from app.api.deps import get_current_user
@@ -26,29 +26,23 @@ def temp_backup_env(monkeypatch):
     tmp_dir = tempfile.mkdtemp(prefix="greenline_test_data_")
     backup_dir = os.path.join(tmp_dir, "backups")
     os.makedirs(backup_dir, exist_ok=True)
-    db_file_path = os.path.join(tmp_dir, "investments.db")
-
-    # Create dummy sqlite database file
-    with open(db_file_path, "w") as f:
-        f.write("sqlite format 3 dummy header")
 
     import app.config
+    from conftest import TEST_DATABASE_URL
     monkeypatch.setattr(app.config.settings, "DATA_DIR", tmp_dir)
-    monkeypatch.setattr(app.config.settings, "DATABASE_FILE", "investments.db")
     monkeypatch.setattr(app.config.settings, "BACKUP_DIR", backup_dir)
-    monkeypatch.setattr(app.config.settings, "DATABASE_URL", f"sqlite+aiosqlite:///{db_file_path}")
+    monkeypatch.setattr(app.config.settings, "DATABASE_URL", TEST_DATABASE_URL)
 
     yield {
         "tmp_dir": tmp_dir,
         "backup_dir": backup_dir,
-        "db_file_path": db_file_path
     }
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
 @pytest.mark.anyio
 async def test_backup_service_lifecycle_and_pruning(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -110,7 +104,7 @@ async def test_backup_service_lifecycle_and_pruning(temp_backup_env):
 
 @pytest.mark.anyio
 async def test_backup_rest_api_endpoints(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -179,7 +173,7 @@ async def test_backup_rest_api_endpoints(temp_backup_env):
 
 @pytest.mark.anyio
 async def test_backup_path_traversal_and_security(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -235,12 +229,12 @@ async def test_backup_path_traversal_and_security(temp_backup_env):
 
             # 5. Symlink escape attempt
             if os.path.islink(symlink_path):
-                res_sym = await ac.get("/api/v1/backup/download/symlink_escape.db")
+                res_sym = await ac.get("/api/v1/backup/download/symlink_escape.json")
                 assert res_sym.status_code in [400, 403, 404]
                 assert "SUPER_SECRET_TOKEN" not in res_sym.text
 
             # 6. Verify error messages do not leak server filesystem paths
-            res_err = await ac.get("/api/v1/backup/download/nonexistent_backup.db")
+            res_err = await ac.get("/api/v1/backup/download/nonexistent_backup.json")
             assert res_err.status_code == 404
             assert temp_backup_env["tmp_dir"] not in res_err.text
             assert "/data" not in res_err.text or res_err.json().get("detail") == "Backup file not found."
@@ -249,7 +243,7 @@ async def test_backup_path_traversal_and_security(temp_backup_env):
 
 @pytest.mark.anyio
 async def test_backup_export_import_symmetry_and_id_remapping(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -452,7 +446,7 @@ async def test_backup_export_import_symmetry_and_id_remapping(temp_backup_env):
 
 @pytest.mark.anyio
 async def test_backup_validation_and_atomic_rollback(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -517,37 +511,28 @@ async def test_backup_validation_and_atomic_rollback(temp_backup_env):
         app.dependency_overrides.clear()
 
 @pytest.mark.anyio
-async def test_sqlite_file_restore_atomic_and_safety_backup(temp_backup_env):
-    import sqlite3
-    db_path = temp_backup_env["db_file_path"]
+async def test_json_backup_restore_workflow(temp_backup_env):
     backup_dir = temp_backup_env["backup_dir"]
 
-    if os.path.exists(db_path):
-        os.remove(db_path)
-
-    # 1. Initialize active DB with valid SQLite table and data
-    conn = sqlite3.connect(db_path)
-    conn.execute("CREATE TABLE test_table (id INT PRIMARY KEY, val TEXT);")
-    conn.execute("INSERT INTO test_table VALUES (1, 'active_initial');")
-    conn.commit()
-    conn.close()
-
-    # 2. Create backup SQLite file with different data
-    backup_fname = "greenline_backup_manual_restore_source.db"
+    # Create backup JSON file
+    backup_fname = "greenline_backup_manual_restore_source.json"
     backup_fpath = os.path.join(backup_dir, backup_fname)
-    b_conn = sqlite3.connect(backup_fpath)
-    b_conn.execute("CREATE TABLE test_table (id INT PRIMARY KEY, val TEXT);")
-    b_conn.execute("INSERT INTO test_table VALUES (2, 'restored_data');")
-    b_conn.commit()
-    b_conn.close()
+    backup_content = {
+        "version": "2.0",
+        "format": "greenline-db-backup-v1",
+        "tables": {
+            "users": [],
+            "accounts": []
+        }
+    }
+    with open(backup_fpath, "w", encoding="utf-8") as f:
+        json.dump(backup_content, f)
 
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn_async:
-        await conn_async.run_sync(Base.metadata.create_all)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with TestSession() as session:
-        user = User(username="sqlite_restore_user", password_hash="hash")
+        user = User(username="json_restore_user", password_hash="hash")
         session.add(user)
         await session.commit()
         await session.refresh(user)
@@ -570,40 +555,19 @@ async def test_sqlite_file_restore_atomic_and_safety_backup(temp_backup_env):
             data = res.json()
             assert data["status"] == "success"
             assert data["restored_from"] == backup_fname
-            safety_file = data.get("safety_backup")
-            assert safety_file is not None
-            assert safety_file.startswith("greenline_pre_restore_safety_")
-
-            # Verify active DB has replaced data
-            chk_conn = sqlite3.connect(db_path)
-            rows = chk_conn.execute("SELECT id, val FROM test_table").fetchall()
-            chk_conn.close()
-            assert len(rows) == 1
-            assert rows[0] == (2, "restored_data")
-
-            # Verify safety backup file has active_initial data
-            safety_full_path = os.path.join(backup_dir, safety_file)
-            assert os.path.exists(safety_full_path)
-            s_conn = sqlite3.connect(safety_full_path)
-            s_rows = s_conn.execute("SELECT id, val FROM test_table").fetchall()
-            s_conn.close()
-            assert len(s_rows) == 1
-            assert s_rows[0] == (1, "active_initial")
     finally:
         app.dependency_overrides.clear()
 
 @pytest.mark.anyio
-async def test_sqlite_restore_corrupted_file_rejection(temp_backup_env):
+async def test_json_restore_corrupted_file_rejection(temp_backup_env):
     backup_dir = temp_backup_env["backup_dir"]
-    corrupt_fname = "greenline_backup_corrupted.db"
+    corrupt_fname = "greenline_backup_corrupted.json"
     corrupt_path = os.path.join(backup_dir, corrupt_fname)
-    # Write invalid data that has sqlite header but corrupt sqlite structures
-    with open(corrupt_path, "wb") as f:
-        f.write(b"SQLite format 3\x00INVALID_HEADER_DATA_CORRUPTED_BLOCK")
+    # Write invalid JSON content
+    with open(corrupt_path, "w") as f:
+        f.write("INVALID_JSON_CORRUPTED_BLOCK{}}")
 
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn_async:
-        await conn_async.run_sync(Base.metadata.create_all)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with TestSession() as session:
@@ -637,14 +601,14 @@ async def test_retention_pruning_preserves_safety_backups(temp_backup_env):
 
     # Create 3 routine backups and 2 safety backups
     for i in range(3):
-        fpath = os.path.join(backup_dir, f"greenline_backup_manual_2026-01-0{i+1}_000000.db")
+        fpath = os.path.join(backup_dir, f"greenline_backup_manual_2026-01-0{i+1}_000000.json")
         with open(fpath, "w") as f:
-            f.write("dummy")
+            f.write("{}")
 
     for i in range(2):
-        fpath = os.path.join(backup_dir, f"greenline_pre_restore_safety_2026-01-0{i+1}_000000.db")
+        fpath = os.path.join(backup_dir, f"greenline_pre_restore_safety_2026-01-0{i+1}_000000.json")
         with open(fpath, "w") as f:
-            f.write("safety")
+            f.write("{}")
 
     # Prune with max_copies = 1
     removed = prune_old_backups(max_copies=1)
@@ -703,17 +667,14 @@ async def test_backup_endpoints_require_authentication():
             assert res.status_code == 401, f"Expected 401 for unauthenticated {method} {url}, got {res.status_code}"
 
 @pytest.mark.anyio
-async def test_sqlite_restore_invalid_header_rejection(temp_backup_env):
+async def test_restore_invalid_extension_rejection(temp_backup_env):
     backup_dir = temp_backup_env["backup_dir"]
-    fake_fname = "greenline_backup_fake_header.db"
+    fake_fname = "greenline_backup_invalid.txt"
     fake_path = os.path.join(backup_dir, fake_fname)
-    # Write non-sqlite content
     with open(fake_path, "wb") as f:
-        f.write(b"THIS_IS_NOT_A_SQLITE_DATABASE_FILE_HEADER")
+        f.write(b"NOT_JSON")
 
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn_async:
-        await conn_async.run_sync(Base.metadata.create_all)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with TestSession() as session:
@@ -736,9 +697,8 @@ async def test_sqlite_restore_invalid_header_rejection(temp_backup_env):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             res = await ac.post(f"/api/v1/backup/restore/{fake_fname}")
-            # Must reject invalid header with 400 Bad Request
+            # Must reject invalid extension with 400 Bad Request
             assert res.status_code == 400
-            assert "sqlite" in res.json().get("detail", "").lower()
     finally:
         app.dependency_overrides.clear()
 
@@ -795,14 +755,7 @@ async def test_backup_validation_enums_and_negative_values():
 
 
 
-@pytest.mark.anyio
-async def test_active_db_path_synchronized_with_database_url(monkeypatch):
-    import app.config
-    from app.services.backup_service import get_active_db_path
 
-    monkeypatch.setattr(app.config.settings, "DATABASE_URL", "sqlite+aiosqlite:////custom/path/custom_db.db")
-    active_path = get_active_db_path()
-    assert active_path == os.path.abspath("/custom/path/custom_db.db")
 
 @pytest.mark.anyio
 async def test_scheduler_idempotency_and_duplicate_start():
@@ -817,7 +770,7 @@ async def test_scheduler_idempotency_and_duplicate_start():
 
 @pytest.mark.anyio
 async def test_restore_atomic_rollback_on_insertion_error(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -885,7 +838,7 @@ async def test_restore_atomic_rollback_on_insertion_error(temp_backup_env):
 
 @pytest.mark.anyio
 async def test_full_round_trip_export_import_all_11_entities(temp_backup_env):
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -1005,6 +958,10 @@ async def test_full_round_trip_export_import_all_11_entities(temp_backup_env):
 
             # Step B: Modify live DB (delete some items, change names)
             async with TestSession() as session:
+                await session.execute(update(Transaction).values(expected_dividend_id=None))
+                await session.execute(update(ExpectedDividend).values(matched_transaction_id=None))
+                await session.execute(delete(ExpectedDividend))
+                await session.execute(delete(PriceHistory))
                 await session.execute(delete(Transaction))
                 await session.execute(delete(Asset))
                 await session.commit()

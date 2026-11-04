@@ -13,7 +13,7 @@ from app.db.models import User, Account, Asset, Transaction, Category, CashflowT
 @pytest.mark.anyio
 async def test_row_level_security_isolation():
     """Verify that User A and User B cannot view or edit each other's records."""
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -139,7 +139,7 @@ async def test_row_level_security_isolation():
 @pytest.mark.anyio
 async def test_legacy_data_user_id_zero_default():
     """Verify that rows without an explicit user_id default to user_id = 0."""
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -156,7 +156,7 @@ async def test_legacy_data_user_id_zero_default():
 @pytest.mark.anyio
 async def test_cashflow_and_category_rls_isolation():
     """Verify that Cashflow transactions, custom categories, and settings are isolated per user, while system categories remain visible."""
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

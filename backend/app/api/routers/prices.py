@@ -70,8 +70,7 @@ async def add_manual_price(
     # Upsert manual price
     stmt = select(PriceHistory).where(
         PriceHistory.asset_id == price_in.asset_id,
-        PriceHistory.price_date == price_in.price_date,
-        PriceHistory.user_id == u_id
+        PriceHistory.price_date == price_in.price_date
     )
     res = await db.execute(stmt)
     ph = res.scalar_one_or_none()

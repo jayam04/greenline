@@ -17,7 +17,7 @@ When responding to ANY coding task, bug report, or feature implementation:
 1. **Requirement / Specification**:
    - Break down user requirements into explicit test cases, contract expectations, and mathematical assertions.
 2. **Write Failing Test (Red Phase)**:
-   - For backend changes: Write or update test functions in `backend/tests/` using `@pytest.mark.anyio` and in-memory SQLite fixtures. Run the test to confirm it fails.
+   - For backend changes: Write or update test functions in `backend/tests/` using `@pytest.mark.anyio` and Oracle test fixtures (`FREEPDB1`). Run the test to confirm it fails.
    - For frontend changes: Write or update component tests (`vitest`) or E2E tests (`playwright`).
 3. **Implement (Green Phase)**:
    - Modify only the necessary application files to pass the tests cleanly.

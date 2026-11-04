@@ -13,7 +13,7 @@ from app.services.cashflow_engine import (
 
 @pytest.mark.anyio
 async def test_sankey_multi_layer_and_investment_accounting():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with engine.begin() as conn:

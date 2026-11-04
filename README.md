@@ -104,7 +104,7 @@ graph TD
     end
 
     subgraph Database["Storage Layer"]
-        SQLite[("Async SQLite (aiosqlite + SQLAlchemy 2.0)")]
+        Oracle[("Oracle Autonomous Database & Oracle 23ai Free (python-oracledb)")]
     end
 
     subgraph External["External Services"]
@@ -115,8 +115,8 @@ graph TD
     ClientAPI -->|JWT + REST API| Router
     Router --> FIFO
     Router --> SnapshotEngine
-    FIFO --> SQLite
-    SnapshotEngine --> SQLite
+    FIFO --> Oracle
+    SnapshotEngine --> Oracle
     Scheduler --> SnapshotEngine
     Scheduler --> Yahoo
 ```
@@ -125,7 +125,7 @@ graph TD
 | :--- | :--- |
 | **Frontend** | [Next.js 16](https://nextjs.org/) (App Router, Turbopack), [React 19](https://react.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [Lucide Icons](https://lucide.dev/), [Recharts](https://recharts.org/) |
 | **Backend** | [FastAPI](https://fastapi.tiangolo.com/), [SQLAlchemy 2.0](https://www.sqlalchemy.org/) (Async), [Pydantic v2](https://docs.pydantic.dev/), [APScheduler](https://apscheduler.readthedocs.io/) |
-| **Database** | SQLite ([aiosqlite](https://github.com/omnilib/aiosqlite), default) or Oracle Autonomous Database ([python-oracledb](https://python-oracledb.readthedocs.io/)) |
+| **Database** | Oracle Autonomous Database & Oracle 23ai Free ([python-oracledb](https://python-oracledb.readthedocs.io/)) |
 | **Market Data** | Yahoo Finance ([yfinance](https://github.com/ranaroussi/yfinance)) |
 | **Testing** | [Pytest](https://docs.pytest.org/), [Vitest](https://vitest.dev/), [Playwright](https://playwright.dev/) |
 | **Containers** | Docker & Docker Compose (Multi-stage development & production builds) |
@@ -197,7 +197,7 @@ npm run dev
 
 ### Oracle Autonomous Database
 
-The backend uses the same async SQLAlchemy models with either SQLite or Oracle. SQLite remains the default. For walletless TLS, enable TLS authentication for the Autonomous Database instance, then provide its TLS connect descriptor and application credentials through environment variables:
+Greenline operates exclusively on **Oracle Database**. In cloud production, it connects to Oracle Autonomous Database (ATP) using walletless one-way TLS authentication. In local testing and development, it uses an Oracle Free 23ai container (`gvenzl/oracle-free:slim-faststart`).
 
 ```bash
 export DATABASE_URL='oracle+oracledb://@'
@@ -208,17 +208,7 @@ export ORACLE_DSN='(description=(address=(protocol=tcps)(host=...)(port=1521))(c
 
 `ORACLE_DSN` should be the TLS connect descriptor supplied by OCI. Keep credentials in a secret manager or environment, and URL encode special characters if credentials are embedded directly in `DATABASE_URL`. The driver uses Thin mode and does not require Oracle Client libraries.
 
-To initialize a new Oracle schema, run [`backend/app/db/schemas/seed.sql`](backend/app/db/schemas/seed.sql) once using SQLcl or SQL*Plus. The application’s startup migrations then maintain the schema.
-
-To copy an existing SQLite database, initialize the target schema first, then run the one-time migration from the backend directory. The target Oracle tables must be empty:
-
-```bash
-export SQLITE_SOURCE_URL='sqlite+aiosqlite:////path/to/investments.db'
-export ORACLE_DATABASE_URL='oracle+oracledb://@'
-PYTHONPATH=. python -m app.db.migrate_sqlite_to_oracle
-```
-
-The copy preserves primary keys and relationships, checks that the target is empty, and verifies row counts. Oracle manual and automatic backups use portable JSON logical snapshots; restoring one replaces the mapped application tables. SQLite continues to use database-file backups.
+To initialize a new Oracle schema, run [`backend/app/db/schemas/seed.sql`](backend/app/db/schemas/seed.sql) once using SQLcl or SQL*Plus. The application’s startup migrations then maintain the schema automatically.
 
 ---
 
@@ -226,9 +216,13 @@ The copy preserves primary keys and relationships, checks that the target is emp
 
 Greenline adheres to a strict Test-Driven Development (TDD) protocol across all layers:
 
-### Backend Tests (Pytest)
-Runs the test suite covering FIFO lot accounting, funding accounts, snapshot engines, and multi-currency valuations:
+### Backend Tests (Pytest with Local Oracle Free Container)
+Backend automated tests run against a local Oracle Free (`FREEPDB1`) container:
 ```bash
+# Start local Oracle Free test container
+docker compose -f docker-compose.test.yml up -d
+
+# Execute backend test suite
 PYTHONPATH=backend pytest backend/tests
 ```
 
@@ -291,7 +285,7 @@ greenline/
 │   ├── playwright.config.ts
 │   └── vitest.config.mts
 ├── scripts/                  # Automated maintenance & screenshot capture utilities
-├── data/                     # Persistent SQLite databases and JSON backups
+├── data/                     # Persistent file storage and JSON backups
 ├── docker-compose.yml        # Development Docker Compose (npm run dev + hot-reload)
 ├── docker-compose.prod.yml   # Production Docker Compose (npm start + optimized build)
 ├── docker-compose.demo.yml   # Isolated Demo Stack for showcase captures

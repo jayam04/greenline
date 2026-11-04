@@ -9,7 +9,7 @@ from app.api.routers.cashflow import create_cashflow_transaction
 
 @pytest.mark.anyio
 async def test_server_validation_rejects_unbalanced_cashflow():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         
@@ -42,7 +42,7 @@ async def test_server_validation_rejects_unbalanced_cashflow():
 
 @pytest.mark.anyio
 async def test_multicurrency_transfer_validation():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         

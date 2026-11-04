@@ -9,7 +9,7 @@ from app.db.models import Account, Asset, Transaction, User
 
 @pytest.mark.anyio
 async def test_discrepancies_endpoints():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -149,7 +149,7 @@ async def test_discrepancies_endpoints():
 
 @pytest.mark.anyio
 async def test_discrepancy_resolution_validation_and_invalid_state_transitions():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -288,7 +288,7 @@ async def test_discrepancy_resolution_validation_and_invalid_state_transitions()
 
 @pytest.mark.anyio
 async def test_account_default_dividend_deleted_and_invalid_handling():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

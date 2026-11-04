@@ -10,7 +10,7 @@ from app.db.models import Account, Asset, PriceHistory, User
 
 @pytest.mark.anyio
 async def test_custom_asset_valuations_crud():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -75,7 +75,7 @@ async def test_custom_asset_valuations_crud():
 
 @pytest.mark.anyio
 async def test_manual_price_cannot_overwrite_market_price():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -140,7 +140,7 @@ async def test_manual_price_cannot_overwrite_market_price():
 
 @pytest.mark.anyio
 async def test_manual_price_boundary_validation():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -207,7 +207,7 @@ async def test_custom_valuation_interleaving_and_market_update_protection():
     from app.services.price_engine import update_prices_for_assets
     from app.db.models import Transaction
 
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

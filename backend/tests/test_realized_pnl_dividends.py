@@ -10,7 +10,7 @@ from app.services.fifo_engine import recalculate_all_lots
 
 @pytest.mark.anyio
 async def test_realized_pnl_includes_net_dividends():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -161,7 +161,7 @@ async def test_realized_pnl_includes_net_dividends():
 
 @pytest.mark.anyio
 async def test_realized_pnl_multi_lot_fifo_dividends_and_custom_valuations():
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

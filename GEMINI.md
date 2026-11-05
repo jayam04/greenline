@@ -10,7 +10,7 @@ These repository-level guidelines explicitly defer to higher-priority system and
 
 ---
 
-## 2. Mandatory Protocol: 5-Step Test-First Development (TDD)
+## 2. Mandatory Protocol: 6-Step Test-First Development (TDD)
 
 When responding to ANY coding task, bug report, or feature implementation:
 
@@ -26,7 +26,9 @@ When responding to ANY coding task, bug report, or feature implementation:
      - `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
      - `cd frontend && npx tsc --noEmit && npm run lint`
    - Always display test execution output in the turn response.
-5. **Provide Proposed Commit Message**:
+5. **Update `.agents/changelog.md`**:
+   - Whenever repository files are modified, prepend an entry containing structured Markdown and an embedded JSON metadata comment block (`<!-- changelog-entry-json { ... } -->`) to [`.agents/changelog.md`](.agents/changelog.md).
+6. **Provide Proposed Commit Message**:
    - When repository or workspace files have been created, modified, deleted, renamed, or moved, append the proposed commit message as a dedicated block at the very end of your final response:
      ```text
      Commit Message:

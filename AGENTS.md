@@ -10,9 +10,9 @@ These repository-level guidelines and rules are subordinate to and explicitly de
 
 ---
 
-## 2. Core Engineering Principle: Test-First Development (TDD)
+## 2. Core Engineering Principle: 6-Step Test-First Development (TDD)
 
-All coding tasks, feature implementations, bug fixes, and refactoring **MUST** follow the authoritative 5-step Test-First workflow:
+All coding tasks, feature implementations, bug fixes, and refactoring **MUST** follow the authoritative 6-step Test-First workflow:
 
 1. **Requirement / Specification**:
    - Before writing or modifying any implementation code, translate user requirements into explicit test scenarios, input/output contracts, and edge cases.
@@ -24,7 +24,9 @@ All coding tasks, feature implementations, bug fixes, and refactoring **MUST** f
 4. **Refactor & Verify (Refactor Phase)**:
    - Run the complete test suite and verification tools to ensure 100% passing tests and zero regressions.
    - Never consider a feature or bug fix complete without dedicated automated test verification and execution output.
-5. **Provide Proposed Commit Message**:
+5. **Update `.agents/changelog.md`**:
+   - Whenever repository files are modified, record a structured, machine-parseable entry (including JSON metadata block) in [`.agents/changelog.md`](.agents/changelog.md).
+6. **Provide Proposed Commit Message**:
    - When repository or workspace files have been created, modified, deleted, renamed, or moved, provide a proposed Conventional Commit message at the very end of your final response.
 
 For complete fixtures, scaffolding patterns, and runbooks, refer to [`.agents/skills/test-driven-development/SKILL.md`](.agents/skills/test-driven-development/SKILL.md).
@@ -72,3 +74,11 @@ When repository or workspace files are created, modified, deleted, renamed, or m
 3. **When the Requirement Applies**:
    - **Required**: Whenever the agent actually creates, modifies, deletes, renames, or moves a file, or otherwise makes a repository/workspace change.
    - **Omitted**: Strictly omit for read-only inspection, searches, tests or commands that do not modify repository files, planning turns before user approval, and purely conversational answers.
+
+---
+
+## 6. Automated Changelog Protocol (`.agents/changelog.md`)
+
+- **Mandatory Entry**: Every turn that creates, modifies, deletes, renames, or moves workspace files must update [`.agents/changelog.md`](.agents/changelog.md) prior to finishing.
+- **Machine Parseability**: Every entry must include an embedded machine-parseable JSON metadata block (`<!-- changelog-entry-json { ... } -->`) containing timestamp, type, scope, summary, affected files, rationale, and verification details.
+- **Specification & Reference**: Refer to [`.agents/rules/changelog_update_requirement.md`](.agents/rules/changelog_update_requirement.md) and [`.agents/skills/changelog-update/SKILL.md`](.agents/skills/changelog-update/SKILL.md).

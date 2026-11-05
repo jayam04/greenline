@@ -13,7 +13,7 @@ from app.api.routers import (
     auth, accounts, assets, transactions, portfolio, 
     snapshots, prices, benchmarks, backup,
     categories, cashflow, settings as app_settings_router, discrepancies,
-    import_router, mcp_router
+    mcp_router
 )
 
 from app.services.fifo_engine import recalculate_all_lots
@@ -114,7 +114,6 @@ app.include_router(categories.router, prefix=settings.API_V1_STR)
 app.include_router(cashflow.router, prefix=settings.API_V1_STR)
 app.include_router(app_settings_router.router, prefix=settings.API_V1_STR)
 app.include_router(discrepancies.router, prefix=settings.API_V1_STR)
-app.include_router(import_router.router, prefix=settings.API_V1_STR)
 app.include_router(mcp_router.router, prefix=settings.API_V1_STR)
 
 @app.get("/")

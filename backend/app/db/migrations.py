@@ -140,9 +140,8 @@ async def _migrate_user_rls(session: AsyncSession) -> None:
         "accounts", "transactions", "lots", "lot_sales", "dividends",
         "expected_dividends", "cash_flows", "networth_snapshots",
         "networth_by_asset_class", "categories", "cashflow_transactions",
-        "cashflow_payments", "cashflow_items", "import_batches",
-        "staged_records", "app_settings", "xirr_cache", "price_history",
-        "api_keys"
+        "cashflow_payments", "cashflow_items", "app_settings",
+        "xirr_cache", "price_history", "api_keys"
     ]
 
     res = await session.execute(select(User).where(User.user_id == 0))

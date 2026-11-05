@@ -1,14 +1,13 @@
-import asyncio
+import datetime
 from typing import List, Dict, Any, Optional
 try:
     from mcp.server.mcpserver import MCPServer
 except ImportError:
     from mcp.server.fastmcp import FastMCP as MCPServer
-from sqlalchemy import select
+from sqlalchemy import select, desc
 
 from app.db.database import AsyncSessionLocal
-from app.db.models import Account, Category, Asset, Transaction, ImportBatch, StagedRecord
-from app.services.ai.staging_service import create_import_batch, stage_parsed_records, commit_import_batch
+from app.db.models import Account, Category, Asset, Transaction
 
 mcp = MCPServer("Greenline Finance MCP")
 
@@ -50,63 +49,6 @@ async def search_existing_transactions(
             }
             for t in txs
         ]
-
-@mcp.tool()
-async def create_staging_batch(
-    filename: str,
-    file_type: str = "pdf",
-    target_account_id: Optional[int] = None,
-    default_currency: str = "USD",
-    custom_instructions: Optional[str] = None
-) -> Dict[str, Any]:
-    """Initializes an input staging batch session for AI document parsing."""
-    async with AsyncSessionLocal() as session:
-        batch = await create_import_batch(
-            db=session,
-            filename=filename,
-            file_type=file_type,
-            target_account_id=target_account_id,
-            default_currency=default_currency,
-            custom_instructions=custom_instructions
-        )
-        return {
-            "batch_id": batch.batch_id,
-            "filename": batch.filename,
-            "status": batch.status
-        }
-
-@mcp.tool()
-async def stage_transactions(
-    batch_id: int,
-    records: List[Dict[str, Any]]
-) -> Dict[str, Any]:
-    """Populates staged records in an import batch and calculates duplicate matches."""
-    async with AsyncSessionLocal() as session:
-        staged = await stage_parsed_records(db=session, batch_id=batch_id, raw_records=records)
-        return {
-            "batch_id": batch_id,
-            "staged_count": len(staged),
-            "records": [
-                {
-                    "staged_id": s.staged_id,
-                    "date": str(s.transaction_date),
-                    "symbol": s.asset_symbol_raw,
-                    "amount": s.total_amount,
-                    "match_status": s.match_status,
-                    "review_status": s.review_status
-                }
-                for s in staged
-            ]
-        }
-
-@mcp.tool()
-async def commit_batch(
-    batch_id: int,
-    record_ids: Optional[List[int]] = None
-) -> Dict[str, Any]:
-    """Executes the Final Green Flag: merges approved staged records into the live ledger."""
-    async with AsyncSessionLocal() as session:
-        return await commit_import_batch(db=session, batch_id=batch_id, record_ids=record_ids)
 
 @mcp.tool()
 async def read_categories() -> Dict[str, Any]:
@@ -426,7 +368,7 @@ async def mutate_stock_transactions(
     """
     from app.db.models import Transaction, Asset
     from app.services.fifo_engine import recalculate_all_lots
-    from app.services.snapshot_engine import recalculate_past_snapshots
+    from app.services.snapshot_engine import generate_daily_snapshot
     from app.api.routers.transactions import _ensure_price_history_for_tx, cleanup_orphan_transaction_prices
 
     async with AsyncSessionLocal() as session:
@@ -541,7 +483,7 @@ async def mutate_stock_transactions(
 
         await session.commit()
         await recalculate_all_lots(session)
-        await recalculate_past_snapshots(session, start_date=earliest_date)
+        await generate_daily_snapshot(session, datetime.date.today())
         return {"results": results, "status": "success"}
 
 if __name__ == "__main__":

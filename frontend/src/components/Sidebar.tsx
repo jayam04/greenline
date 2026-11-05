@@ -7,7 +7,7 @@ import { removeAuthToken } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
 import { 
   TrendingUp, Briefcase, Building2, LogOut, User,
-  ArrowLeftRight, Settings, Sparkles, Sun, Moon, Laptop,
+  ArrowLeftRight, Settings, Sun, Moon, Laptop,
   ChevronDown, Menu, Search, X
 } from "lucide-react";
 
@@ -33,7 +33,16 @@ export function Sidebar() {
     router.push("/login");
   };
 
-  const navItems = [
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  active: boolean;
+  className?: string;
+  subItems?: { name: string; href: string; active: boolean }[];
+}
+
+  const navItems: NavItem[] = [
     {
       name: "Overview",
       href: "/",
@@ -67,13 +76,6 @@ export function Sidebar() {
       href: "/accounts",
       icon: Building2,
       active: pathname === "/accounts",
-    },
-    {
-      name: "AI Import",
-      href: "/import",
-      icon: Sparkles,
-      active: pathname.startsWith("/import"),
-      className: "text-emerald-600 dark:text-emerald-400"
     }
   ];
 

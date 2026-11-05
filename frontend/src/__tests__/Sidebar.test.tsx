@@ -58,4 +58,16 @@ describe('Sidebar Component', () => {
       );
     }).not.toThrow();
   });
+
+  it('does not render AI Import link', () => {
+    currentPath = '/';
+    render(
+      <ThemeProvider>
+        <Sidebar />
+      </ThemeProvider>
+    );
+
+    expect(screen.queryByText(/AI Import/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /AI Import/i })).not.toBeInTheDocument();
+  });
 });

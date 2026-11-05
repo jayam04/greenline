@@ -74,6 +74,11 @@ Thumbs.db
 # Local Agent & Tool Artifacts
 .archify/
 
-
 # Personal & Miscellaneous
 TODO.md
+
+# Antigravity CLI
+PROJECT.md
+TEST_INFRA.md
+TEST_READY.md
+.agents/teamwork

@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth0 } from "@auth0/auth0-react";
 import { setAuthToken } from "@/lib/api";
-import { TrendingUp, Lock, User } from "lucide-react";
+import { TrendingUp, Lock, User, ShieldCheck } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { isAuthenticated, isLoading: isAuth0Loading, loginWithRedirect } = useAuth0();
+
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
@@ -17,6 +20,23 @@ export default function LoginPage() {
   useEffect(() => {
     document.title = "Login · greenline";
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push("/");
+    }
+  }, [isAuthenticated, router]);
+
+  const handleAuth0Login = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      await loginWithRedirect();
+    } catch (err: any) {
+      setError(err?.message || "Failed to initiate Auth0 login");
+      setLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +64,7 @@ export default function LoginPage() {
       setAuthToken(data.access_token);
       router.push("/");
     } catch (err: any) {
-      setError(err.message || "Failed to log in");
+      setError(err?.message || "Failed to log in");
     } finally {
       setLoading(false);
     }
@@ -66,6 +86,27 @@ export default function LoginPage() {
             {error}
           </div>
         )}
+
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={handleAuth0Login}
+            disabled={loading || isAuth0Loading}
+            className="w-full py-3.5 bg-[#9FE837] hover:bg-[#8fd827] font-extrabold text-[#0F172A] text-xs uppercase tracking-wider rounded-full shadow-[0_4px_16px_rgba(159,232,55,0.4)] transition-all btn-press flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            <ShieldCheck className="w-4 h-4 stroke-[2.5]" />
+            {isAuth0Loading ? "Connecting to Auth0..." : "Continue with Auth0"}
+          </button>
+        </div>
+
+        <div className="relative my-6 text-center">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200"></div>
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-white px-2 font-semibold text-slate-400">or sign in with password</span>
+          </div>
+        </div>
 
         <form onSubmit={handleLogin} className="space-y-4 text-sm">
           <div>
@@ -99,9 +140,9 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-[#0F172A] hover:bg-slate-800 font-extrabold text-white text-xs uppercase tracking-wider rounded-full shadow-md transition-all btn-press mt-2 disabled:opacity-50"
+            className="w-full py-3.5 bg-[#0F172A] hover:bg-slate-800 font-extrabold text-white text-xs uppercase tracking-wider rounded-full shadow-md transition-all btn-press mt-2 cursor-pointer disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign In to Portfolio"}
+            {loading ? "Signing in..." : "Sign In with Password"}
           </button>
         </form>
 

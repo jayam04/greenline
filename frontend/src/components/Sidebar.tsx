@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useAuth0 } from "@auth0/auth0-react";
 import { removeAuthToken } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
 import { 
@@ -15,6 +16,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, setTheme } = useTheme();
+  const { user, isAuthenticated, logout } = useAuth0();
   
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -30,7 +32,15 @@ export function Sidebar() {
 
   const handleLogout = () => {
     removeAuthToken();
-    router.push("/login");
+    if (isAuthenticated) {
+      logout({
+        logoutParams: {
+          returnTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        },
+      });
+    } else {
+      router.push("/login");
+    }
   };
 
 interface NavItem {
@@ -137,16 +147,29 @@ interface NavItem {
 
       <div className="p-4 border-t border-[#E5E7EB] dark:border-[#1E293B]">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300 dark:border-slate-600">
-              <User className="w-4 h-4" />
-            </div>
-            <div className="text-xs">
-              <div className="font-bold text-[#0F172A] dark:text-white">Admin</div>
-              <div className="text-[10px] text-slate-500">admin@greenline.local</div>
+          <div className="flex items-center gap-2 min-w-0">
+            {isAuthenticated && user?.picture ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={user.picture}
+                alt={user.name || user.email || "User"}
+                className="w-8 h-8 rounded-full object-cover border border-slate-300 dark:border-slate-600 shrink-0"
+              />
+            ) : (
+              <div className="w-8 h-8 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-extrabold text-xs rounded-full flex items-center justify-center border border-slate-300 dark:border-slate-600 shrink-0">
+                <User className="w-4 h-4" />
+              </div>
+            )}
+            <div className="text-xs min-w-0">
+              <div className="font-bold text-[#0F172A] dark:text-white truncate">
+                {(isAuthenticated && user?.name) ? user.name : (user?.email || "Admin")}
+              </div>
+              <div className="text-[10px] text-slate-500 truncate">
+                {(isAuthenticated && user?.email) ? user.email : "admin@greenline.local"}
+              </div>
             </div>
           </div>
-          <Link href="/settings" className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+          <Link href="/settings" className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors shrink-0">
             <Settings className="w-4 h-4" />
           </Link>
         </div>

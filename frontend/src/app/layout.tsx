@@ -8,6 +8,7 @@ import { Breadcrumb } from "@/components/Breadcrumb";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { FontProvider } from "@/components/FontProvider";
 import { ClientLayout } from "@/components/ClientLayout";
+import { AuthProvider } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 
 const rx100 = localFont({
@@ -90,13 +91,15 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-background text-foreground min-h-screen font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
-        <ThemeProvider>
-          <FontProvider>
-            <ClientLayout>
-              {children}
-            </ClientLayout>
-          </FontProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <FontProvider>
+              <ClientLayout>
+                {children}
+              </ClientLayout>
+            </FontProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );

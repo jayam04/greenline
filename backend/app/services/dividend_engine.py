@@ -173,6 +173,7 @@ async def sync_dividends_for_asset(db: AsyncSession, asset_id: int) -> int:
                         init_status = "MATCHED"
 
                     new_exp = ExpectedDividend(
+                        user_id=account.user_id,
                         asset_id=asset_id,
                         account_id=account.account_id,
                         ex_date=ex_date,

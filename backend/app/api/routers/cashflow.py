@@ -249,11 +249,19 @@ async def create_cashflow_transaction(
     if len(accounts) != len(set(acc_ids)):
         raise HTTPException(status_code=404, detail="One or more accounts not found")
 
-    # 2. Fetch categories to verify categorical intent
+    # 2. Fetch categories to verify categorical intent and ownership
     cat_ids = [i.category_id for i in tx_in.items]
-    cat_stmt = select(Category).where(Category.category_id.in_(cat_ids), Category.user_id.in_([0, u_id]))
-    cat_res = await db.execute(cat_stmt)
-    categories_map = {c.category_id: c for c in cat_res.scalars().all()}
+    if cat_ids:
+        cat_stmt = select(Category).where(
+            Category.category_id.in_(cat_ids),
+            Category.user_id.in_([0, u_id])
+        )
+        cat_res = await db.execute(cat_stmt)
+        categories_map = {c.category_id: c for c in cat_res.scalars().all()}
+        if len(categories_map) != len(set(cat_ids)):
+            raise HTTPException(status_code=400, detail="One or more categories not found or access denied")
+    else:
+        categories_map = {}
 
     # 3. Determine primary currency
     currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
@@ -407,9 +415,17 @@ async def update_cashflow_transaction(
             raise HTTPException(status_code=404, detail="One or more accounts not found")
 
         cat_ids = [i.category_id for i in tx_in.items]
-        cat_stmt = select(Category).where(Category.category_id.in_(cat_ids), Category.user_id.in_([0, u_id]))
-        cat_res = await db.execute(cat_stmt)
-        categories_map = {c.category_id: c for c in cat_res.scalars().all()}
+        if cat_ids:
+            cat_stmt = select(Category).where(
+                Category.category_id.in_(cat_ids),
+                Category.user_id.in_([0, u_id])
+            )
+            cat_res = await db.execute(cat_stmt)
+            categories_map = {c.category_id: c for c in cat_res.scalars().all()}
+            if len(categories_map) != len(set(cat_ids)):
+                raise HTTPException(status_code=400, detail="One or more categories not found or access denied")
+        else:
+            categories_map = {}
 
         currencies = set(accounts[p.account_id].currency or "EUR" for p in tx_in.payments if p.account_id in accounts)
         if len(currencies) > 1:

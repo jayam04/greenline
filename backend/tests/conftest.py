@@ -1,17 +1,164 @@
 import os
+import time
 import asyncio
 import pytest
-from typing import AsyncGenerator, Tuple
+from typing import AsyncGenerator, Tuple, Optional, Dict, Any
+from unittest.mock import patch
+
+import httpx
+from httpx import AsyncClient, ASGITransport
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+from jose import jwt, jwk
+
 import sqlalchemy.ext.asyncio as sa_async
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 from sqlalchemy.pool import NullPool
 from sqlalchemy import text, select
-from httpx import AsyncClient, ASGITransport
+from sqlalchemy.orm import Session
+from sqlalchemy import event, inspect
 
 from app.main import app
+from app.config import settings
 from app.api.deps import get_db, get_current_user
 from app.db.database import Base, get_tables_in_dependency_order
 from app.db.models import User
+
+# Enable test mode for Auth0
+settings.AUTH0_TEST_MODE = True
+
+# ==============================================================================
+# MOCK RSA KEYPAIRS & JWKS FOR 100% OFFLINE AUTH0 TESTING
+# ==============================================================================
+
+TEST_KEY_ID = "greenline-test-auth0-kid-2026"
+ATTACKER_KEY_ID = "untrusted-attacker-kid-9999"
+
+# Generate trusted test RSA keypair (2048-bit)
+_trusted_rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+TEST_PRIVATE_PEM = _trusted_rsa_key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+).decode("utf-8")
+
+_trusted_pub_pem = _trusted_rsa_key.public_key().public_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PublicFormat.SubjectPublicKeyInfo,
+).decode("utf-8")
+
+_trusted_jwk = jwk.RSAKey(algorithm="RS256", key=_trusted_pub_pem).to_dict()
+_trusted_jwk["kid"] = TEST_KEY_ID
+TEST_JWKS = {"keys": [_trusted_jwk]}
+
+# Generate untrusted attacker keypair (to simulate forgery / rogue key attacks)
+_attacker_rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+ATTACKER_PRIVATE_PEM = _attacker_rsa_key.private_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+).decode("utf-8")
+
+_attacker_pub_pem = _attacker_rsa_key.public_key().public_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PublicFormat.SubjectPublicKeyInfo,
+).decode("utf-8")
+
+_attacker_jwk = jwk.RSAKey(algorithm="RS256", key=_attacker_pub_pem).to_dict()
+_attacker_jwk["kid"] = ATTACKER_KEY_ID
+ATTACKER_JWKS = {"keys": [_attacker_jwk]}
+
+
+@pytest.fixture(autouse=True)
+def mock_auth0_jwks():
+    """
+    Autouse fixture ensuring that ANY call to Auth0 JWKS endpoints resolves
+    in-memory to TEST_JWKS with zero network traffic to external domains.
+    """
+    orig_get = httpx.AsyncClient.get
+
+    async def mock_get(self, url, *args, **kwargs):
+        url_str = str(url)
+        if ".well-known/jwks.json" in url_str:
+            return httpx.Response(200, json=TEST_JWKS)
+        return await orig_get(self, url, *args, **kwargs)
+
+    with patch.object(httpx.AsyncClient, "get", mock_get):
+        try:
+            from app.services import auth0_service
+            with patch.object(auth0_service, "get_jwks", return_value=TEST_JWKS), \
+                 patch.object(auth0_service, "fetch_jwks", return_value=TEST_JWKS):
+                if hasattr(auth0_service, "clear_jwks_cache"):
+                    auth0_service.clear_jwks_cache()
+                yield
+        except (ImportError, AttributeError):
+            yield
+
+
+@pytest.fixture
+def mint_auth0_token():
+    """Helper fixture to mint RS256 JWT tokens with custom claims, headers, and expiry."""
+    def _mint(
+        sub: str = "auth0|test_user",
+        email: Optional[str] = None,
+        name: Optional[str] = None,
+        picture: Optional[str] = None,
+        exp: Optional[int] = None,
+        iat: Optional[int] = None,
+        nbf: Optional[int] = None,
+        aud: Optional[str] = None,
+        iss: Optional[str] = None,
+        kid: Optional[str] = TEST_KEY_ID,
+        alg: str = "RS256",
+        key: Optional[str] = None,
+        tampered: bool = False,
+        extra_claims: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        now = int(time.time())
+        domain = getattr(settings, "AUTH0_DOMAIN", "jayam04.eu.auth0.com") or "jayam04.eu.auth0.com"
+        default_iss = getattr(settings, "AUTH0_ISSUER", f"https://{domain}/") or f"https://{domain}/"
+        if not default_iss.endswith("/"):
+            default_iss = f"{default_iss}/"
+
+        payload: Dict[str, Any] = {
+            "sub": sub,
+            "aud": aud or getattr(settings, "AUTH0_AUDIENCE", "http://localhost:8000") or "http://localhost:8000",
+            "iss": iss or default_iss,
+            "exp": exp if exp is not None else (now + 3600),
+            "iat": iat if iat is not None else now,
+        }
+
+        if email is not None:
+            payload["email"] = email
+        if name is not None:
+            payload["name"] = name
+        if picture is not None:
+            payload["picture"] = picture
+        if nbf is not None:
+            payload["nbf"] = nbf
+        if extra_claims:
+            payload.update(extra_claims)
+
+        headers = {}
+        if kid is not None:
+            headers["kid"] = kid
+
+        signing_key = key or (TEST_PRIVATE_PEM if alg == "RS256" else "test-secret-key-1234567890123456")
+        token_str = jwt.encode(payload, signing_key, algorithm=alg, headers=headers)
+
+        if tampered:
+            # Corrupt the signature by modifying the last characters
+            parts = token_str.split(".")
+            if len(parts) == 3:
+                sig = parts[2]
+                flipped_char = "X" if sig[-1:] != "X" else "Y"
+                corrupted_sig = sig[:-1] + flipped_char
+                token_str = f"{parts[0]}.{parts[1]}.{corrupted_sig}"
+
+        return token_str
+
+    return _mint
+
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL", 
@@ -41,9 +188,6 @@ def get_test_sessionmaker(engine: AsyncEngine = None) -> async_sessionmaker:
     if engine is None:
         engine = get_test_engine()
     return async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-
-from sqlalchemy.orm import Session
-from sqlalchemy import event, inspect
 
 @event.listens_for(Session, "before_flush")
 def handle_test_user_zero(session, flush_context, instances):
@@ -166,3 +310,84 @@ async def app_client(client) -> AsyncGenerator[AsyncClient, None]:
     """Convenience fixture yielding AsyncClient."""
     ac, _, _ = client
     yield ac
+
+
+# ==============================================================================
+# MULTI-USER AUTH0 TEST FIXTURES
+# ==============================================================================
+
+@pytest.fixture
+async def auth0_client_unauthenticated(test_db_session) -> AsyncGenerator[AsyncClient, None]:
+    """Async HTTP client without Authorization header, verifying authentic unauthenticated behavior."""
+    session, session_maker = test_db_session
+
+    async def override_get_db():
+        async with session_maker() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides.pop(get_current_user, None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def auth0_client_user_a(test_db_session, mint_auth0_token) -> AsyncGenerator[AsyncClient, None]:
+    """Async HTTP client authenticated as User A (sub='auth0|user_a', email='user_a@example.com', name='User A')."""
+    session, session_maker = test_db_session
+    token_a = mint_auth0_token(
+        sub="auth0|user_a",
+        email="user_a@example.com",
+        name="User A"
+    )
+
+    async def override_get_db():
+        async with session_maker() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides.pop(get_current_user, None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token_a}"}
+    ) as ac:
+        ac.token = token_a
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def auth0_client_user_b(test_db_session, mint_auth0_token) -> AsyncGenerator[AsyncClient, None]:
+    """Async HTTP client authenticated as User B (sub='auth0|user_b', email='user_b@example.com', name='User B')."""
+    session, session_maker = test_db_session
+    token_b = mint_auth0_token(
+        sub="auth0|user_b",
+        email="user_b@example.com",
+        name="User B"
+    )
+
+    async def override_get_db():
+        async with session_maker() as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides.pop(get_current_user, None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token_b}"}
+    ) as ac:
+        ac.token = token_b
+        yield ac
+
+    app.dependency_overrides.clear()

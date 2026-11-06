@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.db.models import Base, User, Account, Category, CashflowTransaction, CashflowPayment, CashflowItem, ApiKey
 from app.db.database import get_db
+from app.api.deps import get_current_user
 from app.main import app
 from app.services.auth_service import get_password_hash
 
@@ -22,6 +23,7 @@ async def mcp_test_env():
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides.pop(get_current_user, None)
 
     # Seed User, Account, Category
     test_user = User(user_id=1, username="mcp_user", password_hash=get_password_hash("password123"))

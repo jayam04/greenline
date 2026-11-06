@@ -5,31 +5,56 @@ const getApiBase = () => {
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 };
 
+let inMemoryToken: string | null = null;
+let tokenGetterFn: (() => Promise<string | null | undefined>) | null = null;
+
 export function getAuthToken(): string | null {
+  if (inMemoryToken) return inMemoryToken;
   if (typeof window === "undefined") return null;
   return localStorage.getItem("token");
 }
 
-export function setAuthToken(token: string) {
+export function setAuthToken(token: string | null) {
+  inMemoryToken = token;
   if (typeof window !== "undefined") {
-    localStorage.setItem("token", token);
+    if (token) {
+      localStorage.setItem("token", token);
+    } else {
+      localStorage.removeItem("token");
+    }
   }
 }
 
 export function removeAuthToken() {
+  inMemoryToken = null;
   if (typeof window !== "undefined") {
     localStorage.removeItem("token");
   }
 }
 
+export function setTokenGetter(fn: (() => Promise<string | null | undefined>) | null) {
+  tokenGetterFn = fn;
+}
+
 export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const token = getAuthToken();
+  let token: string | null = null;
+  if (tokenGetterFn) {
+    try {
+      token = (await tokenGetterFn()) ?? null;
+    } catch {
+      token = null;
+    }
+  }
+  if (!token) {
+    token = getAuthToken();
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
   };
 
-  if (token) {
+  if (token && !headers["Authorization"]) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 

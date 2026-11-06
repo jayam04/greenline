@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, inspect
 from app.db.database import get_db
 from app.db.models import User, ApiKey
-from app.services.auth_service import decode_access_token
+from app.services.auth_service import decode_access_token, get_or_sync_auth0_user
+from app.services.auth0_service import verify_auth0_token
 
 def get_user_id(user: Any) -> int:
     if user is None:
@@ -47,17 +48,34 @@ def _clean_auth_value(val: Optional[str]) -> Optional[str]:
             break
     return cleaned or None
 
+_user_token_cache: dict = {}
+
 async def get_current_user(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    # 0. Quick rejection for unauthenticated requests
+    if not authorization and not x_api_key and not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Reject non-Bearer schemes in Authorization header (e.g. Basic) while permitting raw gl_mcp_ API keys
+    if authorization:
+        auth_stripped = authorization.strip()
+        auth_lower = auth_stripped.lower()
+        if auth_lower.startswith("basic ") or (
+            not (auth_lower.startswith("bearer ") or auth_lower.startswith("token ") or auth_stripped.startswith("gl_mcp_"))
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     # Gather potential key/token candidates from all possible auth headers
     raw_candidates = [x_api_key, token, authorization]
@@ -66,6 +84,13 @@ async def get_current_user(
         cleaned = _clean_auth_value(c)
         if cleaned and cleaned not in cleaned_candidates:
             cleaned_candidates.append(cleaned)
+
+    if not cleaned_candidates:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # 1. Try matching candidates against database API keys
     for candidate in cleaned_candidates:
@@ -83,7 +108,36 @@ async def get_current_user(
             if user:
                 return user
 
-    # 2. Try decoding candidates as JWT Bearer tokens
+    # 2. Try validating candidates as Auth0 RS256 Bearer tokens
+    for candidate in cleaned_candidates:
+        auth0_payload = await verify_auth0_token(candidate)
+        if auth0_payload is not None:
+            sub = auth0_payload.get("sub")
+            if sub:
+                email = auth0_payload.get("email")
+                name = auth0_payload.get("name")
+                picture = auth0_payload.get("picture")
+
+                # If this exact token was already processed and user exists in DB,
+                # return existing user so explicit /auth/sync profile updates are preserved.
+                if _user_token_cache.get(sub) == candidate:
+                    stmt = select(User).where(User.auth0_sub == sub)
+                    existing_user = (await db.execute(stmt)).scalar_one_or_none()
+                    if existing_user:
+                        return existing_user
+
+                user = await get_or_sync_auth0_user(
+                    db,
+                    sub=sub,
+                    email=email,
+                    name=name,
+                    picture=picture
+                )
+                if user:
+                    _user_token_cache[sub] = candidate
+                    return user
+
+    # 3. Fallback: Try decoding candidates as local HS256 JWT tokens
     for candidate in cleaned_candidates:
         payload = decode_access_token(candidate)
         if payload is not None:
@@ -95,6 +149,10 @@ async def get_current_user(
                 if user:
                     return user
 
-    print(f"[AUTH ERROR] Failed auth attempt. Raw headers: x_api_key={x_api_key!r}, auth={authorization!r}, token={token!r}. Cleaned candidates={cleaned_candidates!r}")
-    raise credentials_exception
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+    )
+
 

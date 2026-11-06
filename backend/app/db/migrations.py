@@ -31,6 +31,7 @@ _VERSIONS = (
     ("v009_ai_import_staging_tables", "Create import staging schema"),
     ("v010_api_keys_table", "Create API keys schema"),
     ("v011_user_row_level_security", "Add user_id to all user entities with default 0"),
+    ("v012_auth0_user_persistence", "Add Auth0 profile fields (sub, email, name, picture) to users table"),
 )
 
 
@@ -193,6 +194,23 @@ async def _migrate_user_rls(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _migrate_auth0_user_persistence(session: AsyncSession) -> None:
+    """Relax password_hash nullability and backfill updated_at for existing users."""
+    bind = session.get_bind()
+    if bind and getattr(bind.dialect, "name", "") == "oracle":
+        try:
+            await session.execute(text("ALTER TABLE users MODIFY (password_hash NULL)"))
+        except Exception:
+            pass
+    try:
+        await session.execute(
+            text("UPDATE users SET updated_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL")
+        )
+    except Exception:
+        pass
+    await session.commit()
+
+
 async def run_db_migrations(session: AsyncSession) -> None:
     """Bring the database to the current ORM schema using dialect-portable DDL."""
     await init_migrations_table(session)
@@ -206,5 +224,7 @@ async def run_db_migrations(session: AsyncSession) -> None:
             await _migrate_legacy_cashflow_signs(session)
         elif version == "v011_user_row_level_security":
             await _migrate_user_rls(session)
+        elif version == "v012_auth0_user_persistence":
+            await _migrate_auth0_user_persistence(session)
         await mark_migration_applied(session, version, description)
         applied.add(version)

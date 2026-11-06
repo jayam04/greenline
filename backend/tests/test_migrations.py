@@ -18,6 +18,8 @@ async def test_db_migrations_idempotency():
         assert "v003_assets_industry_column" in applied
         assert "v004_cashflow_transaction_kind" in applied
         assert "v005_signed_cashflow_amounts" in applied
+        assert "v011_user_row_level_security" in applied
+        assert "v012_auth0_user_persistence" in applied
 
         # Running migrations again should be completely idempotent and not raise errors
         await run_db_migrations(session)

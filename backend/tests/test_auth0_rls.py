@@ -127,6 +127,24 @@ async def test_wrong_audience_rejected(auth0_client_unauthenticated: AsyncClient
 
 
 @pytest.mark.anyio
+async def test_auth0_client_id_audience_accepted(auth0_client_unauthenticated: AsyncClient, mint_auth0_token):
+    """Token with Client ID audience (e.g. ID token) must be accepted with HTTP 200."""
+    from app.config import settings
+    client_id = getattr(settings, "AUTH0_CLIENT_ID", None) or "wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby"
+    client_id_token = mint_auth0_token(
+        sub="auth0|client-id-user",
+        aud=client_id,
+        email="client-id@example.com",
+        name="Client ID User"
+    )
+    res = await auth0_client_unauthenticated.get(
+        "/api/v1/accounts",
+        headers={"Authorization": f"Bearer {client_id_token}"}
+    )
+    assert res.status_code == 200
+
+
+@pytest.mark.anyio
 async def test_wrong_issuer_rejected(auth0_client_unauthenticated: AsyncClient, mint_auth0_token):
     """Token with mismatched issuer claim must be rejected with HTTP 401."""
     wrong_iss_token = mint_auth0_token(
@@ -193,6 +211,11 @@ async def test_jit_user_creation_on_first_request(
     assert db_user.email == email
     assert db_user.name == name
     assert db_user.picture == picture
+    assert db_user.password_hash is not None
+    # Verify that local password verification always rejects Auth0 provisioned users
+    from app.services.auth_service import verify_password
+    assert not verify_password("any_password", db_user.password_hash)
+    assert not verify_password("!auth0_managed_user", db_user.password_hash)
 
 
 @pytest.mark.anyio

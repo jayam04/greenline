@@ -32,6 +32,7 @@ _VERSIONS = (
     ("v010_api_keys_table", "Create API keys schema"),
     ("v011_user_row_level_security", "Add user_id to all user entities with default 0"),
     ("v012_auth0_user_persistence", "Add Auth0 profile fields (sub, email, name, picture) to users table"),
+    ("v013_relax_password_hash_nullability", "Relax password_hash nullability on users table for Auth0 users"),
 )
 
 
@@ -211,6 +212,25 @@ async def _migrate_auth0_user_persistence(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _migrate_relax_password_hash_nullability(session: AsyncSession) -> None:
+    """Ensure password_hash column in users table allows NULL across all database dialects."""
+    connection = await session.connection()
+    def do_alter(sync_conn):
+        dialect_name = getattr(sync_conn.dialect, "name", "")
+        if dialect_name == "oracle":
+            try:
+                sync_conn.execute(text("ALTER TABLE users MODIFY (password_hash NULL)"))
+            except Exception:
+                pass
+        elif dialect_name == "postgresql":
+            try:
+                sync_conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
+            except Exception:
+                pass
+    await connection.run_sync(do_alter)
+    await session.commit()
+
+
 async def run_db_migrations(session: AsyncSession) -> None:
     """Bring the database to the current ORM schema using dialect-portable DDL."""
     await init_migrations_table(session)
@@ -226,5 +246,7 @@ async def run_db_migrations(session: AsyncSession) -> None:
             await _migrate_user_rls(session)
         elif version == "v012_auth0_user_persistence":
             await _migrate_auth0_user_persistence(session)
+        elif version == "v013_relax_password_hash_nullability":
+            await _migrate_relax_password_hash_nullability(session)
         await mark_migration_applied(session, version, description)
         applied.add(version)

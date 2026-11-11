@@ -139,7 +139,7 @@ describe('Auth0 & API Client Integration', () => {
         href: 'http://localhost:3000/?code=abc123xyz&state=state_val',
       } as any;
 
-      await expect(apiFetch('/accounts')).rejects.toThrow(/authentication.*in progress/i);
+      await expect(apiFetch('/accounts')).rejects.toThrow('Unauthorized');
       expect(window.location.href).not.toBe('/login');
 
       (window as any).location = originalLocation;
@@ -263,7 +263,9 @@ describe('Auth0 & API Client Integration', () => {
         </AuthProvider>
       );
 
-      expect(screen.getByTestId('protected-content')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId('protected-content')).toBeInTheDocument();
+      });
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
@@ -304,6 +306,45 @@ describe('Auth0 & API Client Integration', () => {
 
       expect(screen.getByText(/authenticating with auth0/i)).toBeInTheDocument();
       expect(screen.queryByTestId('dashboard-content')).not.toBeInTheDocument();
+    });
+
+    it('displays authenticating loading screen when OAuth code and state are present in URL search params even if isLoading is false', () => {
+      process.env.NEXT_PUBLIC_AUTH0_DOMAIN = 'test.eu.auth0.com';
+      process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID = 'test-client-id';
+
+      vi.spyOn(auth0, 'useAuth0').mockReturnValue({
+        isAuthenticated: false,
+        isLoading: false,
+        user: undefined,
+        loginWithRedirect: vi.fn(),
+        logout: vi.fn(),
+        getAccessTokenSilently: vi.fn(),
+        getIdTokenClaims: vi.fn(),
+        loginWithPopup: vi.fn(),
+        handleRedirectCallback: vi.fn(),
+      } as any);
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      window.location = {
+        ...originalLocation,
+        pathname: '/',
+        search: '?code=callback_code_123&state=callback_state_456',
+        href: 'http://localhost:3000/?code=callback_code_123&state=callback_state_456',
+      } as any;
+
+      try {
+        render(
+          <AuthProvider>
+            <div data-testid="dashboard-content">Dashboard Content</div>
+          </AuthProvider>
+        );
+
+        expect(screen.getByText(/authenticating with auth0/i)).toBeInTheDocument();
+        expect(screen.queryByTestId('dashboard-content')).not.toBeInTheDocument();
+      } finally {
+        (window as any).location = originalLocation;
+      }
     });
   });
 });

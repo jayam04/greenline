@@ -65,6 +65,10 @@ const defaultMockAuth0State = {
   loginWithRedirect: vi.fn(),
   logout: vi.fn(),
   getAccessTokenSilently: vi.fn().mockResolvedValue('mock-auth0-access-token'),
+  getIdTokenClaims: vi.fn().mockResolvedValue({
+    __raw: 'mock-auth0-id-token',
+    sub: 'auth0|test_user',
+  }),
 };
 
 const Auth0Context = React.createContext(defaultMockAuth0State);

@@ -122,18 +122,31 @@ async def verify_auth0_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
     # Determine audience and issuer
-    audience = getattr(settings, "AUTH0_AUDIENCE", "http://localhost:8000") or "http://localhost:8000"
+    configured_aud = getattr(settings, "AUTH0_AUDIENCE", "http://localhost:8000") or "http://localhost:8000"
+    client_id = getattr(settings, "AUTH0_CLIENT_ID", None) or os.getenv("AUTH0_CLIENT_ID") or os.getenv("NEXT_PUBLIC_AUTH0_CLIENT_ID") or "wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby"
+    allowed_audiences = [a for a in [configured_aud, client_id] if a]
+
     domain = getattr(settings, "AUTH0_DOMAIN", "jayam04.eu.auth0.com") or "jayam04.eu.auth0.com"
     default_issuer = getattr(settings, "AUTH0_ISSUER", f"https://{domain}/") or f"https://{domain}/"
     if not default_issuer.endswith("/"):
         default_issuer = f"{default_issuer}/"
 
     expected_iss = default_issuer
+    expected_aud = configured_aud
     try:
         unverified_claims = jwt.get_unverified_claims(cleaned_token)
         token_iss = unverified_claims.get("iss")
         if token_iss and token_iss in (default_issuer, default_issuer.rstrip("/")):
             expected_iss = token_iss
+
+        token_aud = unverified_claims.get("aud")
+        if token_aud:
+            if isinstance(token_aud, str) and token_aud in allowed_audiences:
+                expected_aud = token_aud
+            elif isinstance(token_aud, list):
+                matching_aud = next((a for a in token_aud if a in allowed_audiences), None)
+                if matching_aud:
+                    expected_aud = matching_aud
     except Exception as e:
         logger.warning(f"Failed to read unverified claims from Auth0 token: {e}")
         return None
@@ -143,11 +156,11 @@ async def verify_auth0_token(token: str) -> Optional[Dict[str, Any]]:
             cleaned_token,
             matching_key,
             algorithms=["RS256"],
-            audience=audience,
+            audience=expected_aud,
             issuer=expected_iss,
             options={
                 "verify_signature": True,
-                "verify_aud": bool(audience),
+                "verify_aud": bool(expected_aud),
                 "verify_iss": bool(expected_iss),
                 "verify_exp": True,
                 "verify_nbf": True,

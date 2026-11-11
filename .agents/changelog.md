@@ -32,6 +32,86 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-11 12:55:00 UTC] fix(auth): resolve password hash null constraint on Auth0 user provisioning and gate OAuth callback route mounts
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T12:55:00Z",
+  "type": "fix",
+  "scope": "auth",
+  "summary": "resolve password hash null constraint on Auth0 user provisioning and gate OAuth callback route mounts",
+  "affected_files": [
+    "backend/app/config.py",
+    "backend/app/db/migrations.py",
+    "backend/app/services/auth0_service.py",
+    "backend/app/services/auth_service.py",
+    "backend/tests/test_auth0_rls.py",
+    "frontend/src/__tests__/Auth0Integration.test.tsx",
+    "frontend/src/components/AuthProvider.tsx",
+    "frontend/src/lib/api.ts",
+    "frontend/src/test/setup.ts"
+  ],
+  "rationale": "Oracle database raised ORA-01400 on auto-provisioning new Auth0 users because password_hash was set to None against a NOT NULL column in Oracle Autonomous DB. Additionally, premature mounting of protected dashboard routes during Auth0 code exchange raised unhandled 401 callback errors.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend pytest backend/tests/test_auth0_rls.py && cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(auth)`
+- **Summary**: Fix Oracle database `ORA-01400` null constraint error when auto-provisioning new Auth0 users by setting a secure non-null placeholder and running schema relaxation migration; gate Next.js protected route rendering during OAuth code exchange.
+- **Rationale**: When a new user logs in via Auth0 (e.g. Google OAuth2), the user has no password. Oracle Autonomous Database enforced a `NOT NULL` constraint on `ADMIN.USERS.PASSWORD_HASH`, which caused `ORA-01400: cannot insert NULL into (\"ADMIN\".\"USERS\".\"PASSWORD_HASH\")`. Setting `password_hash="!auth0_managed_user"` guarantees schema compliance across all database variants while precluding local password authentication, and adding migration `v013_relax_password_hash_nullability` relaxes the column in DDL.
+- **Key Changes**:
+  - `backend/app/services/auth_service.py`: Set `password_hash="!auth0_managed_user"` on newly auto-provisioned Auth0 users.
+  - `backend/app/db/migrations.py`: Added migration `v013_relax_password_hash_nullability` to modify `users.password_hash` to allow NULL.
+  - `backend/tests/test_auth0_rls.py`: Added assertion verifying non-null `password_hash` placeholder that securely rejects local password verification attempts.
+  - `frontend/src/components/AuthProvider.tsx`: Gated protected children behind `hasCallbackCode` to prevent premature dashboard mounting and unhandled 401 errors.
+  - `frontend/src/lib/api.ts`: Refined 401 handling to suppress redirect to `/login` during OAuth callback and throw standard `Unauthorized` error.
+- **Verification**:
+  - Command: `PYTHONPATH=backend pytest backend/tests/test_auth0_rls.py && cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx`
+  - Output: 19/19 backend tests passed; 12/12 frontend Auth0 integration tests passed; TypeScript and ESLint checks passed with 0 errors.
+
+### [2026-11-11 12:17:00 UTC] fix(auth): support client ID audience in backend and gate dashboard mount on token resolution
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T12:17:00Z",
+  "type": "fix",
+  "scope": "auth",
+  "summary": "support client ID audience in backend and gate dashboard mount on token resolution",
+  "affected_files": [
+    "backend/app/config.py",
+    "backend/app/services/auth0_service.py",
+    "backend/tests/test_auth0_rls.py",
+    "frontend/src/__tests__/Auth0Integration.test.tsx",
+    "frontend/src/components/AuthProvider.tsx",
+    "frontend/src/test/setup.ts"
+  ],
+  "rationale": "Resolve 'Unauthorized - authentication callback in progress' error caused by backend rejecting Auth0 tokens issued for Client ID audience and premature API requests before in-memory token resolution",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_auth0_rls.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(auth)`
+- **Summary**: Allowed both Auth0 API audience and Client ID audience in backend JWT token validation, added ID token fallback in frontend token getter, and held protected dashboard mounts until the token is fully acquired into memory.
+- **Rationale**: When users logged in with Auth0, tokens with audience matching the Client ID were rejected with 401 Unauthorized by the backend's strict audience check. Additionally, `AuthSync` mounted protected children before token acquisition resolved, triggering unauthenticated requests and surfacing the callback guard error.
+- **Key Changes**:
+  - `backend/app/config.py`: Added `AUTH0_CLIENT_ID` configuration setting.
+  - `backend/app/services/auth0_service.py`: Accepted both `AUTH0_AUDIENCE` and `AUTH0_CLIENT_ID` in `jwt.decode` audience matching.
+  - `backend/tests/test_auth0_rls.py`: Added automated test `test_auth0_client_id_audience_accepted` asserting 200 OK for Client ID audience tokens.
+  - `frontend/src/components/AuthProvider.tsx`: Added `tokenReady` gating state before mounting protected routes, added `getIdTokenClaims` fallback in `setTokenGetter`, and added `onRedirectCallback` URL query cleanup.
+  - `frontend/src/test/setup.ts`: Updated `@auth0/auth0-react` test mocks with `getIdTokenClaims`.
+  - `frontend/src/__tests__/Auth0Integration.test.tsx`: Verified token getter and profile sync with `tokenReady` lifecycle.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_auth0_rls.py`
+  - Output: All tests passed (11/11 frontend, 19/19 backend), 0 TypeScript errors, 0 ESLint errors.
+
 ### [2026-11-11 11:40:00 UTC] fix(auth): eliminate Auth0 login redirect loop by gating protected route mounts and guarding 401 callback interception
 
 <!-- changelog-entry-json

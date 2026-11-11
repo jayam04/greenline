@@ -99,7 +99,7 @@ async def get_or_sync_auth0_user(
         email=email,
         name=display_name,
         picture=picture,
-        password_hash=None,
+        password_hash="!auth0_managed_user",
         created_at=datetime.datetime.utcnow(),
         updated_at=datetime.datetime.utcnow(),
     )

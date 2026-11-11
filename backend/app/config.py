@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # Auth0 Configuration
     AUTH0_DOMAIN: Optional[str] = os.getenv("AUTH0_DOMAIN", None)
+    AUTH0_CLIENT_ID: Optional[str] = os.getenv("AUTH0_CLIENT_ID", os.getenv("NEXT_PUBLIC_AUTH0_CLIENT_ID", "wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby"))
     AUTH0_AUDIENCE: Optional[str] = os.getenv("AUTH0_AUDIENCE", None)
     AUTH0_ISSUER: Optional[str] = os.getenv("AUTH0_ISSUER", None)
     AUTH0_ALGORITHMS: List[str] = ["RS256"]

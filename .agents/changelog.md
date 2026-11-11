@@ -32,6 +32,43 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-11 13:50:00 UTC] fix(auth): normalize Auth0 issuer validation and prevent infinite login redirect loops
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T13:50:00Z",
+  "type": "fix",
+  "scope": "auth",
+  "summary": "normalize Auth0 issuer validation and prevent infinite login redirect loops",
+  "affected_files": [
+    "backend/app/services/auth0_service.py",
+    "backend/tests/test_auth0_rls.py",
+    "frontend/src/__tests__/Auth0Integration.test.tsx",
+    "frontend/src/app/login/page.tsx",
+    "frontend/src/lib/api.ts"
+  ],
+  "rationale": "The backend rejected valid Auth0 tokens with 'Invalid issuer' when AUTH0_ISSUER in settings lacked the 'https://' scheme, producing 401 errors that bounced between /login and / due to eager redirect on client-side authenticated state.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend pytest backend/tests/test_auth0_rls.py && cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(auth)`
+- **Summary**: Normalize Auth0 issuer matching to accept canonical HTTPS formats regardless of configuration prefix, and guard `/login` against redirect loops when session error query parameters are present.
+- **Rationale**: When `AUTH0_ISSUER=jayam04.eu.auth0.com` was configured without `https://`, python-jose's issuer validation failed with `Invalid issuer` against the token's `iss: "https://jayam04.eu.auth0.com/"`. This resulted in 401 responses that bounced repeatedly between `/` and `/login` because `LoginPage` redirected eagerly if the Auth0 React SDK was already authenticated.
+- **Key Changes**:
+  - `backend/app/services/auth0_service.py`: Added automatic scheme and trailing-slash normalization for `AUTH0_ISSUER`, permitting all canonical domain variations (`https://<domain>/`, bare domain).
+  - `backend/tests/test_auth0_rls.py`: Added test verifying that tokens with standard HTTPS issuers are accepted when settings contain bare domains.
+  - `frontend/src/app/login/page.tsx`: Gated eager auto-redirect on `error` query parameter so session failures display an informative message instead of looping.
+  - `frontend/src/lib/api.ts`: Redirects to `/login?error=session_expired` on 401 to prevent automatic re-routing loops.
+  - `frontend/src/__tests__/Auth0Integration.test.tsx`: Added test verifying `LoginPage` suppresses auto-redirect when error query parameters are present.
+- **Verification**:
+  - Command: `PYTHONPATH=backend pytest backend/tests/test_auth0_rls.py && cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx`
+  - Output: 20/20 backend tests passed; 13/13 frontend Auth0 tests passed.
+
 ### [2026-11-11 13:23:00 UTC] feat(db): implement least-privilege DML-only Oracle application user provisioning and schema resolution
 
 <!-- changelog-entry-json

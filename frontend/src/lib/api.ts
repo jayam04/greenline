@@ -73,7 +73,7 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     );
     if (!isCallback) {
       removeAuthToken();
-      window.location.href = "/login";
+      window.location.href = "/login?error=session_expired";
     }
     throw new Error("Unauthorized");
   }

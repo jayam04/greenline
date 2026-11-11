@@ -115,7 +115,7 @@ describe('Auth0 & API Client Integration', () => {
 
       await expect(apiFetch('/protected-resource')).rejects.toThrow('Unauthorized');
       expect(getAuthToken()).toBeNull();
-      expect(window.location.href).toBe('/login');
+      expect(window.location.href).toContain('/login');
 
       (window as any).location = originalLocation;
     });
@@ -207,9 +207,29 @@ describe('Auth0 & API Client Integration', () => {
       expect(mockLoginWithRedirect).toHaveBeenCalled();
     });
 
-    it('redirects to / when already authenticated', () => {
+    it('redirects to / when already authenticated and no error param', () => {
       render(<LoginPage />);
       expect(mockPush).toHaveBeenCalledWith('/');
+    });
+
+    it('does not auto-redirect and displays error notice when error query param is present', () => {
+      mockPush.mockClear();
+      const originalLocation = window.location;
+      delete (window as any).location;
+      window.location = {
+        ...originalLocation,
+        pathname: '/login',
+        search: '?error=session_expired',
+        href: 'http://localhost:3000/login?error=session_expired',
+      } as any;
+
+      try {
+        render(<LoginPage />);
+        expect(mockPush).not.toHaveBeenCalled();
+        expect(screen.getByText(/session unauthorized or expired/i)).toBeInTheDocument();
+      } finally {
+        (window as any).location = originalLocation;
+      }
     });
   });
 

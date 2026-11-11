@@ -22,6 +22,12 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    // If redirected to login due to an error/session expiration, show notice and do not auto-redirect
+    const hasErrorParam = typeof window !== "undefined" && Boolean(window.location.search && window.location.search.includes("error="));
+    if (hasErrorParam) {
+      setError("Session unauthorized or expired. Please sign in again.");
+      return;
+    }
     if (isAuthenticated) {
       router.push("/");
     }

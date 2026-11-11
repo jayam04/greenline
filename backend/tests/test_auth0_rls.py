@@ -159,6 +159,29 @@ async def test_wrong_issuer_rejected(auth0_client_unauthenticated: AsyncClient, 
 
 
 @pytest.mark.anyio
+async def test_issuer_without_protocol_in_settings_accepted(auth0_client_unauthenticated: AsyncClient, mint_auth0_token):
+    """Token with standard https issuer must be accepted even if AUTH0_ISSUER in settings lacks https:// prefix."""
+    from app.config import settings
+    orig_issuer = settings.AUTH0_ISSUER
+    domain = getattr(settings, "AUTH0_DOMAIN", "jayam04.eu.auth0.com") or "jayam04.eu.auth0.com"
+    clean_domain = domain.replace("https://", "").replace("http://", "").strip("/")
+    try:
+        # Simulate bare domain without protocol in settings
+        settings.AUTH0_ISSUER = clean_domain
+        token = mint_auth0_token(
+            sub="auth0|bare-domain-issuer-user",
+            iss=f"https://{clean_domain}/"
+        )
+        res = await auth0_client_unauthenticated.get(
+            "/api/v1/accounts",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert res.status_code == 200
+    finally:
+        settings.AUTH0_ISSUER = orig_issuer
+
+
+@pytest.mark.anyio
 async def test_unsupported_algorithm_rejected(auth0_client_unauthenticated: AsyncClient, mint_auth0_token):
     """Token with non-RS256 algorithm (e.g. HS256) must be rejected with HTTP 401."""
     hs256_token = mint_auth0_token(

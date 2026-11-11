@@ -127,16 +127,30 @@ async def verify_auth0_token(token: str) -> Optional[Dict[str, Any]]:
     allowed_audiences = [a for a in [configured_aud, client_id] if a]
 
     domain = getattr(settings, "AUTH0_DOMAIN", "jayam04.eu.auth0.com") or "jayam04.eu.auth0.com"
-    default_issuer = getattr(settings, "AUTH0_ISSUER", f"https://{domain}/") or f"https://{domain}/"
-    if not default_issuer.endswith("/"):
-        default_issuer = f"{default_issuer}/"
+    clean_domain = domain.replace("https://", "").replace("http://", "").strip("/")
+    
+    raw_issuer = getattr(settings, "AUTH0_ISSUER", None) or f"https://{clean_domain}/"
+    if not raw_issuer.startswith("http://") and not raw_issuer.startswith("https://"):
+        raw_issuer = f"https://{raw_issuer}"
+    if not raw_issuer.endswith("/"):
+        raw_issuer = f"{raw_issuer}/"
+    default_issuer = raw_issuer
+
+    valid_issuers = {
+        default_issuer,
+        default_issuer.rstrip("/"),
+        f"https://{clean_domain}/",
+        f"https://{clean_domain}",
+        f"http://{clean_domain}/",
+        f"http://{clean_domain}",
+    }
 
     expected_iss = default_issuer
     expected_aud = configured_aud
     try:
         unverified_claims = jwt.get_unverified_claims(cleaned_token)
         token_iss = unverified_claims.get("iss")
-        if token_iss and token_iss in (default_issuer, default_issuer.rstrip("/")):
+        if token_iss and token_iss in valid_issuers:
             expected_iss = token_iss
 
         token_aud = unverified_claims.get("aud")

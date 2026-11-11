@@ -60,7 +60,7 @@ async def get_settings(
             font_val = json.loads(settings_map["app_font"])
         except Exception:
             font_val = settings_map["app_font"]
-    if str(font_val).strip().lower() not in ("general-sans", "inter", "rx100"):
+    if str(font_val).strip().lower() not in ("general-sans", "inter", "rx100", "spline-sans", "spine-sans"):
         font_val = "general-sans"
     else:
         font_val = str(font_val).strip().lower()
@@ -114,7 +114,7 @@ async def update_settings(
 
     # 4. Update app_font
     norm_font = payload.app_font.strip().lower()
-    if norm_font not in ("general-sans", "inter", "rx100"):
+    if norm_font not in ("general-sans", "inter", "rx100", "spline-sans", "spine-sans"):
         norm_font = "general-sans"
     stmt_font = select(AppSetting).where(AppSetting.user_id == u_id, AppSetting.key == "app_font")
     res_font = await db.execute(stmt_font)

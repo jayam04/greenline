@@ -39,6 +39,10 @@ vi.mock('next/font/google', () => ({
     className: 'mock-font-figtree',
     variable: '--font-heading-figtree',
   }),
+  Spline_Sans: () => ({
+    className: 'mock-font-spline-sans',
+    variable: '--font-spline-sans',
+  }),
 }));
 
 vi.mock('next/font/local', () => ({

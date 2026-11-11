@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import localFont from "next/font/local";
-import { Inter, Figtree } from "next/font/google";
+import { Inter, Figtree, Spline_Sans } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
@@ -41,6 +41,12 @@ const inter = Inter({
   display: "swap",
 });
 
+const splineSans = Spline_Sans({
+  subsets: ["latin"],
+  variable: "--font-spline-sans",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     template: "%s · greenline",
@@ -55,7 +61,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn(generalSans.variable, inter.variable, figtreeHeading.variable, rx100.variable)} suppressHydrationWarning>
+    <html lang="en" className={cn(generalSans.variable, inter.variable, figtreeHeading.variable, rx100.variable, splineSans.variable)} suppressHydrationWarning>
       <head>
         <Script
           id="theme-script"
@@ -76,11 +82,13 @@ export default function RootLayout({
 
                   var savedFont = localStorage.getItem('greenline_font') || 'general-sans';
                   document.documentElement.setAttribute('data-font', savedFont);
-                  document.documentElement.classList.remove('font-inter', 'font-general-sans', 'font-rx100');
+                  document.documentElement.classList.remove('font-inter', 'font-general-sans', 'font-rx100', 'font-spline-sans', 'font-spine-sans');
                   if (savedFont === 'inter') {
                     document.documentElement.classList.add('font-inter');
                   } else if (savedFont === 'rx100') {
                     document.documentElement.classList.add('font-rx100');
+                  } else if (savedFont === 'spline-sans' || savedFont === 'spine-sans') {
+                    document.documentElement.classList.add('font-spline-sans');
                   } else {
                     document.documentElement.classList.add('font-general-sans');
                   }

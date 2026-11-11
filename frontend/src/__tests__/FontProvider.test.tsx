@@ -10,6 +10,7 @@ function TestComponent() {
       <span data-testid="current-font">{font}</span>
       <button onClick={() => setFont('inter')}>Set Inter</button>
       <button onClick={() => setFont('general-sans')}>Set General Sans</button>
+      <button onClick={() => setFont('spline-sans')}>Set Spline Sans</button>
     </div>
   );
 }
@@ -75,5 +76,30 @@ describe('FontProvider', () => {
     expect(document.documentElement.classList.contains('font-general-sans')).toBe(true);
     expect(document.documentElement.classList.contains('font-inter')).toBe(false);
     expect(localStorage.getItem(FONT_STORAGE_KEY)).toBe('general-sans');
+
+    act(() => {
+      fireEvent.click(screen.getByText('Set Spline Sans'));
+    });
+
+    expect(screen.getByTestId('current-font').textContent).toBe('spline-sans');
+    expect(document.documentElement.getAttribute('data-font')).toBe('spline-sans');
+    expect(document.documentElement.classList.contains('font-spline-sans')).toBe(true);
+    expect(document.documentElement.classList.contains('font-general-sans')).toBe(false);
+    expect(localStorage.getItem(FONT_STORAGE_KEY)).toBe('spline-sans');
+  });
+
+  it('restores spline-sans from localStorage if saved', () => {
+    localStorage.setItem(FONT_STORAGE_KEY, 'spline-sans');
+
+    render(
+      <FontProvider>
+        <TestComponent />
+      </FontProvider>
+    );
+
+    expect(screen.getByTestId('current-font').textContent).toBe('spline-sans');
+    expect(document.documentElement.getAttribute('data-font')).toBe('spline-sans');
+    expect(document.documentElement.classList.contains('font-spline-sans')).toBe(true);
+    expect(document.documentElement.classList.contains('font-general-sans')).toBe(false);
   });
 });

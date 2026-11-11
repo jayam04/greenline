@@ -32,6 +32,50 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-11 11:01:00 UTC] feat(settings): add Google Fonts Spline Sans and Spine Sans support to settings and interface typography
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T11:01:00Z",
+  "type": "feat",
+  "scope": "settings",
+  "summary": "add Google Fonts Spline Sans and Spine Sans support to settings and interface typography",
+  "affected_files": [
+    "backend/app/api/routers/settings.py",
+    "backend/tests/test_settings.py",
+    "frontend/src/__tests__/FontProvider.test.tsx",
+    "frontend/src/__tests__/SettingsFont.test.tsx",
+    "frontend/src/app/globals.css",
+    "frontend/src/app/layout.tsx",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/components/FontProvider.tsx",
+    "frontend/src/test/setup.ts"
+  ],
+  "rationale": "Enable users to configure and use Spline Sans (Google Fonts) with Spine Sans aliasing across application typography and settings",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_settings.py && cd frontend && npx vitest run src/__tests__/SettingsFont.test.tsx src/__tests__/FontProvider.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(settings)`
+- **Summary**: Added Google Fonts "Spline Sans" (and "Spine Sans" alias) to interface typography settings, font provider, CSS variables, and backend validation.
+- **Rationale**: Allow users to select Google Fonts Spline Sans / Spine Sans for clean UI and dashboards from the Settings typography selector.
+- **Key Changes**:
+  - `backend/app/api/routers/settings.py`: Allowed `spline-sans` and `spine-sans` in `app_font` validation and storage.
+  - `backend/tests/test_settings.py`: Added test assertions verifying `spline-sans` and `spine-sans` font updates and persistence.
+  - `frontend/src/app/layout.tsx`: Loaded `Spline_Sans` via `next/font/google` (`--font-spline-sans`) and added early client script theme/font synchronization.
+  - `frontend/src/app/globals.css`: Added CSS selector rules for `[data-font="spline-sans"]`, `[data-font="spine-sans"]`, `.font-spline-sans`, and `.font-spine-sans`.
+  - `frontend/src/components/FontProvider.tsx`: Added `spline-sans` and `spine-sans` to `AppFont` type, validation, class toggling, and localStorage persistence.
+  - `frontend/src/app/settings/page.tsx`: Added Spline Sans preset card with Google Font badge, preview, and selection handlers.
+  - `frontend/src/test/setup.ts`: Added `Spline_Sans` font mock for Next.js google fonts in unit tests.
+  - `frontend/src/__tests__/FontProvider.test.tsx` & `SettingsFont.test.tsx`: Added test coverage verifying Spline Sans / Spine Sans selection, DOM application, and backend persistence.
+- **Verification**:
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_settings.py && cd frontend && npx vitest run src/__tests__/SettingsFont.test.tsx src/__tests__/FontProvider.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: All tests passed, TypeScript compiler passed with 0 errors, ESLint passed with 0 errors.
+
 ### [2026-11-06 23:26:40 UTC] fix(security): remediate RLS and backup vulnerabilities across backup, cashflow, discrepancies, and auth0 service
 
 <!-- changelog-entry-json

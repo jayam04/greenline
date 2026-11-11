@@ -118,7 +118,7 @@ async def verify_auth0_token(token: str) -> Optional[Dict[str, Any]]:
             return None
 
     if matching_key is None:
-        # Untrusted key or invalid kid
+        logger.warning(f"Auth0 token kid '{kid}' not found in JWKS keys")
         return None
 
     # Determine audience and issuer
@@ -134,7 +134,8 @@ async def verify_auth0_token(token: str) -> Optional[Dict[str, Any]]:
         token_iss = unverified_claims.get("iss")
         if token_iss and token_iss in (default_issuer, default_issuer.rstrip("/")):
             expected_iss = token_iss
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to read unverified claims from Auth0 token: {e}")
         return None
 
     try:
@@ -157,16 +158,18 @@ async def verify_auth0_token(token: str) -> Optional[Dict[str, Any]]:
         # Check future iat with 2-minute clock drift margin
         iat = payload.get("iat")
         if iat is not None and iat > (time.time() + 120):
+            logger.warning(f"Auth0 token iat {iat} is in future (> 2 min drift)")
             return None
 
         # Verify subject is present and non-empty
         sub = payload.get("sub")
         if not sub or not str(sub).strip():
+            logger.warning("Auth0 token missing valid sub claim")
             return None
 
         return payload
     except (ExpiredSignatureError, JWTClaimsError, JWTError) as e:
-        logger.debug(f"Auth0 token validation failed: {e}")
+        logger.warning(f"Auth0 token validation failed: {e}")
         return None
     except Exception as e:
         logger.warning(f"Unexpected error validating Auth0 token: {e}")

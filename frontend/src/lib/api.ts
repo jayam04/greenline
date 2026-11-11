@@ -65,6 +65,10 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   });
 
   if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+    // If an Auth0 OAuth redirect callback is currently in flight in the URL query, do not navigate away
+    if (window.location.search && window.location.search.includes("code=") && window.location.search.includes("state=")) {
+      throw new Error("Unauthorized - authentication callback in progress");
+    }
     removeAuthToken();
     window.location.href = "/login";
     throw new Error("Unauthorized");

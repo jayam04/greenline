@@ -32,6 +32,76 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-11 11:40:00 UTC] fix(auth): eliminate Auth0 login redirect loop by gating protected route mounts and guarding 401 callback interception
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T11:40:00Z",
+  "type": "fix",
+  "scope": "auth",
+  "summary": "eliminate Auth0 login redirect loop by gating protected route mounts and guarding 401 callback interception",
+  "affected_files": [
+    "backend/app/services/auth0_service.py",
+    "frontend/src/__tests__/Auth0Integration.test.tsx",
+    "frontend/src/components/AuthProvider.tsx",
+    "frontend/src/lib/api.ts"
+  ],
+  "rationale": "Prevent race condition where protected dashboard mounted immediately during Auth0 redirect callback, fired unauthenticated API requests before code exchange finished, and triggered premature 401 redirect back to /login",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_auth0_rls.py backend/tests/test_e2e_auth0_rls.py backend/tests/test_settings.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(auth)`
+- **Summary**: Resolved race condition where returning from Auth0 login to `/?code=...` caused immediate unauthenticated API requests and an infinite redirect loop back to `/login`.
+- **Rationale**: When Auth0 redirected to the root route, the dashboard mounted before Auth0 finished exchanging the code for an access token. Because no token was available yet, requests returned 401 Unauthorized, triggering the API client's hard redirect to `/login` and aborting the OAuth exchange.
+- **Key Changes**:
+  - `frontend/src/components/AuthProvider.tsx`: In `AuthSync`, gated protected routes behind an authenticating loading screen while `isLoading: true`, and eagerly primed access tokens upon authentication.
+  - `frontend/src/lib/api.ts`: Guarded `apiFetch` against executing `window.location.href = "/login"` when the URL contains active OAuth callback parameters (`code=` and `state=`).
+  - `backend/app/services/auth0_service.py`: Elevated Auth0 token decode failures and diagnostics from debug to warning level for transparent observability.
+  - `frontend/src/__tests__/Auth0Integration.test.tsx`: Added unit test coverage for protected route loading state and OAuth callback 401 suppression.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_auth0_rls.py backend/tests/test_e2e_auth0_rls.py backend/tests/test_settings.py`
+  - Output: All tests passed (11/11 frontend, 59/59 backend), 0 TypeScript errors, 0 ESLint errors.
+
+### [2026-11-11 11:18:00 UTC] fix(auth): wire Auth0 environment variables in docker compose and handle unconfigured fallback in AuthProvider
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T11:18:00Z",
+  "type": "fix",
+  "scope": "auth",
+  "summary": "wire Auth0 environment variables in docker compose and handle unconfigured fallback in AuthProvider",
+  "affected_files": [
+    "docker-compose.yml",
+    "frontend/src/__tests__/Auth0Integration.test.tsx",
+    "frontend/src/components/AuthProvider.tsx",
+    "frontend/src/test/setup.ts"
+  ],
+  "rationale": "Fix infinite 'Connecting to Auth0' loading state caused by missing environment variable injection in frontend container and lack of non-loading fallback context in AuthProvider",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_auth0_rls.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(auth)`
+- **Summary**: Resolved infinite "Connecting to Auth0..." button state on the login page by forwarding Auth0 environment variables to frontend and backend services in docker compose, providing local environment configuration, and rendering a graceful non-loading fallback context in AuthProvider.
+- **Rationale**: When Auth0 variables were absent or unpassed, AuthProvider bypassed mounting Auth0Provider, which left @auth0/auth0-react's default initialContext in a perpetual isLoading: true state.
+- **Key Changes**:
+  - `docker-compose.yml`: Passed `NEXT_PUBLIC_AUTH0_DOMAIN`, `NEXT_PUBLIC_AUTH0_CLIENT_ID`, `NEXT_PUBLIC_AUTH0_AUDIENCE`, and `NEXT_PUBLIC_AUTH0_ENABLED` to `frontend`, and `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `AUTH0_ISSUER` to `backend`.
+  - `frontend/src/components/AuthProvider.tsx`: Wrapped unconfigured renders in `Auth0Context.Provider` with `isLoading: false` and a descriptive configuration error handler for `loginWithRedirect`.
+  - `frontend/src/test/setup.ts`: Updated `@auth0/auth0-react` test mocks to export `Auth0Context` and `initialContext`.
+  - `frontend/src/__tests__/Auth0Integration.test.tsx`: Added unit test coverage verifying that unconfigured environments receive `isLoading: false`.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/Auth0Integration.test.tsx && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_auth0_rls.py`
+  - Output: All tests passed (9/9 frontend, 19/19 backend), 0 TypeScript errors, 0 ESLint errors.
+
 ### [2026-11-11 11:01:00 UTC] feat(settings): add Google Fonts Spline Sans and Spine Sans support to settings and interface typography
 
 <!-- changelog-entry-json

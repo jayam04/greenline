@@ -53,19 +53,32 @@ vi.mock('next/font/local', () => ({
 }));
 
 // Mock Auth0 React SDK for offline test execution
+const defaultMockAuth0State = {
+  isAuthenticated: true,
+  isLoading: false,
+  user: {
+    sub: 'auth0|test_user',
+    email: 'test@example.com',
+    name: 'Test User',
+    picture: 'https://example.com/avatar.png',
+  },
+  loginWithRedirect: vi.fn(),
+  logout: vi.fn(),
+  getAccessTokenSilently: vi.fn().mockResolvedValue('mock-auth0-access-token'),
+};
+
+const Auth0Context = React.createContext(defaultMockAuth0State);
+
 vi.mock('@auth0/auth0-react', () => ({
-  useAuth0: () => ({
-    isAuthenticated: true,
-    isLoading: false,
-    user: {
-      sub: 'auth0|test_user',
-      email: 'test@example.com',
-      name: 'Test User',
-      picture: 'https://example.com/avatar.png',
-    },
+  Auth0Context,
+  initialContext: {
+    isAuthenticated: false,
+    isLoading: true,
+    user: undefined,
     loginWithRedirect: vi.fn(),
     logout: vi.fn(),
-    getAccessTokenSilently: vi.fn().mockResolvedValue('mock-auth0-access-token'),
-  }),
+    getAccessTokenSilently: vi.fn().mockResolvedValue(null),
+  },
+  useAuth0: () => defaultMockAuth0State,
   Auth0Provider: ({ children }: { children: React.ReactNode }) => children,
 }));

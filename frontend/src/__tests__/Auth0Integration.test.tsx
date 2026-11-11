@@ -119,6 +119,31 @@ describe('Auth0 & API Client Integration', () => {
 
       (window as any).location = originalLocation;
     });
+
+    it('suppresses redirect to /login if OAuth code and state are present in URL query parameters', async () => {
+      setAuthToken('temporary-token');
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        json: async () => ({ detail: 'Unauthorized' }),
+      });
+      global.fetch = mockFetch;
+
+      const originalLocation = window.location;
+      delete (window as any).location;
+      window.location = {
+        ...originalLocation,
+        pathname: '/',
+        search: '?code=abc123xyz&state=state_val',
+        href: 'http://localhost:3000/?code=abc123xyz&state=state_val',
+      } as any;
+
+      await expect(apiFetch('/accounts')).rejects.toThrow(/authentication.*in progress/i);
+      expect(window.location.href).not.toBe('/login');
+
+      (window as any).location = originalLocation;
+    });
   });
 
   describe('Sidebar user profile and logout', () => {
@@ -189,20 +214,33 @@ describe('Auth0 & API Client Integration', () => {
   });
 
   describe('AuthProvider', () => {
-    it('gracefully renders children when Auth0 domain/client_id is not set', () => {
+    it('gracefully renders children and provides non-loading fallback context when Auth0 is not configured', () => {
       const originalDomain = process.env.NEXT_PUBLIC_AUTH0_DOMAIN;
       const originalClient = process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID;
 
       delete process.env.NEXT_PUBLIC_AUTH0_DOMAIN;
       delete process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID;
 
+      function StatusChecker() {
+        const ctx = React.useContext(auth0.Auth0Context);
+        return (
+          <div>
+            <span data-testid="is-loading">{String(ctx.isLoading)}</span>
+            <span data-testid="is-authenticated">{String(ctx.isAuthenticated)}</span>
+          </div>
+        );
+      }
+
       render(
         <AuthProvider>
           <div data-testid="child-content">App Body</div>
+          <StatusChecker />
         </AuthProvider>
       );
 
       expect(screen.getByTestId('child-content')).toHaveTextContent('App Body');
+      expect(screen.getByTestId('is-loading')).toHaveTextContent('false');
+      expect(screen.getByTestId('is-authenticated')).toHaveTextContent('false');
 
       process.env.NEXT_PUBLIC_AUTH0_DOMAIN = originalDomain;
       process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID = originalClient;
@@ -240,6 +278,32 @@ describe('Auth0 & API Client Integration', () => {
           })
         );
       });
+    });
+
+    it('displays authenticating loading screen when isLoading is true on protected routes', () => {
+      process.env.NEXT_PUBLIC_AUTH0_DOMAIN = 'test.eu.auth0.com';
+      process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID = 'test-client-id';
+
+      vi.spyOn(auth0, 'useAuth0').mockReturnValue({
+        isAuthenticated: false,
+        isLoading: true,
+        user: undefined,
+        loginWithRedirect: vi.fn(),
+        logout: vi.fn(),
+        getAccessTokenSilently: vi.fn(),
+        getIdTokenClaims: vi.fn(),
+        loginWithPopup: vi.fn(),
+        handleRedirectCallback: vi.fn(),
+      } as any);
+
+      render(
+        <AuthProvider>
+          <div data-testid="dashboard-content">Dashboard Content</div>
+        </AuthProvider>
+      );
+
+      expect(screen.getByText(/authenticating with auth0/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('dashboard-content')).not.toBeInTheDocument();
     });
   });
 });

@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ORACLE_USER: Optional[str] = None
     ORACLE_PASSWORD: Optional[str] = None
     ORACLE_DSN: Optional[str] = None
+    ORACLE_SCHEMA: Optional[str] = os.getenv("ORACLE_SCHEMA", None)
     
     DEFAULT_ADMIN_USER: str = os.getenv("DEFAULT_ADMIN_USER", "admin")
     DEFAULT_ADMIN_PASSWORD: str = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")

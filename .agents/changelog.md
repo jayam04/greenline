@@ -32,6 +32,47 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-11 13:23:00 UTC] feat(db): implement least-privilege DML-only Oracle application user provisioning and schema resolution
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T13:23:00Z",
+  "type": "feat",
+  "scope": "db",
+  "summary": "implement least-privilege DML-only Oracle application user provisioning and schema resolution",
+  "affected_files": [
+    ".env.example",
+    "backend/app/config.py",
+    "backend/app/db/database.py",
+    "backend/app/db/migrations.py",
+    "backend/scripts/create_db_app_user.py",
+    "backend/scripts/setup_app_user.sql",
+    "backend/tests/test_oracle_app_user_permissions.py"
+  ],
+  "rationale": "Allows running Greenline in production with a least-privilege database user (GREENLINE_APP) restricted to DML operations (SELECT, INSERT, UPDATE, DELETE) across all 21 application tables, prohibiting any table creation, alteration, or deletion.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend pytest backend/tests/test_oracle_app_user_permissions.py backend/tests/test_auth0_rls.py backend/tests/test_settings.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(db)`
+- **Summary**: Implement least-privilege DML-only Oracle application database user setup scripts, automated provisioning CLI, session `CURRENT_SCHEMA` resolution, and migration resilience.
+- **Rationale**: Previously, Greenline connected directly using the schema owner (`ADMIN`), which held full DDL permissions. To adhere to principle of least privilege, a dedicated `GREENLINE_APP` user is created with `CREATE SESSION` and `SELECT, INSERT, UPDATE, DELETE` on all 21 Greenline tables, with zero DDL privileges.
+- **Key Changes**:
+  - `backend/scripts/setup_app_user.sql`: Standalone SQL script granting DML permissions on all 21 tables in `ADMIN` schema and creating the `CURRENT_SCHEMA = ADMIN` logon trigger.
+  - `backend/scripts/create_db_app_user.py`: Python CLI tool to automate provisioning `GREENLINE_APP` using admin credentials, test DML access, and verify DDL prevention (`ORA-01031`).
+  - `backend/app/config.py`: Added `ORACLE_SCHEMA: Optional[str]` configuration.
+  - `backend/app/db/database.py`: Registered connection event listener to set `ALTER SESSION SET CURRENT_SCHEMA` on new connections when `ORACLE_SCHEMA` is configured.
+  - `backend/app/db/migrations.py`: Handled `ORA-01031: insufficient privileges` gracefully during startup migrations so DML-only connections run seamlessly.
+  - `backend/tests/test_oracle_app_user_permissions.py`: Added automated test suite verifying settings, migration exception handling, and table coverage.
+  - `.env.example`: Documented the least-privilege database user setup.
+- **Verification**:
+  - Command: `PYTHONPATH=backend pytest backend/tests/test_oracle_app_user_permissions.py backend/tests/test_auth0_rls.py backend/tests/test_settings.py`
+  - Output: 23/23 tests passed.
+
 ### [2026-11-11 12:55:00 UTC] fix(auth): resolve password hash null constraint on Auth0 user provisioning and gate OAuth callback route mounts
 
 <!-- changelog-entry-json

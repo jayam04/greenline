@@ -32,6 +32,35 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-12 00:14:00 UTC] fix(frontend): enhance apiFetch error reporting to display exact HTTP status details
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-12T00:14:00Z",
+  "type": "fix",
+  "scope": "frontend",
+  "summary": "enhance apiFetch error reporting to display exact HTTP status details",
+  "affected_files": [
+    "frontend/src/lib/api.ts"
+  ],
+  "rationale": "Prevent opaque 'API Error' console messages when upstream backend is unreachable or returning non-JSON error pages, providing clear HTTP status code and status text diagnostics.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(frontend)`
+- **Summary**: Enhance `apiFetch` error diagnostics to include HTTP status code and text.
+- **Rationale**: When the backend returns an error or connection reset, provide informative error text instead of generic `"API Error"`.
+- **Key Changes**:
+  - `frontend/src/lib/api.ts`: Format fallback error with `HTTP ${res.status}: ${res.statusText || "API Error"}`.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint`
+  - Output: `0 errors`.
+
 ### [2026-11-12 00:02:00 UTC] feat(config): support dedicated ORACLE_NETWORTH_USER and credentials forwarding in microservice and docker-compose
 
 <!-- changelog-entry-json

@@ -79,8 +79,9 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: "API Error" }));
-    throw new Error(err.detail || "API Error");
+    const err = await res.json().catch(() => null);
+    const message = err?.detail || `HTTP ${res.status}: ${res.statusText || "API Error"}`;
+    throw new Error(message);
   }
 
   if (res.status === 204) {

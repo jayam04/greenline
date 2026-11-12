@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
 import { useFont, AppFont, FONT_STORAGE_KEY } from "@/components/FontProvider";
+import { SnapshotDateControl } from "@/components/SnapshotDateControl";
 
 const FONT_PRESETS = [
   {
@@ -494,7 +495,26 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Card 3: Interface Typography */}
+          {/* Card 3: Snapshot Starting Date Baseline */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-xl">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                  Snapshot Starting Date Baseline
+                </h2>
+                <p className="text-[11px] font-medium text-slate-400">
+                  Configure automatic (earliest record) or manual starting date baseline for weekly timeseries snapshots
+                </p>
+              </div>
+            </div>
+
+            <SnapshotDateControl variant="inline" />
+          </div>
+
+          {/* Card 4: Interface Typography */}
           <div className="getquin-card p-5 space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 rounded-xl">

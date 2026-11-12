@@ -9,6 +9,7 @@ import {
 import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
 import { AllocationChart } from "@/components/AllocationChart";
 import { AccountCustomizationModal } from "@/components/AccountCustomizationModal";
+import { SnapshotDateControl } from "@/components/SnapshotDateControl";
 import { 
   TrendingUp, Wallet, Landmark, Building2, Coins, Briefcase, Plus, 
   ArrowUpRight, ArrowDownRight, Eye, EyeOff, RefreshCw, Settings, 
@@ -99,6 +100,19 @@ export default function NetWorthDashboardPage() {
   const [annualSnapshot, setAnnualSnapshot] = useState<AnnualSnapshot | null>(null);
   const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
   const [fiscalYearStart, setFiscalYearStart] = useState<string>("01-01");
+  const [snapshotStartDate, setSnapshotStartDate] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedMode = localStorage.getItem("greenline_snapshot_start_mode");
+        if (savedMode === "manual") {
+          return localStorage.getItem("greenline_snapshot_start_date") || null;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  });
   
   const [selectedAccount, setSelectedAccount] = useState<string>("all");
   const [timeRange, setTimeRange] = useState<string>("YTD");
@@ -152,8 +166,8 @@ export default function NetWorthDashboardPage() {
   };
 
   useEffect(() => {
-    loadData(selectedAccount, fiscalYearStart, masterCurrency);
-  }, [selectedAccount, fiscalYearStart, masterCurrency]);
+    loadData(selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate);
+  }, [selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate]);
 
   const loadSettingsAndAccounts = async () => {
     try {
@@ -178,15 +192,25 @@ export default function NetWorthDashboardPage() {
     }
   };
 
-  const loadData = async (accId: string, fyStart: string, mCurr: string) => {
+  const loadData = async (
+    accId: string,
+    fyStart: string,
+    mCurr: string,
+    sDate: string | null = snapshotStartDate
+  ) => {
     try {
       setLoading(true);
       const queryParam = accId === "all" ? "" : `?account_id=${accId}`;
       const annualQuery = `?fiscal_year_start=${fyStart}&master_currency=${mCurr}`;
 
+      const snapParams = new URLSearchParams();
+      if (accId !== "all") snapParams.set("account_id", accId);
+      if (sDate) snapParams.set("start_date", sDate);
+      const snapQuery = snapParams.toString() ? `?${snapParams.toString()}` : "";
+
       const [sumData, snapData, annualData, accData] = await Promise.all([
         apiFetch<PortfolioSummary>(`/portfolio/summary${queryParam}`),
-        apiFetch<Snapshot[]>(`/snapshots${queryParam}`),
+        apiFetch<Snapshot[]>(`/snapshots${snapQuery}`),
         apiFetch<AnnualSnapshot>(`/portfolio/annual_snapshot${annualQuery}`),
         apiFetch<Account[]>("/accounts"),
       ]);
@@ -206,7 +230,7 @@ export default function NetWorthDashboardPage() {
     try {
       setRefreshing(true);
       await apiFetch("/prices/refresh", { method: "POST" });
-      await loadData(selectedAccount, fiscalYearStart, masterCurrency);
+      await loadData(selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate);
     } catch (e) {
       console.error(e);
     } finally {
@@ -610,21 +634,26 @@ export default function NetWorthDashboardPage() {
                 </div>
               </div>
 
-              {/* Timeframe Filters */}
-              <div className="flex items-center gap-1 text-xs font-bold self-start sm:self-auto bg-slate-50 p-1 rounded-lg border border-slate-100">
-                {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => setTimeRange(tf)}
-                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                      timeRange === tf
-                        ? "bg-white text-[#0F172A] shadow-xs font-extrabold"
-                        : "text-slate-400 hover:text-slate-700"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
+              {/* Snapshot Starting Date & Timeframe Filters */}
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <SnapshotDateControl
+                  onChange={(newDate) => setSnapshotStartDate(newDate)}
+                />
+                <div className="flex items-center gap-1 text-xs font-bold bg-slate-50 dark:bg-slate-800 p-1 rounded-lg border border-slate-100 dark:border-slate-700">
+                  {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
+                    <button
+                      key={tf}
+                      onClick={() => setTimeRange(tf)}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        timeRange === tf
+                          ? "bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-white shadow-xs font-extrabold"
+                          : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {tf}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

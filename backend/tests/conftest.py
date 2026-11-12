@@ -80,19 +80,36 @@ def mock_auth0_jwks():
     async def mock_get(self, url, *args, **kwargs):
         url_str = str(url)
         if ".well-known/jwks.json" in url_str:
-            return httpx.Response(200, json=TEST_JWKS)
+            return httpx.Response(200, json=TEST_JWKS, request=httpx.Request("GET", url_str))
         return await orig_get(self, url, *args, **kwargs)
 
+    patches = []
+    try:
+        from app.services import auth0_service
+        patches.append(patch.object(auth0_service, "get_jwks", return_value=TEST_JWKS))
+        patches.append(patch.object(auth0_service, "fetch_jwks", return_value=TEST_JWKS))
+        if hasattr(auth0_service, "clear_jwks_cache"):
+            auth0_service.clear_jwks_cache()
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        from services.networth.app.services import auth0_service as nw_auth0
+        patches.append(patch.object(nw_auth0, "get_jwks", return_value=TEST_JWKS))
+        patches.append(patch.object(nw_auth0, "fetch_jwks", return_value=TEST_JWKS))
+        if hasattr(nw_auth0, "clear_jwks_cache"):
+            nw_auth0.clear_jwks_cache()
+    except (ImportError, AttributeError):
+        pass
+
     with patch.object(httpx.AsyncClient, "get", mock_get):
+        for p in patches:
+            p.start()
         try:
-            from app.services import auth0_service
-            with patch.object(auth0_service, "get_jwks", return_value=TEST_JWKS), \
-                 patch.object(auth0_service, "fetch_jwks", return_value=TEST_JWKS):
-                if hasattr(auth0_service, "clear_jwks_cache"):
-                    auth0_service.clear_jwks_cache()
-                yield
-        except (ImportError, AttributeError):
             yield
+        finally:
+            for p in reversed(patches):
+                p.stop()
 
 
 @pytest.fixture
@@ -170,6 +187,8 @@ _orig_create_async_engine = sa_async.create_async_engine
 
 def _test_create_async_engine(url, *args, **kwargs):
     kwargs["poolclass"] = NullPool
+    kwargs.pop("pool_size", None)
+    kwargs.pop("max_overflow", None)
     clean_url = str(url)
     if "sqlite" in clean_url:
         clean_url = TEST_DATABASE_URL

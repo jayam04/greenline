@@ -32,6 +32,261 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-12 00:02:00 UTC] feat(config): support dedicated ORACLE_NETWORTH_USER and credentials forwarding in microservice and docker-compose
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-12T00:02:00Z",
+  "type": "feat",
+  "scope": "config",
+  "summary": "support dedicated ORACLE_NETWORTH_USER and credentials forwarding in microservice and docker-compose",
+  "affected_files": [
+    "services/networth/app/config.py",
+    "docker-compose.yml",
+    ".env.example"
+  ],
+  "rationale": "Allow users to configure dedicated credentials for the Networth microservice (ORACLE_NETWORTH_USER / ORACLE_NETWORTH_PASSWORD) in .env, falling back seamlessly to ORACLE_USER when unset.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "docker compose config",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(config)`
+- **Summary**: Support dedicated `ORACLE_NETWORTH_USER` and `ORACLE_NETWORTH_PASSWORD` in `.env` and `docker-compose.yml`.
+- **Rationale**: Allow isolated database role credentials for the analytical microservice without disrupting Core API credentials.
+- **Key Changes**:
+  - `services/networth/app/config.py`: Added fallback check for `ORACLE_NETWORTH_USER` and `ORACLE_NETWORTH_PASSWORD`.
+  - `docker-compose.yml`: Forwarded `ORACLE_NETWORTH_USER` and `ORACLE_NETWORTH_PASSWORD` environment variables to `networth` container.
+  - `.env.example`: Documented `ORACLE_NETWORTH_USER` and `ORACLE_NETWORTH_PASSWORD` configuration options.
+- **Verification**:
+  - Command: `docker compose config`
+  - Output: `Verified clean compose configuration`.
+
+### [2026-11-11 20:35:00 UTC] feat(networth): integrate weekly sunday snapshots, sub-50ms caching, background worker, and core api client
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T20:35:00Z",
+  "type": "feat",
+  "scope": "networth",
+  "summary": "integrate weekly sunday snapshots, sub-50ms caching, background worker, and core api client",
+  "affected_files": [
+    "services/networth/app/main.py",
+    "services/networth/app/api/routers/snapshots.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/app/db/database.py",
+    "services/networth/app/services/snapshot_engine.py",
+    "services/networth/app/services/background_worker.py",
+    "services/networth/app/scheduler.py",
+    "backend/app/config.py",
+    "backend/app/services/networth_client.py",
+    "backend/app/api/routers/transactions.py",
+    "backend/tests/test_e2e_networth_microservice.py"
+  ],
+  "rationale": "Mount Networth microservice routers, manage background worker and scheduler lifecycles, enforce Sunday snapshot invariants, enable L1 in-memory sub-50ms TTL caching with invalidation, support NullPool engine config under test environments, add non-blocking Networth notification client in Core API transactions, and verify 100% passing E2E test suite.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/networth:backend:. /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_e2e_networth_microservice.py -v",
+    "result": "PASSED (35/35 passed in 16.59s)"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(networth)`
+- **Summary**: Integrate weekly Sunday snapshots, sub-50ms caching, background worker, and Core API client.
+- **Rationale**: Wire the Networth microservice into the Greenline architecture with background recalculation, weekly Sunday interval aggregation, L1 caching, and decoupled Core API notifications.
+- **Key Changes**:
+  - `services/networth/app/main.py`: Mounted `snapshots` and `portfolio` routers, wired `background_worker` and `scheduler` startup/shutdown into lifespan.
+  - `services/networth/app/api/routers/portfolio.py`: Added `NetworthSnapshot` import, verified sub-50ms `portfolio_summary_cache`.
+  - `services/networth/app/api/routers/snapshots.py`: Enforced Sunday invariant (`weekday == 6`), verified SQL pushdown for `start_date`, L1 `snapshots_cache` with per-user invalidation, and `POST /trigger-recalculate` returning 202 Accepted.
+  - `services/networth/app/db/database.py`: Stripped `pool_size` and `max_overflow` when `NullPool` is configured.
+  - `services/networth/app/services/snapshot_engine.py`: Attached and persisted `NetworthByAssetClass` breakdowns in `generate_daily_snapshot` and ensured 7-day Sunday stepping.
+  - `services/networth/app/services/background_worker.py`: Added self-starting check in `enqueue_recalculate` for resilient async execution.
+  - `services/networth/app/scheduler.py`: Added UTC timezone and isolated database sessions per user during Sunday consolidation.
+  - `backend/app/config.py`: Added `NETWORTH_SERVICE_URL`.
+  - `backend/app/services/networth_client.py`: Created non-blocking async notification client for snapshot recalculation with resilient error suppression.
+  - `backend/app/api/routers/transactions.py`: Replaced synchronous recalculation with non-blocking async background notifications via `networth_client`.
+  - `backend/tests/test_e2e_networth_microservice.py`: Resolved root sys.path, patched Auth0 JWKS across both services, and injected DB test session dependency overrides.
+- **Verification**:
+  - Command: `PYTHONPATH=services/networth:backend:. /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_e2e_networth_microservice.py -v`
+  - Output: `35 passed in 16.59s` (100% pass rate, sub-50ms latency confirmed).
+
+### [2026-11-11 16:40:00 UTC] feat(frontend): add transparent rewrites and snapshot starting date selection UI
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T16:40:00Z",
+  "type": "feat",
+  "scope": "frontend",
+  "summary": "add transparent rewrites and snapshot starting date selection UI",
+  "affected_files": [
+    "docker-compose.yml",
+    "frontend/next.config.ts",
+    "frontend/src/lib/api.ts",
+    "frontend/src/components/SnapshotDateControl.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/investments/page.tsx",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/test/SnapshotDateControl.test.tsx"
+  ],
+  "rationale": "Configure transparent Next.js rewrites for dedicated Networth microservice routing on port 8001, update client API base to relative origin, update docker-compose frontend service configuration, implement SnapshotDateControl with Auto/Manual modes, 'Sep 1' and other quick presets, and localStorage persistence, and integrate into dashboard views.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/test/SnapshotDateControl.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(frontend)`
+- **Summary**: Add transparent rewrites and snapshot starting date selection UI
+- **Rationale**: Support seamless client communication with the new Networth microservice via Next.js rewrites, update client apiFetch base, configure docker-compose frontend environment, and provide user controls for automatic vs manual snapshot baseline selection with quick presets.
+- **Key Changes**:
+  - `docker-compose.yml`: Set `NEXT_PUBLIC_API_URL=` empty, added `NETWORTH_URL=http://networth:8001`, `BACKEND_URL=http://backend:8000`, and added `networth` dependency.
+  - `frontend/next.config.ts`: Added Next.js `rewrites()` proxying `/api/v1/portfolio/:path*` and `/api/v1/snapshots/:path*` to `NETWORTH_URL` (port 8001) and `/api/v1/:path*` to `BACKEND_URL` (port 8000).
+  - `frontend/src/lib/api.ts`: Updated `getApiBase()` to return `process.env.NEXT_PUBLIC_API_URL || ""` in the browser, routing client requests relatively through Next.js proxy.
+  - `frontend/src/components/SnapshotDateControl.tsx`: Created reusable component supporting Auto (earliest record) vs Manual date selection, quick presets ("Sep 1", "Jan 1 (YTD)", "Apr 1 (Fiscal)", "1 Year Ago"), and `localStorage` persistence (`greenline_snapshot_start_mode`, `greenline_snapshot_start_date`).
+  - `frontend/src/app/page.tsx`: Embedded `SnapshotDateControl` beside timeframe buttons and appended `?start_date=YYYY-MM-DD` query param to snapshot requests.
+  - `frontend/src/app/investments/page.tsx`: Embedded `SnapshotDateControl` beside timeframe buttons and appended `?start_date=YYYY-MM-DD` query param to snapshot requests.
+  - `frontend/src/app/settings/page.tsx`: Added Snapshot Starting Date Baseline card under Preferences section using inline variant.
+  - `frontend/src/test/SnapshotDateControl.test.tsx`: Added 14 automated Vitest tests covering auto/manual switching, quick presets, date input changes, localStorage persistence, popover toggle, getApiBase, and Next.js rewrite rules.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/test/SnapshotDateControl.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: 14 passing Vitest tests, TypeScript clean (0 errors), ESLint clean (0 errors).
+
+
+
+### [2026-11-11 16:25:00 UTC] feat(networth): scaffold dedicated Networth microservice infrastructure and core API setup
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T16:25:00Z",
+  "type": "feat",
+  "scope": "networth",
+  "summary": "scaffold dedicated Networth microservice infrastructure and core API setup",
+  "affected_files": [
+    "docker-compose.yml",
+    "services/__init__.py",
+    "services/networth/__init__.py",
+    "services/networth/requirements.txt",
+    "services/networth/Dockerfile",
+    "services/networth/app/__init__.py",
+    "services/networth/app/config.py",
+    "services/networth/app/db/__init__.py",
+    "services/networth/app/db/database.py",
+    "services/networth/app/db/models.py",
+    "services/networth/app/services/__init__.py",
+    "services/networth/app/services/auth0_service.py",
+    "services/networth/app/api/__init__.py",
+    "services/networth/app/api/deps.py",
+    "services/networth/app/main.py",
+    "services/networth/tests/conftest.py",
+    "services/networth/tests/test_service_init.py"
+  ],
+  "rationale": "Implement Milestone 2 infrastructure for the dedicated Networth and Analytics microservice: Dockerfile on port 8001, docker-compose.yml service definition, async Oracle DB engine with declarative models restricted to the 17 accessible tables, stateless Auth0 RS256 JWT verification with 24h JWKS caching, and healthcheck endpoint with GZip middleware.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/networth:backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/networth/tests/test_service_init.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(networth)`
+- **Summary**: Scaffold dedicated Networth microservice infrastructure, Docker environment, DB models, Auth0 verification, and health endpoint.
+- **Rationale**: Enables separation of CPU-heavy analytical calculations from the transactional core API while enforcing least-privilege table boundaries and sub-millisecond local auth resolution.
+- **Key Changes**:
+  - `docker-compose.yml`: Added `networth` container on port 8001 with hot reload, database connection credentials, and healthy Oracle dependency.
+  - `services/networth/requirements.txt` & `Dockerfile`: Python 3.11-slim container spec exposing port 8001 running Uvicorn.
+  - `services/networth/app/config.py`: BaseSettings loading database URL, Oracle connection parameters, and Auth0 configuration.
+  - `services/networth/app/db/database.py` & `models.py`: Async SQLAlchemy session factory and declarative models for 17 accessible tables, strictly omitting forbidden tables (`api_keys`, `app_settings`, `expected_dividends`, `schema_migrations`).
+  - `services/networth/app/services/auth0_service.py` & `api/deps.py`: Stateless Auth0 RS256 token verification using public JWKS with 24-hour caching and query-level user lookup.
+  - `services/networth/app/main.py`: FastAPI application instance configured with GZip middleware (`minimum_size=1000`), CORS, and `/health` endpoint.
+  - `services/networth/tests/test_service_init.py`: Comprehensive test suite verifying healthcheck (200 OK), root info, GZip middleware, Auth0 token verification (valid, missing, empty, expired, attacker forged, tampered signature, unregistered user), database execution, and table metadata boundaries.
+- **Verification**:
+  - Command: `PYTHONPATH=services/networth:backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/networth/tests/test_service_init.py`
+  - Output: 11 passed in 1.82s.
+
+
+### [2026-11-11 16:10:00 UTC] test(networth): establish 4-tier opaque-box E2E test suite and test infrastructure
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T16:10:00Z",
+  "type": "test",
+  "scope": "networth",
+  "summary": "establish 4-tier opaque-box E2E test suite and test infrastructure",
+  "affected_files": [
+    "TEST_INFRA.md",
+    "TEST_READY.md",
+    "backend/tests/test_e2e_networth_microservice.py",
+    "services/networth/tests/__init__.py",
+    "services/networth/tests/conftest.py",
+    "services/networth/tests/test_e2e_networth_microservice.py"
+  ],
+  "rationale": "Implement comprehensive opaque-box E2E testing framework for the Networth microservice covering endpoints, Auth0 RS256 token verification, weekly Sunday aggregation, starting date selection, background recalculation triggers, and sub-50ms latency SLAs.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_e2e_networth_microservice.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `test(networth)`
+- **Summary**: Implemented comprehensive 4-tier opaque-box E2E test suite (`backend/tests/test_e2e_networth_microservice.py` and `services/networth/tests/`), created `TEST_INFRA.md` with 35-feature coverage matrix, and published `TEST_READY.md` certification report.
+- **Rationale**: Validates MSc WAA microservices architecture requirements (R1–R6) with rigorous TDD verification: 25 pre-implementation tests passing (auth, core endpoints, multi-tenant isolation, real-world lifecycle) and 10 red-phase tests asserting weekly Sunday aggregation, starting date pushdown, recalculation triggers, and sub-50ms query SLAs.
+- **Key Changes**:
+  - `TEST_INFRA.md`: Established testing methodology, 35-feature inventory coverage matrix, 4-tier structure, and execution runbooks.
+  - `TEST_READY.md`: Published certification matrix, execution commands, and verbatim test run outputs.
+  - `backend/tests/test_e2e_networth_microservice.py`: 35 genuine opaque-box tests executing against Oracle Free 23ai and FastAPI app with 100% offline Auth0 mock RSA keypairs.
+  - `services/networth/tests/conftest.py`: Test harness dynamically binding backend test fixtures and NullPool Oracle session factories.
+  - `services/networth/tests/test_e2e_networth_microservice.py`: Symlinked E2E test suite for direct microservice test execution.
+- **Verification**:
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_e2e_networth_microservice.py`
+  - Output: 35 collected, 25 passed, 10 expected red-phase failures in 29.30s.
+
+
+
+### [2026-11-11 16:00:00 UTC] feat(db): provision GREENLINE_NETWORTH user with least privilege and table grants
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-11T16:00:00Z",
+  "type": "feat",
+  "scope": "db",
+  "summary": "provision GREENLINE_NETWORTH user with least privilege and table grants",
+  "affected_files": [
+    "scripts/setup_networth_user.sql",
+    "backend/scripts/setup_networth_user.sql",
+    "backend/scripts/create_db_networth_user.py",
+    "backend/tests/test_oracle_networth_user_permissions.py"
+  ],
+  "rationale": "The dedicated Networth microservice requires strict least-privilege database isolation: read-only access to 13 analytical input tables, read/write access to 4 snapshot/cache tables, zero access to sensitive tables (api_keys, app_settings), and zero DDL privileges.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_networth_user_permissions.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(db)`
+- **Summary**: Created database provisioning script `scripts/setup_networth_user.sql` and automated test suite verifying least-privilege table grants, logon schema triggers, and forbidden DDL/table rejections for the `GREENLINE_NETWORTH` user.
+- **Rationale**: Isolates the Networth & Analytics microservice from transactional tables (transactions, accounts, users) by granting read-only `SELECT` privileges, allowing write operations only on analytical output and cache tables (`networth_snapshots`, `networth_by_asset_class`, `xirr_cache`, `benchmarks`), while strictly rejecting access to sensitive tables (`api_keys`, `app_settings`, `expected_dividends`, `schema_migrations`) and forbidding DDL statements.
+- **Key Changes**:
+  - `scripts/setup_networth_user.sql`: Admin provisioning script defining `GREENLINE_NETWORTH` user, `CREATE SESSION` grant, SELECT grants on 13 analytical tables, DML grants on 4 snapshot/cache tables, and `AFTER LOGON` trigger setting `CURRENT_SCHEMA`.
+  - `backend/scripts/setup_networth_user.sql`: Co-located copy of setup script for backend deployment workflows.
+  - `backend/scripts/create_db_networth_user.py`: Python CLI tool to provision `GREENLINE_NETWORTH` user dynamically with automated tablespace detection.
+  - `backend/tests/test_oracle_networth_user_permissions.py`: Automated pytest suite testing static script security properties, live Oracle connection, SELECT access, DML on snapshots, rejection of writes on inputs (`ORA-01031`/`ORA-41900`), rejection of forbidden tables (`ORA-00942`), and zero DDL enforcement.
+- **Verification**:
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_networth_user_permissions.py`
+  - Output: 7 passed in 1.34s
+
+
 ### [2026-11-11 13:50:00 UTC] fix(auth): normalize Auth0 issuer validation and prevent infinite login redirect loops
 
 <!-- changelog-entry-json

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     BACKUP_DIR: str = os.getenv("BACKUP_DIR", os.path.join(_get_default_data_dir(), "backups"))
     
     DATABASE_URL: str = os.getenv("DATABASE_URL", "oracle+oracledb://@")
+    NETWORTH_SERVICE_URL: str = os.getenv("NETWORTH_SERVICE_URL", "http://localhost:8001")
 
     # Oracle Database credentials (Autonomous Database or local container)
     ORACLE_USER: Optional[str] = None

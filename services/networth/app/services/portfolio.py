@@ -1,0 +1,139 @@
+from typing import Optional, List, Dict, Set
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+
+try:
+    from ..db.models import Account, Transaction, CashflowPayment, Lot, PriceHistory
+    from .cashflow_engine import compute_transaction_cash_movement
+except (ImportError, ValueError):
+    from app.db.models import Account, Transaction, CashflowPayment, Lot, PriceHistory
+    from app.services.cashflow_engine import compute_transaction_cash_movement
+
+
+async def calculate_all_account_details(
+    db: AsyncSession,
+    accounts: Optional[List[Account]] = None,
+    include_securities: bool = True,
+    user_id: Optional[int] = None
+) -> Dict[int, Dict[str, float]]:
+    """
+    Computes detailed cash_balance, securities_value, and current_balance for every account in a single pass.
+    """
+    if accounts is None:
+        acc_stmt = select(Account)
+        if user_id is not None:
+            acc_stmt = acc_stmt.where(Account.user_id == user_id)
+        acc_res = await db.execute(acc_stmt)
+        accounts = list(acc_res.scalars().all())
+    account_ids = {a.account_id for a in accounts}
+
+    cash_balances: Dict[int, float] = {a.account_id: 0.0 for a in accounts}
+    securities_values: Dict[int, float] = {a.account_id: 0.0 for a in accounts}
+
+    # 1. Investment transactions cash movements
+    tx_stmt = select(Transaction)
+    if user_id is not None:
+        tx_stmt = tx_stmt.where(Transaction.user_id == user_id)
+    tx_res = await db.execute(tx_stmt)
+    for tx in tx_res.scalars().all():
+        cash_acc_id, delta = compute_transaction_cash_movement(tx, account_ids)
+        if cash_acc_id in cash_balances:
+            cash_balances[cash_acc_id] += delta
+
+    # 2. Cashflow payments aggregation
+    cf_stmt = (
+        select(CashflowPayment.account_id, func.sum(CashflowPayment.amount))
+        .group_by(CashflowPayment.account_id)
+    )
+    if user_id is not None:
+        cf_stmt = (
+            select(CashflowPayment.account_id, func.sum(CashflowPayment.amount))
+            .join(Account, CashflowPayment.account_id == Account.account_id)
+            .where(Account.user_id == user_id)
+            .group_by(CashflowPayment.account_id)
+        )
+    cf_res = await db.execute(cf_stmt)
+    for acc_id, total_amt in cf_res.all():
+        if acc_id in cash_balances and total_amt is not None:
+            cash_balances[acc_id] += float(total_amt)
+
+    # 3. Securities valuation for open lots with single batch price fetch
+    if include_securities:
+        lot_stmt = select(Lot).where(Lot.quantity_remaining > 0)
+        if user_id is not None:
+            lot_stmt = lot_stmt.where(Lot.user_id == user_id)
+        lot_res = await db.execute(lot_stmt)
+        open_lots = list(lot_res.scalars().all())
+
+        if open_lots:
+            asset_ids = list(set(l.asset_id for l in open_lots))
+            latest_prices: Dict[int, float] = {}
+
+            if asset_ids:
+                latest_date_subq = (
+                    select(PriceHistory.asset_id, func.max(PriceHistory.price_date).label("max_date"))
+                    .where(PriceHistory.asset_id.in_(asset_ids))
+                    .group_by(PriceHistory.asset_id)
+                    .subquery()
+                )
+                ph_stmt = (
+                    select(PriceHistory.asset_id, PriceHistory.close_price)
+                    .join(
+                        latest_date_subq,
+                        (PriceHistory.asset_id == latest_date_subq.c.asset_id) &
+                        (PriceHistory.price_date == latest_date_subq.c.max_date)
+                    )
+                )
+                ph_res = await db.execute(ph_stmt)
+                for aid, close_px in ph_res.all():
+                    if close_px is not None:
+                        latest_prices[aid] = float(close_px)
+
+            for lot in open_lots:
+                acc_id = lot.account_id
+                if acc_id in securities_values:
+                    unit_price = latest_prices.get(lot.asset_id, float(lot.cost_per_unit or 0.0))
+                    securities_values[acc_id] += float(lot.quantity_remaining) * unit_price
+
+    results = {}
+    for a in accounts:
+        aid = a.account_id
+        c_bal = round(cash_balances.get(aid, 0.0), 2)
+        s_val = round(securities_values.get(aid, 0.0), 2)
+        results[aid] = {
+            "cash_balance": c_bal,
+            "securities_value": s_val,
+            "current_balance": round(c_bal + s_val, 2)
+        }
+
+    return results
+
+
+async def calculate_all_account_cash_balances(
+    db: AsyncSession,
+    accounts: Optional[List[Account]] = None,
+    user_id: Optional[int] = None
+) -> Dict[int, float]:
+    """Computes pure uninvested liquid cash for every account."""
+    details = await calculate_all_account_details(db, accounts=accounts, include_securities=False, user_id=user_id)
+    return {k: v["cash_balance"] for k, v in details.items()}
+
+
+async def calculate_all_account_balances(
+    db: AsyncSession,
+    accounts: Optional[List[Account]] = None,
+    user_id: Optional[int] = None
+) -> Dict[int, float]:
+    """Computes total valuation (cash + open securities) for every account."""
+    details = await calculate_all_account_details(db, accounts=accounts, user_id=user_id)
+    return {k: v["current_balance"] for k, v in details.items()}
+
+
+async def calculate_all_account_securities_values(
+    db: AsyncSession,
+    accounts: Optional[List[Account]] = None,
+    user_id: Optional[int] = None
+) -> Dict[int, float]:
+    """Computes securities valuation for every account."""
+    details = await calculate_all_account_details(db, accounts=accounts, user_id=user_id)
+    return {k: v["securities_value"] for k, v in details.items()}

@@ -32,6 +32,37 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-12 11:45:00 UTC] feat(db): add 1000 row 2-year sample data population script with multi-account, multi-category, and stock transactions
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-12T11:45:00Z",
+  "type": "feat",
+  "scope": "db",
+  "summary": "add 1000 row 2-year sample data population script with multi-account, multi-category, and stock transactions",
+  "affected_files": [
+    "backend/scripts/populate_1000_sample_data.sql",
+    "scripts/populate_1000_sample_data.sql"
+  ],
+  "rationale": "Provide an idempotent, standalone Oracle PL/SQL script generating 1,000 realistic transaction records spanning exactly two years (730 days) across cashflow (single-category, multi-category splits, multi-account split payments, and both combined) and stock investments (FIFO buys and lot depletion sales with realized PnL and asset price history).",
+  "breaking_changes": false,
+  "verification": {
+    "command": "Executed against local Oracle Free 23ai container and verified row counts (900 cashflow, 100 investment = 1,000 total), date ranges, split patterns, and FIFO lot sales.",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(db)`
+- **Summary**: Add standalone Oracle SQL script to populate 1,000 transactions spanning 2 years with multi-account, multi-category, and stock buy/sell transactions.
+- **Rationale**: Enables realistic load, aggregation, and Sankey/Networth chart validation across diverse transaction patterns (single account/category, split items, split payment sources, simultaneous split items and payments, and FIFO equity lots with price histories).
+- **Key Changes**:
+  - `backend/scripts/populate_1000_sample_data.sql`: Core Oracle PL/SQL procedure populating 900 cashflow transactions (225 single, 225 split category, 225 split accounts, 225 both) and 100 investment transactions (60 buys, 40 sells with 52 FIFO lot_sales), plus verification queries and rollback block.
+  - `scripts/populate_1000_sample_data.sql`: Root scripts directory copy for developer convenience.
+- **Verification**:
+  - Command: Script executed and tested on local Oracle Free 23ai test database (`FREEPDB1`).
+  - Output: 900 cashflow + 100 stock transactions = 1,000 total across 2024-11-12 to 2026-11-12. Idempotency and child cascade cleanups verified.
+
 ### [2026-11-12 00:58:00 UTC] fix(networth): normalize multi-currency asset valuations and cash balances to EUR base currency in snapshot engines
 
 <!-- changelog-entry-json

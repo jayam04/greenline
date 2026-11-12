@@ -51,6 +51,10 @@ async def list_snapshots(
     Supports starting date selection with SQL pushdown and automatic inception fallback.
     """
     u_id = get_user_id(current_user)
+    if not isinstance(account_id, int):
+        account_id = None
+    if not isinstance(start_date, (datetime.date, datetime.datetime)):
+        start_date = None
 
     # 1. Single-account snapshot timeline
     if account_id is not None:

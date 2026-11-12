@@ -32,6 +32,48 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-12 00:58:00 UTC] fix(networth): normalize multi-currency asset valuations and cash balances to EUR base currency in snapshot engines
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-12T00:58:00Z",
+  "type": "fix",
+  "scope": "networth",
+  "summary": "normalize multi-currency asset valuations and cash balances to EUR base currency in snapshot engines",
+  "affected_files": [
+    "services/networth/app/services/snapshot_engine.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/app/api/routers/snapshots.py",
+    "backend/app/services/snapshot_engine.py",
+    "backend/tests/test_snapshot_currency_normalization.py",
+    "backend/tests/test_snapshot_funding_multicurrency.py"
+  ],
+  "rationale": "Historical snapshots in NETWORTH_SNAPSHOTS stored raw unconverted currency amounts, causing Indian Rupee accounts to be stored in lakhs (e.g. 463k) and frontend charts to display EUR values in Lakhs ('L') with distorted net worth deltas (+€453,005). Normalizing all asset lots, realized PnL, cash movements, and total invested to EUR base resolves chart scale and annual snapshot metrics.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/networth:backend:. backend/.venv/bin/pytest backend/tests/test_snapshot_currency_normalization.py backend/tests/test_snapshot_funding_multicurrency.py backend/tests/test_e2e_networth_microservice.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(networth)`
+- **Summary**: Normalize multi-currency asset valuations, cash movements, and realized/unrealized PnL to EUR base currency in snapshot engines and annual snapshot API.
+- **Rationale**: Prior snapshot engines accumulated raw transaction and asset currency figures without FX conversion, contaminating EUR base net worth with un-converted INR values and generating distorted chart axes (`€5.4L`, `€4.5L`) and massive false deltas (`+€453,005.60`).
+- **Key Changes**:
+  - `services/networth/app/services/snapshot_engine.py`: Converted asset valuation (`rem_qty * price`), cost basis, realized PnL, transaction cash movements, and cashflow payments to EUR using `to_eur(...)` based on account/asset currency. Enforced 2 decimal places precision.
+  - `backend/app/services/snapshot_engine.py`: Mirrored EUR normalization logic across daily generator and historical Sunday recalculation replay.
+  - `services/networth/app/api/routers/portfolio.py`: Normalized start and end snapshot net worth to requested `master_currency` and populated `investments_done`, `investments_closed`, and `taxes_and_fees` from transaction records.
+  - `services/networth/app/api/routers/snapshots.py`: Added type guards on `account_id` and `start_date` to prevent SQLAlchemy Query object binding errors.
+  - `ADMIN.NETWORTH_SNAPSHOTS`: Altered unique constraint to composite `(USER_ID, SNAPSHOT_DATE)`, pruned legacy non-Sunday records, and recalculated all past snapshots for user 15 to reflect true EUR valuations (€3,854.07 current, €5,764.69 historical peak).
+  - `backend/tests/test_snapshot_currency_normalization.py`: Added TDD unit test verifying multi-currency INR+EUR normalization.
+  - `backend/tests/test_snapshot_funding_multicurrency.py`: Updated assertion expectations to test direct EUR persistence.
+- **Verification**:
+  - Command: `PYTHONPATH=services/networth:backend:. backend/.venv/bin/pytest backend/tests/test_snapshot_currency_normalization.py backend/tests/test_snapshot_funding_multicurrency.py backend/tests/test_e2e_networth_microservice.py -v`
+  - Output: 37 passed in 17.56s.
+  - Command: `npm --prefix frontend run build`
+  - Output: Compiled successfully, TypeScript passed with zero errors.
+
 ### [2026-11-12 00:14:00 UTC] fix(frontend): enhance apiFetch error reporting to display exact HTTP status details
 
 <!-- changelog-entry-json

@@ -336,35 +336,70 @@ async def get_annual_snapshot(
             elif cat_type != "TRANSFER":
                 total_expenses += amt
 
-    # Net worth delta from snapshots
+    # 2. Fetch investment transactions in date range
+    target_currency = master_currency or "EUR"
+    tx_stmt = (
+        select(Transaction, Account.currency)
+        .join(Account, Transaction.account_id == Account.account_id)
+        .where(
+            Transaction.user_id == u_id,
+            Transaction.transaction_date >= start_date,
+            Transaction.transaction_date <= end_date
+        )
+    )
+    inv_txs = (await db.execute(tx_stmt)).all()
+
+    investments_done = 0.0
+    investments_closed = 0.0
+    taxes_and_fees = 0.0
+
+    for tx, acc_curr in inv_txs:
+        curr = acc_curr or "USD"
+        amt = convert_currency(float(tx.total_amount or 0.0), curr, target_currency)
+        fees = convert_currency(float(tx.fees or 0.0), curr, target_currency)
+        taxes = convert_currency(float(tx.taxes or 0.0), curr, target_currency)
+        taxes_and_fees += (fees + taxes)
+
+        ttype = (tx.transaction_type or "").lower()
+        if ttype == "buy":
+            investments_done += amt
+        elif ttype == "sell":
+            investments_closed += amt
+        elif ttype == "dividend":
+            total_income += amt
+
+    # 3. Net worth delta from snapshots (stored in EUR, converted to target_currency)
     snap_start_stmt = (
         select(NetworthSnapshot.net_worth)
         .where(NetworthSnapshot.user_id == u_id, NetworthSnapshot.snapshot_date <= start_date)
         .order_by(desc(NetworthSnapshot.snapshot_date))
     )
-    start_nw = float((await db.execute(snap_start_stmt)).scalars().first() or 0.0)
+    start_nw_eur = float((await db.execute(snap_start_stmt)).scalars().first() or 0.0)
 
     snap_end_stmt = (
         select(NetworthSnapshot.net_worth)
         .where(NetworthSnapshot.user_id == u_id, NetworthSnapshot.snapshot_date <= end_date)
         .order_by(desc(NetworthSnapshot.snapshot_date))
     )
-    end_nw = float((await db.execute(snap_end_stmt)).scalars().first() or 0.0)
+    end_nw_eur = float((await db.execute(snap_end_stmt)).scalars().first() or 0.0)
 
-    net_worth_delta = end_nw - start_nw
-    net_worth_delta_pct = (net_worth_delta / start_nw * 100.0) if start_nw > 0 else 0.0
+    start_nw = convert_currency(start_nw_eur, "EUR", target_currency)
+    end_nw = convert_currency(end_nw_eur, "EUR", target_currency)
+
+    net_worth_delta = round(end_nw - start_nw, 2)
+    net_worth_delta_pct = round((net_worth_delta / start_nw * 100.0) if start_nw > 0 else 0.0, 2)
 
     return AnnualSnapshotResponse(
         year_label=year_label,
         start_date=start_date,
         end_date=end_date,
-        total_income=total_income,
-        total_expenses=total_expenses,
-        investments_done=0.0,
-        investments_closed=0.0,
+        total_income=round(total_income, 2),
+        total_expenses=round(total_expenses, 2),
+        investments_done=round(investments_done, 2),
+        investments_closed=round(investments_closed, 2),
         net_worth_delta=net_worth_delta,
         net_worth_delta_pct=net_worth_delta_pct,
-        taxes_and_fees=0.0,
-        net_savings=total_income - total_expenses,
-        currency=master_currency or "EUR"
+        taxes_and_fees=round(taxes_and_fees, 2),
+        net_savings=round(total_income - total_expenses, 2),
+        currency=target_currency
     )

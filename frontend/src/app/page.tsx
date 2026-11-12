@@ -230,10 +230,10 @@ export default function NetWorthDashboardPage() {
     try {
       setRefreshing(true);
       await apiFetch("/prices/refresh", { method: "POST" });
-      await loadData(selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate);
     } catch (e) {
-      console.error(e);
+      console.error("Failed to refresh market prices:", e);
     } finally {
+      await loadData(selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate);
       setRefreshing(false);
     }
   };

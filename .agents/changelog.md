@@ -32,6 +32,50 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-12 13:05:00 UTC] fix(portfolio): fix price refresh timeouts, historical snapshot timeline generation, and chart tick formatting
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-12T13:05:00Z",
+  "type": "fix",
+  "scope": "portfolio",
+  "summary": "fix price refresh timeouts, historical snapshot timeline generation, and chart tick formatting",
+  "affected_files": [
+    "backend/app/api/routers/prices.py",
+    "backend/app/services/price_engine.py",
+    "backend/app/services/dividend_engine.py",
+    "backend/tests/test_price_engine.py",
+    "services/networth/app/api/routers/snapshots.py",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/investments/page.tsx",
+    "frontend/src/components/NetWorthChart.tsx"
+  ],
+  "rationale": "Clicking 'Sync Market Prices' caused HTTP 500 ECONNRESET timeouts because price and dividend engines sequentially queried Yahoo Finance for unlisted .PRIVATE assets across the whole database. Additionally, newly populated historical transactions lacked precomputed snapshots, and the snapshot endpoint strictly required Sunday dates, rendering the timeline chart empty. Non-INR currencies were also misformatted with Indian Lakh (L) and Crore (Cr) notation.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend:. backend/.venv/bin/pytest backend/tests/test_price_engine.py && cd frontend && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(portfolio)`
+- **Summary**: Fix price refresh proxy timeouts, ensure historical snapshot timeline regeneration on price sync, guarantee non-empty snapshot timeline endpoints, and format EUR/USD chart ticks as k/M/B.
+- **Rationale**:
+  - Unlisted private assets (`.PRIVATE`, `$*`) caused long yfinance network retries that exceeded the proxy socket timeout (ECONNRESET -> HTTP 500).
+  - Populating transactions without computing historical snapshots left users with 0 Sunday snapshots in the filter window, causing the net worth graph to render empty.
+  - The currency tick formatter in `NetWorthChart` always evaluated `absVal >= 100000` with `'L'` before `'M'`, incorrectly applying Indian numbering to EUR/USD.
+- **Key Changes**:
+  - `backend/app/services/price_engine.py` & `dividend_engine.py`: Added `_is_unsupported_ticker` to bypass `.PRIVATE` and delisted assets; added 10-second network timeouts.
+  - `backend/app/api/routers/prices.py`: Filtered price sync by assets owned by the requesting tenant and triggered `recalculate_past_snapshots` from `min_tx` so the timeline updates automatically.
+  - `services/networth/app/api/routers/snapshots.py`: Included the latest non-Sunday snapshot alongside Sundays so active timelines are never empty.
+  - `frontend/src/components/NetWorthChart.tsx`: Corrected `formatCurrencyTick` to only use `L` and `Cr` for `currency === "INR"`, and `k`, `M`, `B` for EUR/USD/others.
+  - `frontend/src/app/page.tsx` & `investments/page.tsx`: Ensured `loadData` runs in `finally` even if background price refresh encounters transient warnings.
+- **Verification**:
+  - Command: `PYTHONPATH=backend:. backend/.venv/bin/pytest backend/tests/test_price_engine.py` -> 3 passed.
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint` -> 0 errors.
+  - Container test: User 19 snapshot recalculation produced 105 Sunday snapshots spanning 2024-11-12 to 2026-11-15; chart data verified.
+
 ### [2026-11-12 11:45:00 UTC] feat(db): add 1000 row 2-year sample data population script with multi-account, multi-category, and stock transactions
 
 <!-- changelog-entry-json

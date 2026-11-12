@@ -72,8 +72,10 @@ async def list_snapshots(
         if start_date is not None:
             acc_snaps = [s for s in acc_snaps if s["snapshot_date"] >= start_date]
 
-        # Enforce Sunday invariant (weekday == 6)
+        # Enforce Sunday invariant (weekday == 6), plus include the latest non-Sunday snapshot to avoid empty graphs
         sunday_snaps = [s for s in acc_snaps if s["snapshot_date"].weekday() == 6]
+        if acc_snaps and (not sunday_snaps or acc_snaps[-1]["snapshot_date"] > sunday_snaps[-1]["snapshot_date"]):
+            sunday_snaps.append(acc_snaps[-1])
         res = [NetworthSnapshotResponse(**s) for s in sunday_snaps]
         snapshots_cache[cache_key] = res
         return res
@@ -102,8 +104,10 @@ async def list_snapshots(
     stmt = stmt.order_by(asc(NetworthSnapshot.snapshot_date))
     rows = list((await db.execute(stmt)).scalars().all())
 
-    # Guarantee strict Sunday aggregation invariant
+    # Guarantee strict Sunday aggregation invariant, plus include latest non-Sunday snapshot
     sunday_rows = [r for r in rows if r.snapshot_date.weekday() == 6]
+    if rows and (not sunday_rows or rows[-1].snapshot_date > sunday_rows[-1].snapshot_date):
+        sunday_rows.append(rows[-1])
     if start_date is not None:
         sunday_rows = [r for r in sunday_rows if r.snapshot_date >= start_date]
 

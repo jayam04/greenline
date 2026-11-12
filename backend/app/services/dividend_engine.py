@@ -9,6 +9,11 @@ from app.services.fifo_engine import recalculate_all_lots
 
 def _fetch_yfinance_dividends_sync(symbol: str) -> List[Tuple[datetime.date, float]]:
     """Synchronously fetches dividend history from yfinance."""
+    if not symbol:
+        return []
+    s = symbol.strip().upper()
+    if s.startswith("$") or s.endswith(".PRIVATE") or ".PRIVATE" in s:
+        return []
     try:
         ticker = yf.Ticker(symbol)
         div_series = ticker.dividends

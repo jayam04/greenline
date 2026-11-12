@@ -65,9 +65,13 @@ export function NetWorthChart({
   const formatCurrencyTick = (val: number) => {
     const absVal = Math.abs(val);
     const prefix = val < 0 ? `-${sym}` : sym;
-    if (absVal >= 10000000) return `${prefix}${(absVal / 10000000).toFixed(1)}Cr`;
-    if (absVal >= 100000) return `${prefix}${(absVal / 100000).toFixed(1)}L`;
-    if (absVal >= 1000000) return `${prefix}${(absVal / 1000000).toFixed(1)}M`;
+    if (currency === "INR") {
+      if (absVal >= 10000000) return `${prefix}${(absVal / 10000000).toFixed(1)}Cr`;
+      if (absVal >= 100000) return `${prefix}${(absVal / 100000).toFixed(1)}L`;
+    } else {
+      if (absVal >= 1000000000) return `${prefix}${(absVal / 1000000000).toFixed(1)}B`;
+      if (absVal >= 1000000) return `${prefix}${(absVal / 1000000).toFixed(1)}M`;
+    }
     if (absVal >= 1000) return `${prefix}${(absVal / 1000).toFixed(0)}k`;
     return `${prefix}${absVal}`;
   };

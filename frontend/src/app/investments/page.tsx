@@ -212,10 +212,10 @@ export default function InvestmentsDashboardPage() {
     try {
       setRefreshing(true);
       await apiFetch("/prices/refresh", { method: "POST" });
-      await loadAccountData(selectedAccount, snapshotStartDate);
     } catch (e) {
-      console.error(e);
+      console.error("Failed to refresh market prices:", e);
     } finally {
+      await loadAccountData(selectedAccount, snapshotStartDate);
       setRefreshing(false);
     }
   };

@@ -32,6 +32,37 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-12 21:07:00 UTC] fix(frontend): add automatic retry on proxy socket hangup and transient fetch drops in apiFetch
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-12T21:07:00Z",
+  "type": "fix",
+  "scope": "frontend",
+  "summary": "add automatic retry on proxy socket hangup and transient fetch drops in apiFetch",
+  "affected_files": [
+    "frontend/src/lib/api.ts",
+    "frontend/src/__tests__/apiFetch.test.ts"
+  ],
+  "rationale": "When backend services are restarted or host wakeups cause Docker proxy socket resets (ECONNRESET), Next.js proxy connections can become stale, resulting in client-side 'TypeError: Failed to fetch' or 502 Bad Gateway. Adding a lightweight single retry in apiFetch gracefully reopens a fresh connection and recovers without failing page renders or showing unhandled console exceptions.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/apiFetch.test.ts && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(frontend)`
+- **Summary**: Add automatic 1-shot retry for transient socket hangups and proxy gateway drops in `apiFetch`.
+- **Rationale**: Mitigates `TypeError: Failed to fetch` and transient 502/504 proxy resets when upstream microservices restart or when stale keep-alive sockets drop.
+- **Key Changes**:
+  - `frontend/src/lib/api.ts`: Wrapped HTTP fetch in a resilient try/catch checking for transient `TypeError` and 502/504 gateway responses to retry once over a fresh socket connection after a 200ms backoff.
+  - `frontend/src/__tests__/apiFetch.test.ts`: Added unit tests verifying automatic 1-shot retry behavior for both `TypeError: Failed to fetch` and HTTP 502 responses.
+- **Verification**:
+  - Command: `npx vitest run src/__tests__/apiFetch.test.ts` -> 2 passed.
+  - Command: `npx tsc --noEmit && npm run lint` -> 0 errors.
+
 ### [2026-11-12 13:05:00 UTC] fix(portfolio): fix price refresh timeouts, historical snapshot timeline generation, and chart tick formatting
 
 <!-- changelog-entry-json

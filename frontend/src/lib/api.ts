@@ -59,10 +59,32 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   const apiBase = getApiBase();
-  const res = await fetch(`${apiBase}/api/v1${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase}/api/v1${endpoint}`, {
+      ...options,
+      headers,
+    });
+    // If Next.js proxy returns transient 502/504 gateway socket drop, retry once
+    if (res.status === 502 || res.status === 504) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      res = await fetch(`${apiBase}/api/v1${endpoint}`, {
+        ...options,
+        headers,
+      });
+    }
+  } catch (err: any) {
+    // If socket hang up or transient network drop occurred (TypeError: Failed to fetch), retry once
+    if (err instanceof TypeError || err?.name === "TypeError" || err?.message?.includes("fetch")) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      res = await fetch(`${apiBase}/api/v1${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } else {
+      throw err;
+    }
+  }
 
   if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
     // If an Auth0 OAuth redirect callback is currently in flight in the URL query, do not navigate away

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import localFont from "next/font/local";
-import { Inter, Figtree, Spline_Sans } from "next/font/google";
+import { Inter, Figtree } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { Breadcrumb } from "@/components/Breadcrumb";
@@ -41,8 +41,8 @@ const inter = Inter({
   display: "swap",
 });
 
-const splineSans = Spline_Sans({
-  subsets: ["latin"],
+const splineSans = localFont({
+  src: "./../../public/fonts/Spline_Sans/SplineSans-VariableFont_wght.ttf",
   variable: "--font-spline-sans",
   display: "swap",
 });

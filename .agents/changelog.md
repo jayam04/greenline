@@ -32,6 +32,50 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-13 16:06:00 UTC] feat(portfolio): calculate fees and taxes in networth service and switch spline sans font to local assets
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-13T16:06:00Z",
+  "type": "feat",
+  "scope": "portfolio",
+  "summary": "calculate fees and taxes in networth service and switch spline sans font to local assets",
+  "affected_files": [
+    "backend/app/services/networth_client.py",
+    "frontend/src/app/layout.tsx",
+    "frontend/src/__tests__/LocalFont.test.ts",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/tests/test_networth_fees_and_taxes.py"
+  ],
+  "rationale": "In the Networth microservice (/api/v1/portfolio), total_fees and total_taxes were hardcoded to 0.0, and fees_and_taxes, total_fees, and total_taxes were not populated on holding summaries. Pre-fetching fees and taxes from Transaction records grouped by asset and aggregating total transaction fees and taxes enables accurate portfolio and per-holding fee/tax accounting. Additionally, Spline Sans in layout.tsx has been switched from the external Google Fonts API (next/font/google) to localFont loading from public/fonts/Spline_Sans/SplineSans-VariableFont_wght.ttf for offline resilience, zero third-party font latency, and strict privacy compliance.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend:. backend/.venv/bin/pytest services/networth/tests/test_networth_fees_and_taxes.py backend/tests/test_fees_taxes_and_pnl.py && cd frontend && npx vitest run src/__tests__/LocalFont.test.ts src/__tests__/SettingsFont.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(portfolio)`
+- **Summary**: Calculate transaction fees and taxes across holdings and portfolio summary in the Networth service, and load Spline Sans via `localFont` using local TTF assets instead of Google API.
+- **Rationale**:
+  - Ensures accurate fees, taxes, and net P&L display across both portfolio summary and active/closed holdings cards and tables.
+  - Eliminates external requests to Google Fonts API by serving Spline Sans directly from `public/fonts/Spline_Sans/SplineSans-VariableFont_wght.ttf`.
+  - Fixes networth notification client to safely handle FastAPI `Header` instances in direct test invocations.
+- **Key Changes**:
+  - `services/networth/app/api/routers/portfolio.py`: Pre-aggregated fees and taxes from `Transaction` grouped by `asset_id`; populated `fees_and_taxes`, `total_fees`, and `total_taxes` on both active and closed `HoldingSummary` models; aggregated portfolio-level `total_fees` and `total_taxes` with currency conversion.
+  - `services/networth/tests/test_networth_fees_and_taxes.py`: Added automated test suite verifying portfolio and holding fee/tax computations.
+  - `frontend/src/app/layout.tsx`: Replaced `Spline_Sans` import from `next/font/google` with `localFont` pointing to `./../../public/fonts/Spline_Sans/SplineSans-VariableFont_wght.ttf`.
+  - `frontend/src/__tests__/LocalFont.test.ts`: Added unit test ensuring Spline Sans loads via `localFont` rather than Google Fonts.
+  - `backend/app/services/networth_client.py`: Added `isinstance(auth_token, str)` check to protect against `AttributeError` when `auth_token` is a FastAPI `Header` object in direct Python unit test calls.
+- **Verification**:
+  - Live Networth service check: User 19 returns `total_fees: 170.0`, `total_taxes: 0.0` with 34.0 fee per holding; User 15 returns `total_fees: 41.97`, `total_taxes: 9.05`.
+  - Backend tests: `services/networth/tests/test_networth_fees_and_taxes.py` & `backend/tests/test_fees_taxes_and_pnl.py` (12 passed in 17.92s).
+  - Frontend vitest: `LocalFont.test.ts`, `SettingsFont.test.tsx`, `FontProvider.test.tsx`, `apiFetch.test.ts` (12 passed in 5.41s).
+  - Typecheck & Lint: `npx tsc --noEmit && npm run lint` passed with 0 errors.
+
+
+
 ### [2026-11-13 13:16:00 UTC] fix(portfolio): compute realized pnl and closed holdings in networth service and add composite primary key to app_settings
 
 <!-- changelog-entry-json

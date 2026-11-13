@@ -37,8 +37,8 @@ async def notify_snapshot_recalculate(
     Non-blocking notification to Networth microservice.
     Gracefully handles offline/unreachable service without throwing exceptions.
     """
-    if not auth_token:
-        logger.debug(f"[NetworthClient] No auth token provided for user_id={user_id}. Skipping remote notification.")
+    if not auth_token or not isinstance(auth_token, str):
+        logger.debug(f"[NetworthClient] No valid auth token provided for user_id={user_id}. Skipping remote notification.")
         return False
 
     headers = {}

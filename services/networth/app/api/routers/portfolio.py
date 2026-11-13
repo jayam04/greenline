@@ -147,6 +147,25 @@ async def get_portfolio_summary(
 
     # Group open lots by asset
     lots_by_asset: Dict[int, List[Lot]] = {}
+
+    # Pre-fetch fees and taxes grouped by asset
+    fees_stmt = (
+        select(
+            Transaction.asset_id,
+            func.sum(Transaction.fees),
+            func.sum(Transaction.taxes)
+        )
+        .where(Transaction.user_id == u_id, Transaction.asset_id.isnot(None))
+    )
+    if account_id:
+        fees_stmt = fees_stmt.where(Transaction.account_id == account_id)
+    fees_stmt = fees_stmt.group_by(Transaction.asset_id)
+    fees_res = await db.execute(fees_stmt)
+    fees_map: Dict[int, tuple] = {
+        row[0]: (float(row[1] or 0.0), float(row[2] or 0.0))
+        for row in fees_res.all()
+    }
+
     # Pre-fetch realized PnL, cost basis, quantity sold, and account_id grouped by asset
     rpnl_stmt = (
         select(
@@ -227,6 +246,11 @@ async def get_portfolio_summary(
         total_basis = total_cost + cost_basis_sold_for_asset
         net_pnl_pct_for_asset = (net_pnl_for_asset / total_basis * 100.0) if total_basis > 0 else 0.0
 
+        fees_entry = fees_map.get(aid, (0.0, 0.0))
+        asset_fees = fees_entry[0]
+        asset_taxes = fees_entry[1]
+        total_asset_fees_taxes = asset_fees + asset_taxes
+
         holdings_list.append(HoldingSummary(
             asset_id=aid,
             symbol=asset.symbol,
@@ -249,6 +273,9 @@ async def get_portfolio_summary(
             unrealized_pnl_pct=unrealized_pct,
             realized_pnl=realized_pnl_for_asset,
             realized_pnl_pct=realized_pnl_pct_for_asset,
+            fees_and_taxes=total_asset_fees_taxes,
+            total_fees=asset_fees,
+            total_taxes=asset_taxes,
             net_pnl=net_pnl_for_asset,
             net_pnl_pct=net_pnl_pct_for_asset,
             capital_gains_realized=cap_gains_for_asset,
@@ -272,6 +299,12 @@ async def get_portfolio_summary(
                 continue
             c_realized_pnl = c_cap_gains
             c_rpnl_pct = (c_realized_pnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
+
+            c_fees_entry = fees_map.get(c_asset.asset_id, (0.0, 0.0))
+            c_asset_fees = c_fees_entry[0]
+            c_asset_taxes = c_fees_entry[1]
+            c_total_asset_fees_taxes = c_asset_fees + c_asset_taxes
+
             closed_holdings_list.append(HoldingSummary(
                 asset_id=c_asset.asset_id,
                 symbol=c_asset.symbol,
@@ -294,6 +327,9 @@ async def get_portfolio_summary(
                 unrealized_pnl_pct=0.0,
                 realized_pnl=c_realized_pnl,
                 realized_pnl_pct=c_rpnl_pct,
+                fees_and_taxes=c_total_asset_fees_taxes,
+                total_fees=c_asset_fees,
+                total_taxes=c_asset_taxes,
                 net_pnl=c_realized_pnl,
                 net_pnl_pct=c_rpnl_pct,
                 capital_gains_realized=c_cap_gains,
@@ -340,6 +376,31 @@ async def get_portfolio_summary(
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)
     closed_holdings_list.sort(key=lambda h: abs(h.realized_pnl), reverse=True)
 
+    # Fetch transaction fees and taxes in a lightweight projection
+    tx_stmt = select(Transaction.account_id, Transaction.fees, Transaction.taxes).where(
+        Transaction.user_id == u_id,
+        or_(Transaction.fees.isnot(None), Transaction.taxes.isnot(None))
+    )
+    if account_id:
+        tx_stmt = tx_stmt.where(Transaction.account_id == account_id)
+    tx_res = await db.execute(tx_stmt)
+
+    total_fees = 0.0
+    total_taxes = 0.0
+    for acc_id_t, fees_v, taxes_v in tx_res.all():
+        acc_t = all_accounts.get(acc_id_t)
+        tx_curr = acc_t.currency if acc_t else "USD"
+        if fees_v:
+            if account_id:
+                total_fees += float(fees_v)
+            else:
+                total_fees += convert_currency(float(fees_v), tx_curr, "EUR")
+        if taxes_v:
+            if account_id:
+                total_taxes += float(taxes_v)
+            else:
+                total_taxes += convert_currency(float(taxes_v), tx_curr, "EUR")
+
     resp = PortfolioSummaryResponse(
         total_net_worth=total_net_worth,
         total_invested=total_invested,
@@ -351,8 +412,8 @@ async def get_portfolio_summary(
         total_capital_gains_realized=total_realized_pnl,
         total_value_change_1d=total_value_change_1d,
         total_change_1d_pct=total_change_1d_pct,
-        total_fees=0.0,
-        total_taxes=0.0,
+        total_fees=total_fees,
+        total_taxes=total_taxes,
         portfolio_xirr=portfolio_xirr,
         asset_allocation=asset_allocation,
         sector_allocation=sector_allocation,

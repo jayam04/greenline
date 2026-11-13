@@ -71,6 +71,15 @@ body[data-font="general-sans"],
   --font-current-sans: var(--font-general-sans);
 }
 
+html[data-font="spline-sans"],
+body[data-font="spline-sans"],
+.font-spline-sans,
+html[data-font="spine-sans"],
+body[data-font="spine-sans"],
+.font-spine-sans {
+  --font-current-sans: var(--font-spline-sans);
+}
+
 .dark {
   --background: oklch(0.153 0.015 118);
   --foreground: oklch(0.988 0.005 118);

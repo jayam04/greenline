@@ -324,14 +324,17 @@ async def resolve_discrepancies(
         if not item.expected_dividend_id and not item.transaction_id:
             raise HTTPException(status_code=400, detail="Either expected_dividend_id or transaction_id must be provided")
 
-        f_res = await db.execute(
-            select(Account).where(Account.account_id == item.funding_account_id, Account.user_id == u_id)
-        )
-        funding_acc = f_res.scalar_one_or_none()
-        if not funding_acc:
-            raise HTTPException(status_code=400, detail=f"Funding account {item.funding_account_id} not found")
-        if funding_acc.account_type != "bank":
-            raise HTTPException(status_code=400, detail="Funding account must be a bank account")
+        if item.funding_account_id is not None:
+            f_acc = await db.scalar(
+                select(Account).where(
+                    Account.account_id == item.funding_account_id,
+                    Account.user_id == u_id
+                )
+            )
+            if not f_acc:
+                raise HTTPException(status_code=400, detail="Funding account not found or access denied")
+            if f_acc.account_type != "bank":
+                raise HTTPException(status_code=400, detail="Funding account must be a bank account")
 
         if item.total_amount is not None and float(item.total_amount) <= 0:
             raise HTTPException(status_code=400, detail="Total amount must be greater than zero")

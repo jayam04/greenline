@@ -135,6 +135,8 @@ async def test_row_level_security_isolation():
         assert len(accounts0) == 1
         assert accounts0[0]["account_id"] == acc0_id
 
+        app.dependency_overrides.clear()
+
 
 @pytest.mark.anyio
 async def test_legacy_data_user_id_zero_default():
@@ -239,3 +241,5 @@ async def test_cashflow_and_category_rls_isolation():
             "items": [{"category_id": sys_cat.category_id, "amount": 10.0}]
         })
         assert cf_illegal.status_code in (400, 404)
+
+        app.dependency_overrides.clear()

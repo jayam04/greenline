@@ -8,6 +8,7 @@ import { Breadcrumb } from "@/components/Breadcrumb";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { FontProvider } from "@/components/FontProvider";
 import { ClientLayout } from "@/components/ClientLayout";
+import { AuthProvider } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
 
 const rx100 = localFont({
@@ -40,6 +41,12 @@ const inter = Inter({
   display: "swap",
 });
 
+const splineSans = localFont({
+  src: "./../../public/fonts/Spline_Sans/SplineSans-VariableFont_wght.ttf",
+  variable: "--font-spline-sans",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     template: "%s · greenline",
@@ -54,7 +61,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn(generalSans.variable, inter.variable, figtreeHeading.variable, rx100.variable)} suppressHydrationWarning>
+    <html lang="en" className={cn(generalSans.variable, inter.variable, figtreeHeading.variable, rx100.variable, splineSans.variable)} suppressHydrationWarning>
       <head>
         <Script
           id="theme-script"
@@ -75,11 +82,13 @@ export default function RootLayout({
 
                   var savedFont = localStorage.getItem('greenline_font') || 'general-sans';
                   document.documentElement.setAttribute('data-font', savedFont);
-                  document.documentElement.classList.remove('font-inter', 'font-general-sans', 'font-rx100');
+                  document.documentElement.classList.remove('font-inter', 'font-general-sans', 'font-rx100', 'font-spline-sans', 'font-spine-sans');
                   if (savedFont === 'inter') {
                     document.documentElement.classList.add('font-inter');
                   } else if (savedFont === 'rx100') {
                     document.documentElement.classList.add('font-rx100');
+                  } else if (savedFont === 'spline-sans' || savedFont === 'spine-sans') {
+                    document.documentElement.classList.add('font-spline-sans');
                   } else {
                     document.documentElement.classList.add('font-general-sans');
                   }
@@ -90,13 +99,15 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-background text-foreground min-h-screen font-sans selection:bg-[#9FE837] selection:text-[#0F172A] transition-colors duration-150">
-        <ThemeProvider>
-          <FontProvider>
-            <ClientLayout>
-              {children}
-            </ClientLayout>
-          </FontProvider>
-        </ThemeProvider>
+        <AuthProvider>
+          <ThemeProvider>
+            <FontProvider>
+              <ClientLayout>
+                {children}
+              </ClientLayout>
+            </FontProvider>
+          </ThemeProvider>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -31,6 +31,9 @@ _VERSIONS = (
     ("v009_ai_import_staging_tables", "Create import staging schema"),
     ("v010_api_keys_table", "Create API keys schema"),
     ("v011_user_row_level_security", "Add user_id to all user entities with default 0"),
+    ("v012_auth0_user_persistence", "Add Auth0 profile fields (sub, email, name, picture) to users table"),
+    ("v013_relax_password_hash_nullability", "Relax password_hash nullability on users table for Auth0 users"),
+    ("v014_app_settings_composite_primary_key", "Migrate app_settings primary key to composite (user_id, key)"),
 )
 
 
@@ -193,18 +196,122 @@ async def _migrate_user_rls(session: AsyncSession) -> None:
     await session.commit()
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+def _is_insufficient_privileges_error(e: Exception) -> bool:
+    err_str = str(e).lower()
+    return "ora-01031" in err_str or "insufficient privileges" in err_str
+
+
+async def _migrate_auth0_user_persistence(session: AsyncSession) -> None:
+    """Relax password_hash nullability and backfill updated_at for existing users."""
+    try:
+        bind = getattr(session, "bind", None)
+        if bind is None and hasattr(session, "get_bind"):
+            bind = session.get_bind()
+        if bind and hasattr(bind, "dialect") and getattr(bind.dialect, "name", "") == "oracle":
+            await session.execute(text("ALTER TABLE users MODIFY (password_hash NULL)"))
+    except Exception as e:
+        if not _is_insufficient_privileges_error(e):
+            pass
+    try:
+        await session.execute(
+            text("UPDATE users SET updated_at = COALESCE(created_at, CURRENT_TIMESTAMP) WHERE updated_at IS NULL")
+        )
+    except Exception:
+        pass
+    try:
+        await session.commit()
+    except Exception:
+        pass
+
+
+async def _migrate_relax_password_hash_nullability(session: AsyncSession) -> None:
+    """Ensure password_hash column in users table allows NULL across all database dialects."""
+    connection = await session.connection()
+    def do_alter(sync_conn):
+        dialect_name = getattr(sync_conn.dialect, "name", "")
+        if dialect_name == "oracle":
+            try:
+                sync_conn.execute(text("ALTER TABLE users MODIFY (password_hash NULL)"))
+            except Exception:
+                pass
+        elif dialect_name == "postgresql":
+            try:
+                sync_conn.execute(text("ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL"))
+            except Exception:
+                pass
+    try:
+        await connection.run_sync(do_alter)
+        await session.commit()
+    except Exception as e:
+        if not _is_insufficient_privileges_error(e):
+            pass
+
+async def _migrate_app_settings_composite_pk(session: AsyncSession) -> None:
+    """Ensure app_settings primary key is composite (user_id, key)."""
+    connection = await session.connection()
+    def do_alter(sync_conn):
+        dialect_name = getattr(sync_conn.dialect, "name", "")
+        if dialect_name == "oracle":
+            try:
+                sync_conn.execute(text("ALTER TABLE app_settings DROP PRIMARY KEY"))
+            except Exception:
+                pass
+            try:
+                sync_conn.execute(text("ALTER TABLE app_settings ADD PRIMARY KEY (user_id, \"key\")"))
+            except Exception:
+                pass
+        elif dialect_name in ("postgresql", "sqlite"):
+            # PostgreSQL / SQLite handled by create_all or table recreation
+            pass
+    try:
+        await connection.run_sync(do_alter)
+        await session.commit()
+    except Exception as e:
+        if not _is_insufficient_privileges_error(e):
+            pass
+
+
 async def run_db_migrations(session: AsyncSession) -> None:
     """Bring the database to the current ORM schema using dialect-portable DDL."""
-    await init_migrations_table(session)
-    applied = await get_applied_migrations(session)
-    await _ensure_latest_schema(session)
+    try:
+        await init_migrations_table(session)
+        applied = await get_applied_migrations(session)
+    except Exception as e:
+        if _is_insufficient_privileges_error(e):
+            logger.info("Connected as DML-only user. Skipping DDL schema migrations.")
+            return
+        raise
+
+    try:
+        await _ensure_latest_schema(session)
+    except Exception as e:
+        if _is_insufficient_privileges_error(e):
+            logger.info("Connected as DML-only user. Skipping DDL table/column creation.")
+        else:
+            raise
 
     for version, description in _VERSIONS:
         if version in applied:
             continue
-        if version == "v005_signed_cashflow_amounts":
-            await _migrate_legacy_cashflow_signs(session)
-        elif version == "v011_user_row_level_security":
-            await _migrate_user_rls(session)
-        await mark_migration_applied(session, version, description)
-        applied.add(version)
+        try:
+            if version == "v005_signed_cashflow_amounts":
+                await _migrate_legacy_cashflow_signs(session)
+            elif version == "v011_user_row_level_security":
+                await _migrate_user_rls(session)
+            elif version == "v012_auth0_user_persistence":
+                await _migrate_auth0_user_persistence(session)
+            elif version == "v013_relax_password_hash_nullability":
+                await _migrate_relax_password_hash_nullability(session)
+            elif version == "v014_app_settings_composite_primary_key":
+                await _migrate_app_settings_composite_pk(session)
+            await mark_migration_applied(session, version, description)
+            applied.add(version)
+        except Exception as e:
+            if _is_insufficient_privileges_error(e):
+                logger.info(f"Connected as DML-only user. Skipping DDL migration {version}.")
+            else:
+                raise

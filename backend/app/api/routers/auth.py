@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.database import get_db
 from app.db.models import User, ApiKey
-from app.schemas.schemas import Token, UserResponse, UserLogin, ApiKeyCreate, ApiKeyResponse, ApiKeyCreateResponse
-from app.services.auth_service import verify_password, create_access_token
+from app.schemas.schemas import Token, UserResponse, UserLogin, ApiKeyCreate, ApiKeyResponse, ApiKeyCreateResponse, UserSyncRequest
+from app.services.auth_service import verify_password, create_access_token, get_or_sync_auth0_user
 from app.api.deps import get_current_user, hash_api_key
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -46,6 +46,22 @@ async def login_json(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@router.post("/sync", response_model=UserResponse)
+async def sync_profile(
+    payload: UserSyncRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    sub = current_user.auth0_sub or current_user.username
+    updated_user = await get_or_sync_auth0_user(
+        db,
+        sub=sub,
+        email=payload.email if payload.email is not None else current_user.email,
+        name=payload.name if payload.name is not None else current_user.name,
+        picture=payload.picture if payload.picture is not None else current_user.picture
+    )
+    return updated_user
 
 @router.get("/api-keys", response_model=List[ApiKeyResponse])
 async def list_api_keys(

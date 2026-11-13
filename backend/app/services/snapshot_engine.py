@@ -102,25 +102,32 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
     assets_res = await db.execute(assets_stmt)
     assets_map = {a.asset_id: a for a in assets_res.scalars().all()}
 
+    acc_stmt = select(Account).where(Account.user_id == user_id)
+    acc_res = await db.execute(acc_stmt)
+    accounts_map = {a.account_id: a for a in acc_res.scalars().all()}
+    valid_acc_ids = set(accounts_map.keys())
+
     for item in open_lots_as_of_date:
         lot: Lot = item["lot"]
         rem_qty: float = item["remaining_quantity"]
         p = price_map.get(lot.asset_id, lot.cost_per_unit)
         asset = assets_map.get(lot.asset_id)
-        aclass = asset.asset_type if asset else "other"
+        acc = accounts_map.get(lot.account_id)
+        lot_currency = (asset.currency if asset and asset.currency else (acc.currency if acc and acc.currency else "EUR"))
 
-        val = rem_qty * p
-        cost = rem_qty * lot.cost_per_unit
+        val = to_eur(rem_qty * p, lot_currency)
+        cost = to_eur(rem_qty * lot.cost_per_unit, lot_currency)
 
         total_current_value += val
         total_cost_of_open_lots += cost
+        aclass = asset.asset_type if asset else "other"
         allocation_by_class[aclass] = allocation_by_class.get(aclass, 0.0) + val
 
-    total_unrealized_pnl = total_current_value - total_cost_of_open_lots
+    total_unrealized_pnl = round(total_current_value - total_cost_of_open_lots, 2)
 
-    # 4. Total Realized PnL as of snapshot_date
+    # 4. Total Realized PnL as of snapshot_date (normalized to EUR)
     realized_stmt = (
-        select(func.sum(LotSale.realized_pnl))
+        select(LotSale.realized_pnl, Transaction.account_id)
         .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
         .where(
             LotSale.user_id == user_id,
@@ -129,14 +136,13 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
         )
     )
     realized_res = await db.execute(realized_stmt)
-    total_realized_pnl = realized_res.scalar_one_or_none() or 0.0
+    total_realized_pnl = 0.0
+    for rpnl, acc_id in realized_res.all():
+        acc = accounts_map.get(acc_id)
+        curr = acc.currency if acc and acc.currency else "EUR"
+        total_realized_pnl += to_eur(float(rpnl or 0.0), curr)
 
-    # 5. Cash balance and total invested as of snapshot_date
-    acc_stmt = select(Account).where(Account.user_id == user_id)
-    acc_res = await db.execute(acc_stmt)
-    accounts_map = {a.account_id: a for a in acc_res.scalars().all()}
-    valid_acc_ids = set(accounts_map.keys())
-
+    # 5. Cash balance and total invested as of snapshot_date (normalized to EUR)
     tx_stmt = select(Transaction).where(
         Transaction.user_id == user_id,
         Transaction.transaction_date <= snapshot_date
@@ -149,37 +155,45 @@ async def generate_daily_snapshot(db: AsyncSession, snapshot_date: datetime.date
 
     for tx in all_txs:
         cash_acc_id, delta = compute_transaction_cash_movement(tx, valid_acc_ids)
-        cash_balance += delta
+        cash_acc = accounts_map.get(cash_acc_id)
+        curr = cash_acc.currency if cash_acc and cash_acc.currency else (getattr(tx, "currency", None) or "EUR")
+        cash_balance += to_eur(delta, curr)
 
         ttype = (tx.transaction_type or "").lower()
         amt = float(tx.total_amount or 0.0)
         fees = float(tx.fees or 0.0)
         taxes = float(tx.taxes or 0.0)
         if ttype == "deposit":
-            total_invested += (amt - fees - taxes)
+            total_invested += to_eur(amt - fees - taxes, curr)
         elif ttype == "withdrawal":
-            total_invested -= (amt + fees + taxes)
+            total_invested -= to_eur(amt + fees + taxes, curr)
 
-    # Add cashflow payments as of snapshot_date
-    cf_stmt = select(CashflowTransaction, CashflowPayment)\
-        .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)\
-        .options(selectinload(CashflowTransaction.items).selectinload(CashflowItem.category))\
+    # Add cashflow payments as of snapshot_date (normalized to EUR)
+    cf_stmt = select(CashflowPayment.amount, CashflowPayment.account_id, CashflowTransaction.transaction_kind, CashflowTransaction.currency)\
+        .join(CashflowTransaction, CashflowPayment.cashflow_id == CashflowTransaction.cashflow_id)\
         .where(
-            CashflowTransaction.user_id == user_id,
+            CashflowPayment.user_id == user_id,
             CashflowTransaction.transaction_date <= snapshot_date
         )
     cf_res = await db.execute(cf_stmt)
-    for ctx, pmt in cf_res.all():
-        tkind = resolve_transaction_kind(ctx)
-        amt = float(pmt.amount or 0.0)
-        cash_balance += amt
-        if amt > 0 and tkind == "INCOME":
-            total_invested += amt
+    for amt, acc_id, tkind, tx_curr in cf_res.all():
+        acc = accounts_map.get(acc_id)
+        curr = acc.currency if acc and acc.currency else (tx_curr or "EUR")
+        signed_amt = to_eur(float(amt or 0.0), curr)
+        cash_balance += signed_amt
+        if signed_amt > 0 and tkind == "INCOME":
+            total_invested += signed_amt
+
+    total_current_value = round(total_current_value, 2)
+    total_cost_of_open_lots = round(total_cost_of_open_lots, 2)
+    total_realized_pnl = round(total_realized_pnl, 2)
+    cash_balance = round(cash_balance, 2)
+    total_invested = round(total_invested, 2)
 
     if cash_balance > 0:
         allocation_by_class["cash"] = cash_balance
 
-    net_worth = total_current_value + cash_balance
+    net_worth = round(total_current_value + cash_balance, 2)
 
     # Check existing snapshot for date to overwrite or insert
     snap_stmt = select(NetworthSnapshot).where(
@@ -250,11 +264,31 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
         )
     )
     all_sales = (await db.execute(sale_stmt)).all()
+
+    # Pre-fetch accounts map for user
+    acc_res = await db.execute(select(Account).where(Account.user_id == user_id))
+    accounts_map = {a.account_id: a for a in acc_res.scalars().all()}
+    valid_acc_ids = set(accounts_map.keys())
+
     sales_by_lot: Dict[int, List[Tuple[datetime.date, float]]] = {}
     realized_sales: List[Tuple[datetime.date, float]] = []
     for lid, sdate, qsold, rpnl in all_sales:
         sales_by_lot.setdefault(lid, []).append((sdate, float(qsold or 0.0)))
-        realized_sales.append((sdate, float(rpnl or 0.0)))
+
+    # Realized sales with account currency normalization to EUR
+    sale_acc_stmt = (
+        select(Transaction.transaction_date, LotSale.realized_pnl, Transaction.account_id)
+        .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
+        .where(
+            LotSale.user_id == user_id,
+            Transaction.user_id == user_id,
+            Transaction.transaction_date <= end_date
+        )
+    )
+    for sdate, rpnl, s_acc_id in (await db.execute(sale_acc_stmt)).all():
+        acc = accounts_map.get(s_acc_id)
+        curr = acc.currency if acc and acc.currency else "EUR"
+        realized_sales.append((sdate, to_eur(float(rpnl or 0.0), curr)))
 
     # 3. Pre-fetch relevant assets
     asset_ids = list(set(l.asset_id for l in all_lots))
@@ -278,14 +312,15 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
             if cprice is not None and not math.isnan(cprice) and not math.isinf(cprice) and cprice > 0:
                 prices_by_asset.setdefault(aid, []).append((pdate, float(cprice)))
 
-    # 5. Pre-fetch transactions cash movements
-    acc_res = await db.execute(select(Account).where(Account.user_id == user_id))
-    valid_acc_ids = {a.account_id for a in acc_res.scalars().all()}
+    # 5. Pre-fetch transactions cash movements (normalized to EUR)
     tx_stmt = select(Transaction).where(Transaction.user_id == user_id, Transaction.transaction_date <= end_date).order_by(asc(Transaction.transaction_date))
     all_txs = list((await db.execute(tx_stmt)).scalars().all())
     tx_events = []
     for tx in all_txs:
-        _, delta = compute_transaction_cash_movement(tx, valid_acc_ids)
+        cash_acc_id, delta = compute_transaction_cash_movement(tx, valid_acc_ids)
+        cash_acc = accounts_map.get(cash_acc_id)
+        curr = cash_acc.currency if cash_acc and cash_acc.currency else (getattr(tx, "currency", None) or "EUR")
+        delta_eur = to_eur(delta, curr)
         ttype = (tx.transaction_type or "").lower()
         amt = float(tx.total_amount or 0.0)
         fees = float(tx.fees or 0.0)
@@ -295,15 +330,17 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
             inv_delta = amt - fees - taxes
         elif ttype == "withdrawal":
             inv_delta = -(amt + fees + taxes)
-        tx_events.append((tx.transaction_date, delta, inv_delta))
+        inv_delta_eur = to_eur(inv_delta, curr)
+        tx_events.append((tx.transaction_date, delta_eur, inv_delta_eur))
 
-    # 6. Pre-fetch cashflow payments
+    # 6. Pre-fetch cashflow payments (normalized to EUR)
     cf_stmt = (
         select(
             CashflowTransaction.transaction_date,
             CashflowTransaction.transaction_kind,
             CashflowPayment.account_id,
-            CashflowPayment.amount
+            CashflowPayment.amount,
+            CashflowTransaction.currency
         )
         .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
         .where(
@@ -314,10 +351,12 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
     )
     cf_records = (await db.execute(cf_stmt)).all()
     cf_events = []
-    for tx_date, tkind, p_acc_id, pmt_amt in cf_records:
-        amt = float(pmt_amt or 0.0)
-        is_inc = amt > 0 and tkind == "INCOME"
-        cf_events.append((tx_date, amt, is_inc))
+    for tx_date, tkind, p_acc_id, pmt_amt, tx_curr in cf_records:
+        acc = accounts_map.get(p_acc_id)
+        curr = acc.currency if acc and acc.currency else (tx_curr or "EUR")
+        signed_amt_eur = to_eur(float(pmt_amt or 0.0), curr)
+        is_inc = signed_amt_eur > 0 and tkind == "INCOME"
+        cf_events.append((tx_date, signed_amt_eur, is_inc))
 
     # 7. Fetch existing snapshots to update
     existing_snaps = {
@@ -354,17 +393,22 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
                     if price is None or (isinstance(price, float) and (math.isnan(price) or math.isinf(price) or price <= 0)):
                         price = lot.cost_per_unit
 
-                    val = rem_qty * price
-                    cost = rem_qty * lot.cost_per_unit
+                    asset = assets_map.get(lot.asset_id)
+                    acc = accounts_map.get(lot.account_id)
+                    lot_curr = (asset.currency if asset and asset.currency else (acc.currency if acc and acc.currency else "EUR"))
+
+                    val = to_eur(rem_qty * price, lot_curr)
+                    cost = to_eur(rem_qty * lot.cost_per_unit, lot_curr)
                     total_curr_val += val
                     total_cost_of_open_lots += cost
 
-                    asset = assets_map.get(lot.asset_id)
                     aclass = asset.asset_type if asset else "other"
                     allocation_by_class[aclass] = allocation_by_class.get(aclass, 0.0) + val
 
-        total_unrealized_pnl = total_curr_val - total_cost_of_open_lots
-        total_realized_pnl = sum(rpnl for sdate, rpnl in realized_sales if sdate <= curr_date)
+        total_curr_val = round(total_curr_val, 2)
+        total_cost_of_open_lots = round(total_cost_of_open_lots, 2)
+        total_unrealized_pnl = round(total_curr_val - total_cost_of_open_lots, 2)
+        total_realized_pnl = round(sum(rpnl for sdate, rpnl in realized_sales if sdate <= curr_date), 2)
 
         cash_balance = sum(dc for dt, dc, _ in tx_events if dt <= curr_date)
         total_invested = sum(di for dt, _, di in tx_events if dt <= curr_date)
@@ -375,10 +419,13 @@ async def recalculate_past_snapshots(db: AsyncSession, start_date: datetime.date
                 if is_inc:
                     total_invested += amt
 
+        cash_balance = round(cash_balance, 2)
+        total_invested = round(total_invested, 2)
+
         if cash_balance > 0:
             allocation_by_class["cash"] = cash_balance
 
-        net_worth = total_curr_val + cash_balance
+        net_worth = round(total_curr_val + cash_balance, 2)
 
         if curr_date in existing_snaps:
             snap = existing_snaps[curr_date]

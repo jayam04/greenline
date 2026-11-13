@@ -17,12 +17,19 @@ class User(Base):
     __tablename__ = "users"
     
     user_id = Column(Integer, Identity(), primary_key=True)
-    username = Column(String, unique=True, nullable=False)
-    password_hash = Column(String, nullable=False)
+    auth0_sub = Column(String(255), unique=True, nullable=True, index=True)
+    email = Column(String(255), nullable=True, index=True)
+    name = Column(String(255), nullable=True)
+    picture = Column(String(1024), nullable=True)
+    username = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
     def __init__(self, **kwargs):
-        if "user_id" not in kwargs:
+        if "user_id" in kwargs and kwargs["user_id"] is None:
+            del kwargs["user_id"]
+        elif "user_id" not in kwargs and "auth0_sub" not in kwargs:
             kwargs["user_id"] = 0
         super().__init__(**kwargs)
 

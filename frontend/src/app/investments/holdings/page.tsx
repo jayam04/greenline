@@ -3,8 +3,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatCleanMoney, formatXirr, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
-import { 
-  ChevronDown, ChevronRight, Layers, ArrowUpRight, ArrowDownRight, 
+import {
+  ChevronDown, ChevronRight, Layers, ArrowUpRight, ArrowDownRight,
   Plus, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2
 } from "lucide-react";
 import { TransactionModal } from "@/components/TransactionModal";
@@ -154,7 +154,7 @@ export default function HoldingsPage() {
       (acc, h) => acc + convertCurrency(h.realized_pnl, h.currency, masterCurrency),
       0
     );
-  
+
   const totalFeesAndTaxesEUR = (summary?.total_fees || 0) + (summary?.total_taxes || 0);
   const totalFeesAndTaxesMaster = convertCurrency(totalFeesAndTaxesEUR, "EUR", masterCurrency);
   const totalNetPnLEUR = (totalRealizedEUR + totalUnrealizedEUR) - totalFeesAndTaxesMaster;
@@ -408,9 +408,9 @@ export default function HoldingsPage() {
             <thead>
               <tr className="text-[11px] font-bold text-slate-400 border-b border-slate-100 dark:border-slate-800">
                 <th className="py-2.5 px-2 w-8"></th>
-                
+
                 {/* Asset Column */}
-                <th 
+                <th
                   onClick={() => handleSort("symbol")}
                   className="py-2.5 px-3 cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -423,7 +423,7 @@ export default function HoldingsPage() {
                 <th className="py-2.5 px-3">Type</th>
 
                 {/* Quantity Column */}
-                <th 
+                <th
                   onClick={() => handleSort("quantity_held")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -434,7 +434,7 @@ export default function HoldingsPage() {
                 </th>
 
                 {/* Total Cost Column (Merged with Avg Cost) */}
-                <th 
+                <th
                   onClick={() => handleSort("total_cost")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -445,7 +445,7 @@ export default function HoldingsPage() {
                 </th>
 
                 {/* Current Value Column (Merged with Current Price) */}
-                <th 
+                <th
                   onClick={() => handleSort("current_value")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -456,7 +456,7 @@ export default function HoldingsPage() {
                 </th>
 
                 {/* Unrealized P&L OR 1D Change Column */}
-                <th 
+                <th
                   onClick={() => handleSort(viewMode === "1d" ? "value_change_1d" : "unrealized_pnl")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -467,7 +467,7 @@ export default function HoldingsPage() {
                 </th>
 
                 {/* Realized P&L Column */}
-                <th 
+                <th
                   onClick={() => handleSort("realized_pnl")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -478,7 +478,7 @@ export default function HoldingsPage() {
                 </th>
 
                 {/* Net P&L Column (NEW) */}
-                <th 
+                <th
                   onClick={() => handleSort("net_pnl")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >
@@ -489,7 +489,7 @@ export default function HoldingsPage() {
                 </th>
 
                 {/* XIRR Column */}
-                <th 
+                <th
                   onClick={() => handleSort("xirr")}
                   className="py-2.5 px-3 text-right cursor-pointer select-none hover:text-slate-900 transition-colors group"
                 >

@@ -82,7 +82,7 @@ async def get_mcp_categories(
     and account names. Do not invent new categories.
     """
     # 1. Categories
-    cat_stmt = select(Category).order_by(Category.category_type, Category.name)
+    cat_stmt = select(Category).where(Category.user_id.in_([0, current_user.user_id])).order_by(Category.category_type, Category.name)
     cat_res = await db.execute(cat_stmt)
     cats = cat_res.scalars().all()
     lineage_map = await build_category_lineage_map(db)
@@ -99,7 +99,7 @@ async def get_mcp_categories(
         ))
 
     # 2. Available accounts
-    acc_stmt = select(Account).order_by(Account.account_name)
+    acc_stmt = select(Account).where(Account.user_id.in_([0, current_user.user_id])).order_by(Account.account_name)
     acc_res = await db.execute(acc_stmt)
     accs = acc_res.scalars().all()
 
@@ -137,6 +137,7 @@ async def read_mcp_cashflow(
             selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
             selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
         )
+        .where(CashflowTransaction.user_id == current_user.user_id)
         .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
     )
 
@@ -206,13 +207,13 @@ async def mutate_mcp_cashflow(
         raise HTTPException(status_code=400, detail="No operations provided.")
 
     # Cache accounts and categories for strict matching
-    acc_res = await db.execute(select(Account))
+    acc_res = await db.execute(select(Account).where(Account.user_id.in_([0, current_user.user_id])))
     all_accounts = acc_res.scalars().all()
     acc_by_id = {a.account_id: a for a in all_accounts}
     acc_by_name = {a.account_name.strip().lower(): a for a in all_accounts}
     valid_acc_names = [a.account_name for a in all_accounts]
 
-    cat_res = await db.execute(select(Category))
+    cat_res = await db.execute(select(Category).where(Category.user_id.in_([0, current_user.user_id])))
     all_categories = cat_res.scalars().all()
     cat_by_id = {c.category_id: c for c in all_categories}
 
@@ -224,7 +225,10 @@ async def mutate_mcp_cashflow(
         if action == "delete":
             if not op.cashflow_id:
                 raise HTTPException(status_code=400, detail="cashflow_id is required for delete operation.")
-            del_stmt = select(CashflowTransaction).where(CashflowTransaction.cashflow_id == op.cashflow_id)
+            del_stmt = select(CashflowTransaction).where(
+                CashflowTransaction.cashflow_id == op.cashflow_id,
+                CashflowTransaction.user_id == current_user.user_id
+            )
             del_res = await db.execute(del_stmt)
             tx_to_del = del_res.scalar_one_or_none()
             if tx_to_del:
@@ -253,7 +257,10 @@ async def mutate_mcp_cashflow(
             fetch_stmt = (
                 select(CashflowTransaction)
                 .options(selectinload(CashflowTransaction.payments), selectinload(CashflowTransaction.items))
-                .where(CashflowTransaction.cashflow_id == op.cashflow_id)
+                .where(
+                    CashflowTransaction.cashflow_id == op.cashflow_id,
+                    CashflowTransaction.user_id == current_user.user_id
+                )
             )
             fetch_res = await db.execute(fetch_stmt)
             existing_tx = fetch_res.scalar_one_or_none()
@@ -332,6 +339,7 @@ async def mutate_mcp_cashflow(
 
         if action == "create":
             tx = CashflowTransaction(
+                user_id=current_user.user_id,
                 transaction_date=tx_date,
                 title=op.merchant.strip(),
                 total_amount=abs_total,
@@ -344,6 +352,7 @@ async def mutate_mcp_cashflow(
 
             for acc_id, amt in resolved_payments:
                 db.add(CashflowPayment(
+                    user_id=current_user.user_id,
                     cashflow_id=tx.cashflow_id,
                     account_id=acc_id,
                     amount=amt
@@ -351,6 +360,7 @@ async def mutate_mcp_cashflow(
 
             for c_id, amt, desc_txt, lbl in resolved_items:
                 db.add(CashflowItem(
+                    user_id=current_user.user_id,
                     cashflow_id=tx.cashflow_id,
                     category_id=c_id,
                     amount=round(abs(amt), 2),
@@ -383,6 +393,7 @@ async def mutate_mcp_cashflow(
 
             for acc_id, amt in resolved_payments:
                 db.add(CashflowPayment(
+                    user_id=current_user.user_id,
                     cashflow_id=existing_tx.cashflow_id,
                     account_id=acc_id,
                     amount=amt
@@ -390,6 +401,7 @@ async def mutate_mcp_cashflow(
 
             for c_id, amt, desc_txt, lbl in resolved_items:
                 db.add(CashflowItem(
+                    user_id=current_user.user_id,
                     cashflow_id=existing_tx.cashflow_id,
                     category_id=c_id,
                     amount=round(abs(amt), 2),
@@ -482,7 +494,7 @@ async def read_mcp_stocks(
     valid account names, check if the asset already exists, and obtain asset_id or symbol.
     """
     # 1. Fetch available accounts
-    acc_stmt = select(Account).order_by(Account.account_name)
+    acc_stmt = select(Account).where(Account.user_id.in_([0, current_user.user_id])).order_by(Account.account_name)
     all_accounts = (await db.execute(acc_stmt)).scalars().all()
     avail_accounts = [
         MCPAvailableAccount(
@@ -523,6 +535,7 @@ async def read_mcp_stocks(
         .outerjoin(Account, Transaction.account_id == Account.account_id)
         .outerjoin(FundingAccount, Transaction.funding_account_id == FundingAccount.account_id)
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)
+        .where(Transaction.user_id == current_user.user_id)
         .order_by(desc(Transaction.transaction_date), desc(Transaction.transaction_id))
     )
 
@@ -595,7 +608,7 @@ async def mutate_mcp_stocks(
         raise HTTPException(status_code=400, detail="No operations provided.")
 
     # Cache accounts
-    acc_res = await db.execute(select(Account))
+    acc_res = await db.execute(select(Account).where(Account.user_id.in_([0, current_user.user_id])))
     all_accounts = acc_res.scalars().all()
     acc_by_id = {a.account_id: a for a in all_accounts}
     acc_by_name = {a.account_name.strip().lower(): a for a in all_accounts}
@@ -622,7 +635,10 @@ async def mutate_mcp_stocks(
         if action == "delete":
             if not op.transaction_id:
                 raise HTTPException(status_code=400, detail="transaction_id is required for delete action.")
-            del_stmt = select(Transaction).where(Transaction.transaction_id == op.transaction_id)
+            del_stmt = select(Transaction).where(
+                Transaction.transaction_id == op.transaction_id,
+                Transaction.user_id == current_user.user_id
+            )
             del_res = await db.execute(del_stmt)
             tx_to_del = del_res.scalar_one_or_none()
             if not tx_to_del:
@@ -642,7 +658,10 @@ async def mutate_mcp_stocks(
         if action == "update":
             if not op.transaction_id:
                 raise HTTPException(status_code=400, detail="transaction_id is required for update action.")
-            up_stmt = select(Transaction).where(Transaction.transaction_id == op.transaction_id)
+            up_stmt = select(Transaction).where(
+                Transaction.transaction_id == op.transaction_id,
+                Transaction.user_id == current_user.user_id
+            )
             up_res = await db.execute(up_stmt)
             tx_to_up = up_res.scalar_one_or_none()
             if not tx_to_up:
@@ -761,6 +780,7 @@ async def mutate_mcp_stocks(
 
         if action == "create":
             new_tx = Transaction(
+                user_id=current_user.user_id,
                 account_id=acc.account_id,
                 funding_account_id=f_acc.account_id if f_acc else None,
                 asset_id=target_asset.asset_id if target_asset else None,

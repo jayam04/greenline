@@ -66,7 +66,31 @@ async def test_settings_app_font_defaults_and_updates(settings_test_env):
     assert get_res.status_code == 200
     assert get_res.json()["app_font"] == "inter"
 
-    # 4. Fallback for invalid font should be "general-sans"
+    # 4. Update to "spline-sans" (Google Fonts Spline/Spine Sans)
+    spline_res = await client.put("/api/v1/settings", headers=headers, json={
+        "link_brokerage_with_bank": False,
+        "master_currency": "USD",
+        "fiscal_year_start": "01-01",
+        "app_font": "spline-sans"
+    })
+    assert spline_res.status_code == 200, spline_res.text
+    assert spline_res.json()["app_font"] == "spline-sans"
+
+    get_spline_res = await client.get("/api/v1/settings", headers=headers)
+    assert get_spline_res.status_code == 200
+    assert get_spline_res.json()["app_font"] == "spline-sans"
+
+    # 5. Update to "spine-sans" alias
+    spine_res = await client.put("/api/v1/settings", headers=headers, json={
+        "link_brokerage_with_bank": False,
+        "master_currency": "USD",
+        "fiscal_year_start": "01-01",
+        "app_font": "spine-sans"
+    })
+    assert spine_res.status_code == 200, spine_res.text
+    assert spine_res.json()["app_font"] == "spine-sans"
+
+    # 6. Fallback for invalid font should be "general-sans"
     fallback_res = await client.put("/api/v1/settings", headers=headers, json={
         "link_brokerage_with_bank": False,
         "master_currency": "USD",

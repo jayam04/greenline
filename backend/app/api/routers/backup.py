@@ -25,12 +25,20 @@ from app.scheduler import reschedule_autobackup_job
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
+def _require_admin_user(current_user: User) -> None:
+    if current_user.user_id != 0:
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required for full system backup operations"
+        )
+
 @router.get("/config", response_model=BackupConfigResponse)
 async def get_backup_configuration(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Returns current auto-backup configuration and active database information."""
+    _require_admin_user(current_user)
     return await get_autobackup_config(db)
 
 @router.put("/config", response_model=BackupConfigResponse)
@@ -40,6 +48,7 @@ async def update_backup_configuration(
     current_user: User = Depends(get_current_user)
 ):
     """Updates auto-backup interval, retention max copies, and enabled state."""
+    _require_admin_user(current_user)
     cfg = await update_autobackup_config(
         db,
         enabled=payload.autobackup_enabled,
@@ -57,6 +66,7 @@ async def list_stored_backups(
     current_user: User = Depends(get_current_user)
 ):
     """Returns a list of all stored backup snapshots with metadata."""
+    _require_admin_user(current_user)
     items = list_backups()
     return BackupListResponse(
         total_count=len(items),
@@ -70,6 +80,7 @@ async def trigger_manual_backup(
     current_user: User = Depends(get_current_user)
 ):
     """Creates an immediate manual backup snapshot of the active database."""
+    _require_admin_user(current_user)
     note = payload.note if payload else None
     res = await create_backup(db, kind="manual", note=note)
     return BackupItemResponse(**res)
@@ -80,6 +91,7 @@ async def download_backup_file(
     current_user: User = Depends(get_current_user)
 ):
     """Downloads a specific backup file after path traversal validation."""
+    _require_admin_user(current_user)
     try:
         filepath = validate_and_resolve_backup_path(filename, must_exist=True)
     except ValueError:
@@ -100,6 +112,7 @@ async def restore_database_from_file(
     current_user: User = Depends(get_current_user)
 ):
     """Restores the active database from a stored backup file with pre-restore safety snapshot."""
+    _require_admin_user(current_user)
     try:
         res = await restore_from_backup(filename, db)
         return res
@@ -116,6 +129,7 @@ async def delete_backup_snapshot(
     current_user: User = Depends(get_current_user)
 ):
     """Deletes a specific backup snapshot from storage."""
+    _require_admin_user(current_user)
     try:
         deleted = delete_backup(filename)
         if not deleted:
@@ -137,16 +151,16 @@ async def export_all_portfolio_data(
     Exports comprehensive system data (Accounts, Assets, Transactions, Price History, 
     Corporate Actions, Expected Dividends, Categories, Cashflows, Settings) as JSON.
     """
-    accs = (await db.execute(select(Account))).scalars().all()
+    accs = (await db.execute(select(Account).where(Account.user_id == current_user.user_id))).scalars().all()
     asts = (await db.execute(select(Asset))).scalars().all()
-    txs = (await db.execute(select(Transaction))).scalars().all()
-    phs = (await db.execute(select(PriceHistory))).scalars().all()
-    exp_divs = (await db.execute(select(ExpectedDividend))).scalars().all()
-    cats = (await db.execute(select(Category))).scalars().all()
-    c_txs = (await db.execute(select(CashflowTransaction))).scalars().all()
-    c_pmts = (await db.execute(select(CashflowPayment))).scalars().all()
-    c_items = (await db.execute(select(CashflowItem))).scalars().all()
-    app_sets = (await db.execute(select(AppSetting))).scalars().all()
+    txs = (await db.execute(select(Transaction).where(Transaction.user_id == current_user.user_id))).scalars().all()
+    phs = (await db.execute(select(PriceHistory).where(PriceHistory.user_id.in_([0, current_user.user_id])))).scalars().all()
+    exp_divs = (await db.execute(select(ExpectedDividend).where(ExpectedDividend.user_id == current_user.user_id))).scalars().all()
+    cats = (await db.execute(select(Category).where(Category.user_id.in_([0, current_user.user_id])))).scalars().all()
+    c_txs = (await db.execute(select(CashflowTransaction).where(CashflowTransaction.user_id == current_user.user_id))).scalars().all()
+    c_pmts = (await db.execute(select(CashflowPayment).where(CashflowPayment.user_id == current_user.user_id))).scalars().all()
+    c_items = (await db.execute(select(CashflowItem).where(CashflowItem.user_id == current_user.user_id))).scalars().all()
+    app_sets = (await db.execute(select(AppSetting).where(AppSetting.user_id.in_([0, current_user.user_id])))).scalars().all()
 
     export_data = {
         "version": "2.0",
@@ -284,6 +298,7 @@ async def import_portfolio_data(
     Imports portfolio data from an uploaded JSON file and recalculates lots & historical snapshots.
     Validates all data and foreign keys before mutating the database.
     """
+    _require_admin_user(current_user)
     try:
         contents = await file.read()
         data = json.loads(contents.decode("utf-8"))

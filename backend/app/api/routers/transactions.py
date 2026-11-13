@@ -1,5 +1,6 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from sqlalchemy.orm import aliased
@@ -7,9 +8,9 @@ from app.db.database import get_db
 from app.db.models import Transaction, Account, Asset, User, PriceHistory
 from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import recalculate_past_snapshots
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.services.price_engine import cleanup_orphan_transaction_prices
+from app.services.networth_client import notify_snapshot_recalculate
 from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -177,7 +178,8 @@ async def get_transaction(
 async def create_transaction(
     tx_in: TransactionCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     u_id = current_user.user_id
     acc = await db.get(Account, tx_in.account_id)
@@ -205,8 +207,15 @@ async def create_transaction(
     # Run FIFO & Cash flow engine
     await recalculate_all_lots(db, user_id=u_id)
     
-    # Recalculate past snapshots from transaction date to today
-    await recalculate_past_snapshots(db, start_date=tx_date, user_id=u_id)
+    # Non-blocking async notification to Networth microservice
+    asyncio.create_task(
+        notify_snapshot_recalculate(
+            user_id=u_id,
+            start_date=tx_date,
+            reason="trade_created",
+            auth_token=authorization
+        )
+    )
 
     # Sync dividends for asset if it's a buy/sell trade
     if tx_asset_id and tx_type in ["buy", "sell"]:
@@ -239,7 +248,8 @@ async def update_transaction(
     transaction_id: int,
     tx_in: TransactionUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     u_id = current_user.user_id
     stmt = select(Transaction).where(Transaction.transaction_id == transaction_id, Transaction.user_id == u_id)
@@ -277,7 +287,14 @@ async def update_transaction(
     
     # Recalculate derived state
     await recalculate_all_lots(db, user_id=u_id)
-    await recalculate_past_snapshots(db, start_date=tx_date, user_id=u_id)
+    asyncio.create_task(
+        notify_snapshot_recalculate(
+            user_id=u_id,
+            start_date=tx_date,
+            reason="trade_updated",
+            auth_token=authorization
+        )
+    )
 
     if tx_asset_id and tx_type in ["buy", "sell"]:
         try:
@@ -307,7 +324,8 @@ async def update_transaction(
 async def delete_transaction(
     transaction_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     u_id = current_user.user_id
     stmt = select(Transaction).where(Transaction.transaction_id == transaction_id, Transaction.user_id == u_id)
@@ -328,7 +346,14 @@ async def delete_transaction(
 
     # Recalculate derived state
     await recalculate_all_lots(db, user_id=u_id)
-    await recalculate_past_snapshots(db, start_date=tx_date, user_id=u_id)
+    asyncio.create_task(
+        notify_snapshot_recalculate(
+            user_id=u_id,
+            start_date=tx_date,
+            reason="trade_deleted",
+            auth_token=authorization
+        )
+    )
 
     if target_asset_id and is_trade:
         try:

@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text
+from sqlalchemy import text, event
 from sqlalchemy.schema import sort_tables_and_constraints
 from app.config import settings
 
@@ -41,6 +41,17 @@ def create_database_engine(database_url: str, connect_args=None) -> AsyncEngine:
 
 
 engine = create_database_engine(db_url)
+
+if db_url.startswith("oracle+oracledb://") and getattr(settings, "ORACLE_SCHEMA", None):
+    target_schema = _clean_credential(settings.ORACLE_SCHEMA)
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_oracle_current_schema(dbapi_connection, connection_record):
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute(f"ALTER SESSION SET CURRENT_SCHEMA = {target_schema}")
+            cursor.close()
+        except Exception:
+            pass
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

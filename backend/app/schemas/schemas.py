@@ -17,8 +17,18 @@ class UserLogin(BaseModel):
 class UserResponse(BaseModel):
     user_id: int
     username: str
-    created_at: datetime.datetime
+    auth0_sub: Optional[str] = None
+    email: Optional[str] = None
+    name: Optional[str] = None
+    picture: Optional[str] = None
+    created_at: Optional[datetime.datetime] = None
+    updated_at: Optional[datetime.datetime] = None
     model_config = ConfigDict(from_attributes=True)
+
+class UserSyncRequest(BaseModel):
+    email: Optional[str] = None
+    name: Optional[str] = None
+    picture: Optional[str] = None
 
 # Account Schemas
 class AccountBase(BaseModel):

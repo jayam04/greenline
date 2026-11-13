@@ -1,12 +1,12 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from app.db.database import get_db
-from app.db.models import PriceHistory, Asset, User
+from app.db.models import PriceHistory, Asset, User, Transaction
 from app.schemas.schemas import PriceHistoryCreate, PriceHistoryResponse, CustomPriceResponse
 from app.services.price_engine import update_prices_for_assets, cleanup_orphan_transaction_prices
-from app.services.snapshot_engine import generate_daily_snapshot
+from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
 from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/prices", tags=["prices"])
@@ -126,7 +126,24 @@ async def trigger_price_refresh(
     u_id = get_user_id(current_user)
     # Clean up orphan transaction prices first
     await cleanup_orphan_transaction_prices(db, asset_id)
-    asset_ids = [asset_id] if asset_id else None
-    count = await update_prices_for_assets(db, asset_ids)
-    await generate_daily_snapshot(db, user_id=u_id)
+    if asset_id:
+        asset_ids = [asset_id]
+    else:
+        # Prioritize assets held by the current user
+        user_asset_stmt = select(Transaction.asset_id).where(Transaction.user_id == u_id).distinct()
+        user_asset_ids = (await db.execute(user_asset_stmt)).scalars().all()
+        asset_ids = [a for a in set(user_asset_ids) if a is not None]
+        if not asset_ids and u_id == 0:
+            asset_ids = None  # Admin fallback
+
+    count = await update_prices_for_assets(db, asset_ids) if (asset_ids or u_id == 0) else 0
+    
+    # Recalculate past snapshots from earliest transaction date to keep timeline consistent
+    min_tx_stmt = select(func.min(Transaction.transaction_date)).where(Transaction.user_id == u_id)
+    min_tx = (await db.execute(min_tx_stmt)).scalar_one_or_none()
+    if min_tx:
+        await recalculate_past_snapshots(db, start_date=min_tx, user_id=u_id)
+    else:
+        await generate_daily_snapshot(db, user_id=u_id)
+
     return {"message": f"Price update completed. {count} new price records added."}

@@ -6,6 +6,7 @@ import { formatQty, formatNum, formatMoney, getCurrencySymbol, convertCurrencyTo
 import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
 import { AllocationChart } from "@/components/AllocationChart";
 import { TransactionModal } from "@/components/TransactionModal";
+import { SnapshotDateControl } from "@/components/SnapshotDateControl";
 import { 
   Plus, Eye, EyeOff, MoreVertical, 
   ArrowUpRight, ArrowDownRight, 
@@ -85,6 +86,19 @@ export default function InvestmentsDashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
   const [selectedAccount, setSelectedAccount] = useState<string>("all");
+  const [snapshotStartDate, setSnapshotStartDate] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedMode = localStorage.getItem("greenline_snapshot_start_mode");
+        if (savedMode === "manual") {
+          return localStorage.getItem("greenline_snapshot_start_date") || null;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  });
   const [timeRange, setTimeRange] = useState<string>("YTD");
   const [holdingsReturnMode, setHoldingsReturnMode] = useState<"total" | "1d">("total");
   const [chartMode, setChartMode] = useState<"value" | "performance">("value");
@@ -158,10 +172,10 @@ export default function InvestmentsDashboardPage() {
     document.addEventListener("touchend", onEnd);
   };
 
-  // Reload Summary & Snapshots whenever selectedAccount changes
+  // Reload Summary & Snapshots whenever selectedAccount or snapshotStartDate changes
   useEffect(() => {
-    loadAccountData(selectedAccount);
-  }, [selectedAccount]);
+    loadAccountData(selectedAccount, snapshotStartDate);
+  }, [selectedAccount, snapshotStartDate]);
 
   const loadAccounts = async () => {
     try {
@@ -172,13 +186,18 @@ export default function InvestmentsDashboardPage() {
     }
   };
 
-  const loadAccountData = async (accId: string) => {
+  const loadAccountData = async (accId: string, sDate: string | null = snapshotStartDate) => {
     try {
       setLoading(true);
       const queryParam = accId === "all" ? "" : `?account_id=${accId}`;
+      const snapParams = new URLSearchParams();
+      if (accId !== "all") snapParams.set("account_id", accId);
+      if (sDate) snapParams.set("start_date", sDate);
+      const snapQuery = snapParams.toString() ? `?${snapParams.toString()}` : "";
+
       const [sumData, snapData] = await Promise.all([
         apiFetch<PortfolioSummary>(`/portfolio/summary${queryParam}`),
-        apiFetch<Snapshot[]>(`/snapshots${queryParam}`),
+        apiFetch<Snapshot[]>(`/snapshots${snapQuery}`),
       ]);
       setSummary(sumData);
       setSnapshots(snapData || []);
@@ -193,10 +212,10 @@ export default function InvestmentsDashboardPage() {
     try {
       setRefreshing(true);
       await apiFetch("/prices/refresh", { method: "POST" });
-      await loadAccountData(selectedAccount);
     } catch (e) {
-      console.error(e);
+      console.error("Failed to refresh market prices:", e);
     } finally {
+      await loadAccountData(selectedAccount, snapshotStartDate);
       setRefreshing(false);
     }
   };
@@ -598,21 +617,26 @@ export default function InvestmentsDashboardPage() {
                 )}
               </div>
 
-              {/* Interactive Timeframe Filters */}
-              <div className="flex items-center gap-1 text-xs font-bold self-start sm:self-auto bg-slate-50 p-1 rounded-lg border border-slate-100">
-                {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => setTimeRange(tf)}
-                    className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                      timeRange === tf
-                        ? "bg-white text-[#0F172A] shadow-xs font-extrabold"
-                        : "text-slate-400 hover:text-slate-700"
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
+              {/* Snapshot Starting Date & Interactive Timeframe Filters */}
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <SnapshotDateControl
+                  onChange={(newDate) => setSnapshotStartDate(newDate)}
+                />
+                <div className="flex items-center gap-1 text-xs font-bold bg-slate-50 dark:bg-slate-800 p-1 rounded-lg border border-slate-100 dark:border-slate-700">
+                  {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
+                    <button
+                      key={tf}
+                      onClick={() => setTimeRange(tf)}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        timeRange === tf
+                          ? "bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-white shadow-xs font-extrabold"
+                          : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {tf}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

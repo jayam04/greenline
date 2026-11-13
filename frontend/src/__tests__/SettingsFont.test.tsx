@@ -50,8 +50,35 @@ describe('Settings Page - Interface Typography Selection', () => {
     expect(screen.getByText(/Select between the default geometric font/i)).toBeInTheDocument();
     expect(screen.getAllByText('General Sans').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Inter').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Spline Sans/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Default')).toBeInTheDocument();
     expect(screen.getByText('Clean UI')).toBeInTheDocument();
+    expect(screen.getByText('Google Font')).toBeInTheDocument();
+  });
+
+  it('switches font to Spline Sans (Spine Sans) when card is clicked and persists to backend', async () => {
+    render(
+      <FontProvider>
+        <SettingsPage />
+      </FontProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Interface Typography')).toBeInTheDocument();
+    });
+
+    const splineButton = screen.getByRole('button', { name: /Spline Sans.*Google Font/i });
+    fireEvent.click(splineButton);
+
+    await waitFor(() => {
+      expect(api.apiFetch).toHaveBeenCalledWith('/settings', expect.objectContaining({
+        method: 'PUT',
+        body: expect.stringContaining('"app_font":"spline-sans"')
+      }));
+    });
+
+    expect(document.documentElement.getAttribute('data-font')).toBe('spline-sans');
+    expect(localStorage.getItem('greenline_font')).toBe('spline-sans');
   });
 
   it('switches font to Inter when Inter card is clicked and persists to backend', async () => {

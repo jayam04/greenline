@@ -8,14 +8,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.models import Asset, PriceHistory
 
+def _is_unsupported_ticker(symbol: str) -> bool:
+    """Returns True if the symbol is private or unlisted and cannot be fetched via market APIs."""
+    if not symbol:
+        return True
+    s = symbol.strip().upper()
+    return s.startswith("$") or s.endswith(".PRIVATE") or ".PRIVATE" in s
+
 def _fetch_history_sync(symbol: str, start_date: Optional[datetime.date] = None) -> Optional[pd.DataFrame]:
     """Synchronous yfinance history call to be executed in a threadpool."""
-    ticker = yf.Ticker(symbol)
-    if start_date:
-        start_str = start_date.strftime("%Y-%m-%d")
-        return ticker.history(start=start_str)
-    else:
-        return ticker.history(period="1y")
+    if _is_unsupported_ticker(symbol):
+        return None
+    try:
+        ticker = yf.Ticker(symbol)
+        if start_date:
+            start_str = start_date.strftime("%Y-%m-%d")
+            return ticker.history(start=start_str, timeout=10)
+        else:
+            return ticker.history(period="1y", timeout=10)
+    except Exception as e:
+        print(f"Error fetching history for {symbol}: {e}")
+        return None
 
 async def update_prices_for_assets(
     db: AsyncSession, 
@@ -37,7 +50,7 @@ async def update_prices_for_assets(
 
     for asset in assets:
         symbol = (asset.symbol or "").strip()
-        if not symbol:
+        if not symbol or _is_unsupported_ticker(symbol):
             continue
             
         try:

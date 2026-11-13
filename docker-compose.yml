@@ -36,12 +36,42 @@ services:
       SECRET_KEY: ${SECRET_KEY:-super-secret-investment-tracker-key-change-in-prod-2026}
       DEFAULT_ADMIN_USER: ${DEFAULT_ADMIN_USER:-admin}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-jayam04.eu.auth0.com}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
+      AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
       PYTHONPATH: /app
     depends_on:
       oracle:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  networth:
+    build:
+      context: ./services/networth
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/networth/app:/app/app
+      - ./services/networth/tests:/app/tests
+    environment:
+      DATABASE_URL: ${DATABASE_URL_NETWORTH:-oracle+oracledb://@}
+      DATABASE_URL_NETWORTH: ${DATABASE_URL_NETWORTH:-oracle+oracledb://@}
+      ORACLE_USER: ${ORACLE_NETWORTH_USER:-${ORACLE_USER:-}}
+      ORACLE_PASSWORD: ${ORACLE_NETWORTH_PASSWORD:-${ORACLE_PASSWORD:-}}
+      ORACLE_DSN: ${ORACLE_DSN:-}
+      ORACLE_SCHEMA: ${ORACLE_SCHEMA:-ADMIN}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-jayam04.eu.auth0.com}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
+      AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
+      AUTH0_TEST_MODE: ${AUTH0_TEST_MODE:-false}
+      PYTHONPATH: /app
+    depends_on:
+      oracle:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -57,12 +87,20 @@ services:
       - /app/node_modules
       - /app/.next
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=
       - INTERNAL_API_URL=http://backend:8000
+      - NETWORTH_URL=http://networth:8001
+      - BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_AUTH0_DOMAIN=${NEXT_PUBLIC_AUTH0_DOMAIN:-jayam04.eu.auth0.com}
+      - NEXT_PUBLIC_AUTH0_CLIENT_ID=${NEXT_PUBLIC_AUTH0_CLIENT_ID:-wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby}
+      - NEXT_PUBLIC_AUTH0_AUDIENCE=${NEXT_PUBLIC_AUTH0_AUDIENCE:-http://localhost:8000}
+      - NEXT_PUBLIC_AUTH0_ENABLED=${NEXT_PUBLIC_AUTH0_ENABLED:-true}
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
     depends_on:
       backend:
+        condition: service_started
+      networth:
         condition: service_started
     restart: unless-stopped
 

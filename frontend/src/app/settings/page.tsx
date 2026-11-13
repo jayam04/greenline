@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
 import { useFont, AppFont, FONT_STORAGE_KEY } from "@/components/FontProvider";
+import { SnapshotDateControl } from "@/components/SnapshotDateControl";
 
 const FONT_PRESETS = [
   {
@@ -37,6 +38,14 @@ const FONT_PRESETS = [
     description: "Crisp monospace font perfect for financial ledgers and statements",
     preview: "The quick brown fox jumps over 134.50 EUR",
     fontFamily: "var(--font-rx100)",
+  },
+  {
+    id: "spline-sans" as const,
+    label: "Spline Sans",
+    tag: "Google Font",
+    description: "Modern grotesque sans-serif from Google Fonts (Spline Sans / Spine Sans) optimized for clean UI and dashboards",
+    preview: "The quick brown fox jumps over 134.50 EUR",
+    fontFamily: "var(--font-spline-sans)",
   },
 ];
 
@@ -149,7 +158,14 @@ export default function SettingsPage() {
         }
         if (res.app_font) {
           const raw = res.app_font.trim().toLowerCase();
-          const normFont: AppFont = raw === "inter" ? "inter" : raw === "rx100" ? "rx100" : "general-sans";
+          const normFont: AppFont =
+            raw === "inter"
+              ? "inter"
+              : raw === "rx100"
+              ? "rx100"
+              : raw === "spline-sans" || raw === "spine-sans"
+              ? "spline-sans"
+              : "general-sans";
           setFont(normFont);
         }
       }
@@ -479,7 +495,26 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Card 3: Interface Typography */}
+          {/* Card 3: Snapshot Starting Date Baseline */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 rounded-xl">
+                <Clock className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                  Snapshot Starting Date Baseline
+                </h2>
+                <p className="text-[11px] font-medium text-slate-400">
+                  Configure automatic (earliest record) or manual starting date baseline for weekly timeseries snapshots
+                </p>
+              </div>
+            </div>
+
+            <SnapshotDateControl variant="inline" />
+          </div>
+
+          {/* Card 4: Interface Typography */}
           <div className="getquin-card p-5 space-y-4">
             <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="p-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 rounded-xl">
@@ -490,14 +525,14 @@ export default function SettingsPage() {
                   Interface Typography
                 </h2>
                 <p className="text-[11px] font-medium text-slate-400">
-                  Select between the default geometric font (General Sans), high-density screen font (Inter), or a crisp monospace font (RX100)
+                  Select between the default geometric font (General Sans), high-density screen font (Inter), crisp monospace font (RX100), or Google Fonts grotesque sans-serif (Spline Sans / Spine Sans)
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               {FONT_PRESETS.map((preset) => {
-                const isSelected = font === preset.id;
+                const isSelected = font === preset.id || (preset.id === "spline-sans" && font === "spine-sans");
                 return (
                   <button
                     key={preset.id}

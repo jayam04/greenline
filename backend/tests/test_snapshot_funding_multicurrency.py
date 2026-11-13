@@ -17,8 +17,8 @@ async def test_generate_daily_snapshot_multicurrency_and_funding():
     async with TestSession() as session:
         # USD Bank account and EUR Demat account
         # FX_RATES_TO_EUR: USD = 0.92, EUR = 1.0
-        usd_bank = Account(account_name="US Bank", account_type="bank", currency="USD")
-        eur_demat = Account(account_name="EU Demat", account_type="demat", currency="EUR")
+        usd_bank = Account(account_name="US Bank", account_type="bank", currency="USD", user_id=0)
+        eur_demat = Account(account_name="EU Demat", account_type="demat", currency="EUR", user_id=0)
         session.add_all([usd_bank, eur_demat])
         await session.commit()
         await session.refresh(usd_bank)
@@ -68,14 +68,14 @@ async def test_generate_daily_snapshot_multicurrency_and_funding():
         await session.refresh(buy_tx)
         await process_transaction_event(session, buy_tx)
 
-        # Daily snapshot as of 2025-01-06
-        snap = await generate_daily_snapshot(session, snapshot_date=datetime.date(2025, 1, 6))
+        # Daily snapshot as of Sunday 2025-01-05
+        snap = await generate_daily_snapshot(session, snapshot_date=datetime.date(2025, 1, 5))
 
-        # USD Bank cash remaining = 10,000 - 1,000 = 9,000 USD
+        # USD Bank cash remaining = 10,000 - 1,000 = 9,000 USD -> normalized to EUR: 9,000 * 0.92 = 8,280 EUR
         # EUR Demat securities = 10 * 100 EUR = 1,000 EUR
-        assert round(snap.cash_balance, 2) == 9000.0
+        assert round(snap.cash_balance, 2) == 8280.0
         assert round(snap.total_current_value, 2) == 1000.0
-        assert round(snap.net_worth, 2) == 10000.0
+        assert round(snap.net_worth, 2) == 9280.0
 
         # And verify list_snapshots normalizes USD to EUR: 9,000 * 0.92 + 1,000 * 1.0 = 8,280 + 1,000 = 9,280 EUR
         dummy_user = User(user_id=0, username="test_user", password_hash="hash")

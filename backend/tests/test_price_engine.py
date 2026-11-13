@@ -65,3 +65,25 @@ async def test_update_prices_for_assets_error_handling():
         with patch("app.services.price_engine._fetch_history_sync", side_effect=Exception("Failed to download")):
             count = await update_prices_for_assets(session, asset_ids=[ast.asset_id])
             assert count == 0
+
+@pytest.mark.anyio
+async def test_update_prices_skips_private_and_special_assets():
+    test_engine = create_async_engine("oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1", echo=False)
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with TestSession() as session:
+        ast_pvt1 = Asset(symbol="FURLENCO.PRIVATE", name="Furlenco", asset_type="stock")
+        ast_pvt2 = Asset(symbol="$INSOLAREENGY.PRIVATE", name="Insolare", asset_type="stock")
+        session.add_all([ast_pvt1, ast_pvt2])
+        await session.commit()
+        await session.refresh(ast_pvt1)
+        await session.refresh(ast_pvt2)
+
+        with patch("app.services.price_engine._fetch_history_sync") as mock_hist:
+            count = await update_prices_for_assets(session, asset_ids=[ast_pvt1.asset_id, ast_pvt2.asset_id])
+            assert count == 0
+            mock_hist.assert_not_called()
+

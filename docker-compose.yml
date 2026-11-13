@@ -1,4 +1,22 @@
 services:
+  oracle:
+    image: gvenzl/oracle-free:slim-faststart
+    container_name: greenline-oracle
+    environment:
+      ORACLE_PASSWORD: test_password
+      APP_USER: greenline_test
+      APP_USER_PASSWORD: test_password
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -11,7 +29,7 @@ services:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
     environment:
-      DATABASE_URL: ${DATABASE_URL:-oracle+oracledb://@}
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-oracle+oracledb://greenline_test:test_password@oracle:1521/?service_name=FREEPDB1}
       ORACLE_USER: ${ORACLE_USER:-}
       ORACLE_PASSWORD: ${ORACLE_PASSWORD:-}
       ORACLE_DSN: ${ORACLE_DSN:-}
@@ -19,6 +37,11 @@ services:
       DEFAULT_ADMIN_USER: ${DEFAULT_ADMIN_USER:-admin}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
       PYTHONPATH: /app
+    depends_on:
+      oracle:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:
@@ -35,8 +58,13 @@ services:
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - INTERNAL_API_URL=http://backend:8000
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
     depends_on:
-      - backend
+      backend:
+        condition: service_started
     restart: unless-stopped
+
+volumes:
+  oracle_data:

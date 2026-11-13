@@ -1,4 +1,9 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const getApiBase = () => {
+  if (typeof window === "undefined") {
+    return process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || "http://backend:8000";
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+};
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -28,7 +33,8 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}/api/v1${endpoint}`, {
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/v1${endpoint}`, {
     ...options,
     headers,
   });

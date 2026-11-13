@@ -10,9 +10,9 @@ trigger: always_on
 
 This repository rule is subordinate to and explicitly defers to higher-priority system and developer instructions.
 
-## Mandatory 5-Step Workflow
+## Mandatory 6-Step Workflow
 
-When performing ANY task that involves creating, modifying, fixing, or refactoring code, follow this authoritative 5-step workflow:
+When performing ANY task that involves creating, modifying, fixing, or refactoring code, follow this authoritative 6-step workflow:
 
 1. **Requirement / Specification**:
    - Translate requirements into explicit test scenarios, input/output contracts, and edge cases.
@@ -30,7 +30,10 @@ When performing ANY task that involves creating, modifying, fixing, or refactori
      - **Frontend**: `cd frontend && npx tsc --noEmit && npm run lint`
    - A task is never complete without displaying clean test execution output.
 
-5. **Provide Proposed Commit Message**:
+5. **Update `.agents/changelog.md`**:
+   - Whenever repository files are modified, record a structured entry with an embedded JSON metadata block (`<!-- changelog-entry-json { ... } -->`) in [`.agents/changelog.md`](file:///home/jayampatel/swe/greenline/.agents/changelog.md).
+
+6. **Provide Proposed Commit Message**:
    - When repository or workspace files have been created, modified, deleted, renamed, or moved, append the proposed commit message at the very end of your final response per the commit message protocol.
 
 For full test fixtures, scaffolding patterns, and runbooks, refer to [`.agents/skills/test-driven-development/SKILL.md`](../skills/test-driven-development/SKILL.md).

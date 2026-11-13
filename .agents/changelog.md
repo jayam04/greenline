@@ -32,6 +32,47 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-13 17:33:00 UTC] feat(portfolio): incorporate dividends into realized pnl and compute holding-level xirr in networth service
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-13T17:33:00Z",
+  "type": "feat",
+  "scope": "portfolio",
+  "summary": "incorporate dividends into realized pnl and compute holding-level xirr in networth service",
+  "affected_files": [
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/tests/test_networth_dividends_and_xirr.py"
+  ],
+  "rationale": "In the Networth microservice (/api/v1/portfolio), dividend income was excluded from realized P&L and total dividend income was hardcoded to 0.0. Additionally, holding-level XIRR was never computed because _compute_asset_xirr_in_memory was not invoked with asset cashflows, causing the XIRR column in /investments/holdings to display empty hyphens. Pre-fetching net dividends and asset cash flows populates dividend_income, adds dividends into realized_pnl and total_realized_pnl, and computes per-holding and closed-position annualized XIRR.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend:. backend/.venv/bin/pytest services/networth/tests/test_networth_dividends_and_xirr.py services/networth/tests/test_networth_fees_and_taxes.py backend/tests/test_fees_taxes_and_pnl.py && cd frontend && npx vitest run src/__tests__/LocalFont.test.ts src/__tests__/SettingsFont.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(portfolio)`
+- **Summary**: Include dividend income in realized P&L, populate total dividend income, and compute holding-level XIRRs in the Networth service.
+- **Rationale**:
+  - Resolves missing dividend income in realized P&L and portfolio summary KPI metrics on `/investments/holdings`.
+  - Resolves empty XIRR column (`-`) across active and closed holdings by querying asset cashflows and evaluating `_compute_asset_xirr_in_memory` with latest market valuations.
+- **Key Changes**:
+  - `services/networth/app/api/routers/portfolio.py`:
+    - Imported `CashFlow` and pre-fetched asset cash flows (`scope_type="asset"`) and net dividend transactions.
+    - Updated active holdings: added net dividends to `realized_pnl`, populated `dividend_income`, and computed `xirr` via `_compute_asset_xirr_in_memory`.
+    - Updated closed holdings: included dividend-receiving assets in closed candidate list, added dividends to `realized_pnl`, and computed closed holding `xirr`.
+    - Updated portfolio summary response: aggregated `total_dividend_income` and included dividends in `total_realized_pnl`.
+  - `services/networth/tests/test_networth_dividends_and_xirr.py`: Added automated test suite verifying dividend inclusion and holding XIRR calculation.
+- **Verification**:
+  - Live Networth service check: User 19 returns active XIRRs across all 5 holdings (e.g. NVDA: 30.27%, AMZN: 28.38%, GOOGL: 28.10%, MSFT: 25.68%, AAPL: 23.48%) and portfolio XIRR 27.51%; User 15 returns `total_dividend_income: 610.64`, `total_realized_pnl: 8698.37` (8087.73 capital gains + 610.64 dividends), with 32/32 active holdings and 7/7 closed holdings populated with valid XIRRs.
+  - Automated tests: 13 passed in 23.61s (`test_networth_dividends_and_xirr.py`, `test_networth_fees_and_taxes.py`, `test_fees_taxes_and_pnl.py`, `test_assets_router.py`, `test_price_engine.py`).
+  - Frontend vitest: 12 passed in 6.06s.
+  - TypeScript & lint: Passed with 0 errors.
+
+
+
 ### [2026-11-13 16:06:00 UTC] feat(portfolio): calculate fees and taxes in networth service and switch spline sans font to local assets
 
 <!-- changelog-entry-json

@@ -9,7 +9,7 @@ from cachetools import TTLCache
 
 try:
     from ...db.database import get_db
-    from ...db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, NetworthSnapshot
+    from ...db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, NetworthSnapshot, CashFlow
     from ...schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
     from ...services.xirr_service import calculate_xirr_for_scope
     from ...services.cashflow_engine import convert_currency
@@ -17,7 +17,7 @@ try:
     from ..deps import get_current_user, get_user_id
 except (ImportError, ValueError):
     from app.db.database import get_db
-    from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, NetworthSnapshot
+    from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, NetworthSnapshot, CashFlow
     from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
     from app.services.xirr_service import calculate_xirr_for_scope
     from app.services.cashflow_engine import convert_currency
@@ -166,6 +166,32 @@ async def get_portfolio_summary(
         for row in fees_res.all()
     }
 
+    # Pre-fetch net dividends grouped by asset
+    div_stmt = select(Transaction).where(
+        Transaction.user_id == u_id,
+        Transaction.transaction_type == "dividend",
+        Transaction.asset_id.isnot(None)
+    )
+    if account_id:
+        div_stmt = div_stmt.where(Transaction.account_id == account_id)
+    div_res = await db.execute(div_stmt)
+    div_map: Dict[int, float] = {}
+    for dtx in div_res.scalars().all():
+        net_div = max(0.0, float(dtx.total_amount or 0.0) - float(dtx.taxes or 0.0))
+        div_map[dtx.asset_id] = div_map.get(dtx.asset_id, 0.0) + net_div
+
+    # Pre-fetch asset cashflows for in-memory XIRR calculation in a single query
+    cf_stmt = (
+        select(CashFlow.scope_id, CashFlow.flow_date, CashFlow.amount)
+        .where(CashFlow.user_id == u_id, CashFlow.scope_type == "asset")
+        .order_by(asc(CashFlow.flow_date))
+    )
+    cf_res = await db.execute(cf_stmt)
+    asset_flows_map: Dict[int, List[Tuple[datetime.date, float]]] = {}
+    for scope_id, fdate, amt in cf_res.all():
+        if scope_id is not None:
+            asset_flows_map.setdefault(scope_id, []).append((fdate, float(amt)))
+
     # Pre-fetch realized PnL, cost basis, quantity sold, and account_id grouped by asset
     rpnl_stmt = (
         select(
@@ -232,9 +258,10 @@ async def get_portfolio_summary(
         sec = asset.sector or "Unclassified"
         sector_allocation[sec] = sector_allocation.get(sec, 0.0) + curr_val
 
-        # Realized PnL from pre-fetched map
+        # Realized PnL from pre-fetched map + net dividends
         cap_gains_for_asset, cost_basis_sold_for_asset = rpnl_by_asset.get(aid, (0.0, 0.0))
-        realized_pnl_for_asset = cap_gains_for_asset
+        asset_net_div = div_map.get(aid, 0.0)
+        realized_pnl_for_asset = cap_gains_for_asset + asset_net_div
         if cost_basis_sold_for_asset > 0:
             realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0)
         elif total_cost > 0:
@@ -250,6 +277,12 @@ async def get_portfolio_summary(
         asset_fees = fees_entry[0]
         asset_taxes = fees_entry[1]
         total_asset_fees_taxes = asset_fees + asset_taxes
+
+        # In-memory XIRR for asset
+        xirr_val = _compute_asset_xirr_in_memory(
+            flows=asset_flows_map.get(aid, []),
+            current_val=curr_val
+        )
 
         holdings_list.append(HoldingSummary(
             asset_id=aid,
@@ -273,32 +306,41 @@ async def get_portfolio_summary(
             unrealized_pnl_pct=unrealized_pct,
             realized_pnl=realized_pnl_for_asset,
             realized_pnl_pct=realized_pnl_pct_for_asset,
+            dividend_income=asset_net_div,
+            capital_gains_realized=cap_gains_for_asset,
             fees_and_taxes=total_asset_fees_taxes,
             total_fees=asset_fees,
             total_taxes=asset_taxes,
             net_pnl=net_pnl_for_asset,
             net_pnl_pct=net_pnl_pct_for_asset,
-            capital_gains_realized=cap_gains_for_asset,
+            xirr=xirr_val,
             open_lots=[LotResponse.model_validate(l) for l in a_lots]
         ))
 
-    # Identify Closed Positions (Assets with LotSale records but 0 open quantity)
+    # Identify Closed Positions (Assets with LotSale records or dividends but 0 open quantity)
     open_asset_ids_set = set(lots_by_asset.keys())
     closed_holdings_list: List[HoldingSummary] = []
+    closed_asset_candidates = set(closed_sales_by_asset.keys()) | set(div_map.keys())
     needed_closed_aids = [
-        c_aid for c_aid in closed_sales_by_asset.keys()
+        c_aid for c_aid in closed_asset_candidates
         if c_aid not in open_asset_ids_set
     ]
     if needed_closed_aids:
         c_ast_res = await db.execute(select(Asset).where(Asset.asset_id.in_(needed_closed_aids)))
         closed_assets_map = {a.asset_id: a for a in c_ast_res.scalars().all()}
         for c_aid in needed_closed_aids:
-            c_cap_gains, c_cost_basis, c_qty_sold, c_acc_id = closed_sales_by_asset[c_aid]
+            c_cap_gains, c_cost_basis, c_qty_sold, c_acc_id = closed_sales_by_asset.get(c_aid, (0.0, 0.0, 0.0, None))
             c_asset = closed_assets_map.get(c_aid)
             if not c_asset:
                 continue
-            c_realized_pnl = c_cap_gains
+            c_net_div = div_map.get(c_aid, 0.0)
+            c_realized_pnl = c_cap_gains + c_net_div
             c_rpnl_pct = (c_realized_pnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
+
+            c_xirr = _compute_asset_xirr_in_memory(
+                flows=asset_flows_map.get(c_aid, []),
+                current_val=0.0
+            )
 
             c_fees_entry = fees_map.get(c_asset.asset_id, (0.0, 0.0))
             c_asset_fees = c_fees_entry[0]
@@ -327,24 +369,21 @@ async def get_portfolio_summary(
                 unrealized_pnl_pct=0.0,
                 realized_pnl=c_realized_pnl,
                 realized_pnl_pct=c_rpnl_pct,
+                dividend_income=c_net_div,
+                capital_gains_realized=c_cap_gains,
                 fees_and_taxes=c_total_asset_fees_taxes,
                 total_fees=c_asset_fees,
                 total_taxes=c_asset_taxes,
                 net_pnl=c_realized_pnl,
                 net_pnl_pct=c_rpnl_pct,
-                capital_gains_realized=c_cap_gains,
+                xirr=c_xirr,
                 open_lots=[]
             ))
 
-    # 2. Fetch realized PnL from LotSale
-    rpnl_stmt = (
-        select(LotSale.lot_id, LotSale.realized_pnl)
-        .where(LotSale.user_id == u_id)
-    )
-    if account_id:
-        rpnl_stmt = rpnl_stmt.join(Lot, LotSale.lot_id == Lot.lot_id).where(Lot.account_id == account_id)
-    rpnl_rows = (await db.execute(rpnl_stmt)).all()
-    total_realized_pnl = sum(float(r[1] or 0.0) for r in rpnl_rows)
+    # 2. Fetch realized PnL total (Capital Gains + Net Dividends)
+    total_capital_gains = sum(r[0] for r in rpnl_by_asset.values())
+    total_net_dividends = sum(div_map.values())
+    total_realized_pnl = total_capital_gains + total_net_dividends
 
     # 3. Cash balances
     balances = await calculate_all_account_cash_balances(db, accounts=list(all_accounts.values()), user_id=u_id)
@@ -408,8 +447,8 @@ async def get_portfolio_summary(
         cash_balance=cash_balance,
         total_realized_pnl=total_realized_pnl,
         total_unrealized_pnl=total_unrealized_pnl,
-        total_dividend_income=0.0,
-        total_capital_gains_realized=total_realized_pnl,
+        total_dividend_income=total_net_dividends,
+        total_capital_gains_realized=total_capital_gains,
         total_value_change_1d=total_value_change_1d,
         total_change_1d_pct=total_change_1d_pct,
         total_fees=total_fees,

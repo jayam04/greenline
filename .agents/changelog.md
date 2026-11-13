@@ -32,6 +32,42 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-13 01:10:00 UTC] fix(api): eliminate 307 internal host redirects on assets endpoint and add client trailing slash recovery
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-13T01:10:00Z",
+  "type": "fix",
+  "scope": "api",
+  "summary": "eliminate 307 internal host redirects on assets endpoint and add client trailing slash recovery",
+  "affected_files": [
+    "backend/app/api/routers/assets.py",
+    "backend/tests/test_assets_router.py",
+    "frontend/src/lib/api.ts",
+    "frontend/src/__tests__/apiFetch.test.ts"
+  ],
+  "rationale": "FastAPI router assets.py only defined @router.get('/'), causing requests to /api/v1/assets to emit an HTTP 307 redirect with 'Location: http://backend:8000/api/v1/assets/'. Because 'backend:8000' is an internal Docker container name unresolvable by the browser, Promise.all on the accounts page threw 'TypeError: Failed to fetch' and aborted account rendering. Adding dual route decorators (@router.get('') and @router.get('/')) and client-side trailing-slash recovery ensures direct responses without internal redirect leaks.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend:. backend/.venv/bin/pytest backend/tests/test_assets_router.py backend/tests/test_price_engine.py && cd frontend && npx vitest run src/__tests__/apiFetch.test.ts && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(api)`
+- **Summary**: Fix internal Docker hostname leaks on `/assets` trailing-slash redirects and add client trailing-slash recovery.
+- **Rationale**: Prevent `TypeError: Failed to fetch` on the Accounts page caused by FastAPI emitting 307 redirects to internal Docker hostnames (`http://backend:8000/api/v1/assets/`).
+- **Key Changes**:
+  - `backend/app/api/routers/assets.py`: Added dual route decorators `@router.get("")` and `@router.post("")` alongside slash routes to prevent 307 redirects.
+  - `backend/tests/test_assets_router.py`: Added automated regression tests verifying that GET and POST requests without trailing slashes return direct 200/201 responses without redirects.
+  - `frontend/src/lib/api.ts`: Enhanced `apiFetch` retry handler to automatically append trailing slashes on transient network errors for root endpoints.
+  - `frontend/src/__tests__/apiFetch.test.ts`: Added unit tests verifying trailing-slash retry handling.
+- **Verification**:
+  - Command: `PYTHONPATH=backend:. backend/.venv/bin/pytest backend/tests/test_assets_router.py` -> 7 passed.
+  - Command: `cd frontend && npx vitest run src/__tests__/apiFetch.test.ts` -> 3 passed.
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint` -> 0 errors.
+
 ### [2026-11-12 21:07:00 UTC] fix(frontend): add automatic retry on proxy socket hangup and transient fetch drops in apiFetch
 
 <!-- changelog-entry-json

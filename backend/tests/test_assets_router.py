@@ -183,3 +183,25 @@ async def test_bg_fetch_asset_price_history_handles_exceptions():
         # Should not raise exception
         await _bg_fetch_asset_price_history(1, "AAPL")
         mock_fetch.assert_called_once_with(mock_session, 1, "AAPL")
+
+@pytest.mark.anyio
+async def test_assets_list_and_create_without_trailing_slash_no_redirect(client):
+    ac, session, _ = client
+    # 1. GET /api/v1/assets without trailing slash must return 200 directly (no 307 redirect)
+    resp_get = await ac.get("/api/v1/assets")
+    assert resp_get.status_code == 200
+    assert isinstance(resp_get.json(), list)
+
+    # 2. POST /api/v1/assets without trailing slash must return 201 directly (no 307 redirect)
+    payload = {
+        "symbol": "TSLA",
+        "name": "Tesla Inc.",
+        "asset_type": "stock",
+        "exchange": "NASDAQ",
+        "currency": "USD"
+    }
+    with patch("app.api.routers.assets._bg_fetch_asset_price_history"):
+        resp_post = await ac.post("/api/v1/assets", json=payload)
+        assert resp_post.status_code == 201
+        assert resp_post.json()["symbol"] == "TSLA"
+

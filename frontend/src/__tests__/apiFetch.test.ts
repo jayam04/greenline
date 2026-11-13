@@ -50,4 +50,27 @@ describe("apiFetch resilience", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(result.status).toBe("ok");
   });
+
+  it("appends trailing slash on retry when root endpoint fetch fails with TypeError", async () => {
+    const requestedUrls: string[] = [];
+    const mockFetch = vi.fn().mockImplementation(async (url: string) => {
+      requestedUrls.push(url);
+      if (requestedUrls.length === 1) {
+        throw new TypeError("Failed to fetch");
+      }
+      return new Response(JSON.stringify([{ asset_id: 1, symbol: "AAPL" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    vi.stubGlobal("fetch", mockFetch);
+
+    const result = await apiFetch<any[]>("/assets");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(requestedUrls[0]).toContain("/api/v1/assets");
+    expect(requestedUrls[1]).toContain("/api/v1/assets/");
+    expect(result).toHaveLength(1);
+    expect(result[0].symbol).toBe("AAPL");
+  });
 });

@@ -221,6 +221,7 @@ async def get_or_create_asset(
 
     return new_asset
 
+@router.get("", response_model=List[AssetResponse])
 @router.get("/", response_model=List[AssetResponse])
 async def list_assets(
     db: AsyncSession = Depends(get_db),
@@ -243,6 +244,7 @@ async def get_asset(
         raise HTTPException(status_code=404, detail="Asset not found")
     return asset
 
+@router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
 async def create_asset(
     asset_in: AssetCreate,

@@ -59,25 +59,30 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   }
 
   const apiBase = getApiBase();
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   let res: Response;
   try {
-    res = await fetch(`${apiBase}/api/v1${endpoint}`, {
+    res = await fetch(`${apiBase}/api/v1${cleanEndpoint}`, {
       ...options,
       headers,
     });
     // If Next.js proxy returns transient 502/504 gateway socket drop, retry once
     if (res.status === 502 || res.status === 504) {
       await new Promise((resolve) => setTimeout(resolve, 200));
-      res = await fetch(`${apiBase}/api/v1${endpoint}`, {
+      res = await fetch(`${apiBase}/api/v1${cleanEndpoint}`, {
         ...options,
         headers,
       });
     }
   } catch (err: any) {
-    // If socket hang up or transient network drop occurred (TypeError: Failed to fetch), retry once
+    // If socket hang up, internal redirect drop, or transient network drop occurred (TypeError: Failed to fetch), retry once
     if (err instanceof TypeError || err?.name === "TypeError" || err?.message?.includes("fetch")) {
       await new Promise((resolve) => setTimeout(resolve, 200));
-      res = await fetch(`${apiBase}/api/v1${endpoint}`, {
+      // If endpoint doesn't have a trailing slash or query params, append slash to circumvent internal 307 redirects
+      const retryEndpoint = (!cleanEndpoint.includes("?") && !cleanEndpoint.endsWith("/"))
+        ? `${cleanEndpoint}/`
+        : cleanEndpoint;
+      res = await fetch(`${apiBase}/api/v1${retryEndpoint}`, {
         ...options,
         headers,
       });

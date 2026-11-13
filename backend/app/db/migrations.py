@@ -33,6 +33,7 @@ _VERSIONS = (
     ("v011_user_row_level_security", "Add user_id to all user entities with default 0"),
     ("v012_auth0_user_persistence", "Add Auth0 profile fields (sub, email, name, picture) to users table"),
     ("v013_relax_password_hash_nullability", "Relax password_hash nullability on users table for Auth0 users"),
+    ("v014_app_settings_composite_primary_key", "Migrate app_settings primary key to composite (user_id, key)"),
 )
 
 
@@ -249,6 +250,30 @@ async def _migrate_relax_password_hash_nullability(session: AsyncSession) -> Non
         if not _is_insufficient_privileges_error(e):
             pass
 
+async def _migrate_app_settings_composite_pk(session: AsyncSession) -> None:
+    """Ensure app_settings primary key is composite (user_id, key)."""
+    connection = await session.connection()
+    def do_alter(sync_conn):
+        dialect_name = getattr(sync_conn.dialect, "name", "")
+        if dialect_name == "oracle":
+            try:
+                sync_conn.execute(text("ALTER TABLE app_settings DROP PRIMARY KEY"))
+            except Exception:
+                pass
+            try:
+                sync_conn.execute(text("ALTER TABLE app_settings ADD PRIMARY KEY (user_id, \"key\")"))
+            except Exception:
+                pass
+        elif dialect_name in ("postgresql", "sqlite"):
+            # PostgreSQL / SQLite handled by create_all or table recreation
+            pass
+    try:
+        await connection.run_sync(do_alter)
+        await session.commit()
+    except Exception as e:
+        if not _is_insufficient_privileges_error(e):
+            pass
+
 
 async def run_db_migrations(session: AsyncSession) -> None:
     """Bring the database to the current ORM schema using dialect-portable DDL."""
@@ -281,6 +306,8 @@ async def run_db_migrations(session: AsyncSession) -> None:
                 await _migrate_auth0_user_persistence(session)
             elif version == "v013_relax_password_hash_nullability":
                 await _migrate_relax_password_hash_nullability(session)
+            elif version == "v014_app_settings_composite_primary_key":
+                await _migrate_app_settings_composite_pk(session)
             await mark_migration_applied(session, version, description)
             applied.add(version)
         except Exception as e:

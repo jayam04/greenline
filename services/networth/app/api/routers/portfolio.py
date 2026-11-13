@@ -147,6 +147,33 @@ async def get_portfolio_summary(
 
     # Group open lots by asset
     lots_by_asset: Dict[int, List[Lot]] = {}
+    # Pre-fetch realized PnL, cost basis, quantity sold, and account_id grouped by asset
+    rpnl_stmt = (
+        select(
+            Lot.asset_id,
+            func.sum(LotSale.realized_pnl),
+            func.sum(LotSale.cost_basis),
+            func.sum(LotSale.quantity_sold),
+            func.min(Lot.account_id)
+        )
+        .join(LotSale, Lot.lot_id == LotSale.lot_id)
+        .where(Lot.user_id == u_id)
+    )
+    if account_id:
+        rpnl_stmt = rpnl_stmt.where(Lot.account_id == account_id)
+    rpnl_stmt = rpnl_stmt.group_by(Lot.asset_id)
+    rpnl_res = await db.execute(rpnl_stmt)
+    rpnl_by_asset: Dict[int, Tuple[float, float]] = {}
+    closed_sales_by_asset: Dict[int, Tuple[float, float, float, Optional[int]]] = {}
+    for r in rpnl_res.all():
+        aid_val = r[0]
+        pnl = float(r[1] or 0.0)
+        cost = float(r[2] or 0.0)
+        qty = float(r[3] or 0.0)
+        acc_id_val = r[4]
+        rpnl_by_asset[aid_val] = (pnl, cost)
+        closed_sales_by_asset[aid_val] = (pnl, cost, qty, acc_id_val)
+
     for l in open_lots:
         lots_by_asset.setdefault(l.asset_id, []).append(l)
 
@@ -186,6 +213,20 @@ async def get_portfolio_summary(
         sec = asset.sector or "Unclassified"
         sector_allocation[sec] = sector_allocation.get(sec, 0.0) + curr_val
 
+        # Realized PnL from pre-fetched map
+        cap_gains_for_asset, cost_basis_sold_for_asset = rpnl_by_asset.get(aid, (0.0, 0.0))
+        realized_pnl_for_asset = cap_gains_for_asset
+        if cost_basis_sold_for_asset > 0:
+            realized_pnl_pct_for_asset = (realized_pnl_for_asset / cost_basis_sold_for_asset * 100.0)
+        elif total_cost > 0:
+            realized_pnl_pct_for_asset = (realized_pnl_for_asset / total_cost * 100.0)
+        else:
+            realized_pnl_pct_for_asset = 0.0
+
+        net_pnl_for_asset = realized_pnl_for_asset + unrealized
+        total_basis = total_cost + cost_basis_sold_for_asset
+        net_pnl_pct_for_asset = (net_pnl_for_asset / total_basis * 100.0) if total_basis > 0 else 0.0
+
         holdings_list.append(HoldingSummary(
             asset_id=aid,
             symbol=asset.symbol,
@@ -206,10 +247,58 @@ async def get_portfolio_summary(
             current_value=curr_val,
             unrealized_pnl=unrealized,
             unrealized_pnl_pct=unrealized_pct,
-            realized_pnl=0.0,
-            realized_pnl_pct=0.0,
+            realized_pnl=realized_pnl_for_asset,
+            realized_pnl_pct=realized_pnl_pct_for_asset,
+            net_pnl=net_pnl_for_asset,
+            net_pnl_pct=net_pnl_pct_for_asset,
+            capital_gains_realized=cap_gains_for_asset,
             open_lots=[LotResponse.model_validate(l) for l in a_lots]
         ))
+
+    # Identify Closed Positions (Assets with LotSale records but 0 open quantity)
+    open_asset_ids_set = set(lots_by_asset.keys())
+    closed_holdings_list: List[HoldingSummary] = []
+    needed_closed_aids = [
+        c_aid for c_aid in closed_sales_by_asset.keys()
+        if c_aid not in open_asset_ids_set
+    ]
+    if needed_closed_aids:
+        c_ast_res = await db.execute(select(Asset).where(Asset.asset_id.in_(needed_closed_aids)))
+        closed_assets_map = {a.asset_id: a for a in c_ast_res.scalars().all()}
+        for c_aid in needed_closed_aids:
+            c_cap_gains, c_cost_basis, c_qty_sold, c_acc_id = closed_sales_by_asset[c_aid]
+            c_asset = closed_assets_map.get(c_aid)
+            if not c_asset:
+                continue
+            c_realized_pnl = c_cap_gains
+            c_rpnl_pct = (c_realized_pnl / c_cost_basis * 100.0) if c_cost_basis > 0 else 0.0
+            closed_holdings_list.append(HoldingSummary(
+                asset_id=c_asset.asset_id,
+                symbol=c_asset.symbol,
+                name=c_asset.name,
+                asset_type=c_asset.asset_type,
+                sector=c_asset.sector,
+                industry=c_asset.industry,
+                currency=c_asset.currency or "USD",
+                quantity_held=0.0,
+                avg_cost_price=0.0,
+                total_cost=0.0,
+                latest_price=0.0,
+                latest_price_date=None,
+                previous_price=0.0,
+                change_1d=0.0,
+                change_1d_pct=0.0,
+                value_change_1d=0.0,
+                current_value=0.0,
+                unrealized_pnl=0.0,
+                unrealized_pnl_pct=0.0,
+                realized_pnl=c_realized_pnl,
+                realized_pnl_pct=c_rpnl_pct,
+                net_pnl=c_realized_pnl,
+                net_pnl_pct=c_rpnl_pct,
+                capital_gains_realized=c_cap_gains,
+                open_lots=[]
+            ))
 
     # 2. Fetch realized PnL from LotSale
     rpnl_stmt = (
@@ -249,6 +338,7 @@ async def get_portfolio_summary(
     )
 
     holdings_list.sort(key=lambda h: h.current_value, reverse=True)
+    closed_holdings_list.sort(key=lambda h: abs(h.realized_pnl), reverse=True)
 
     resp = PortfolioSummaryResponse(
         total_net_worth=total_net_worth,
@@ -267,7 +357,7 @@ async def get_portfolio_summary(
         asset_allocation=asset_allocation,
         sector_allocation=sector_allocation,
         top_holdings=holdings_list,
-        closed_holdings=[]
+        closed_holdings=closed_holdings_list
     )
     portfolio_summary_cache[cache_key] = resp
     return resp
@@ -282,6 +372,17 @@ async def get_holdings(
     """Returns list of active open holdings for user or specific account."""
     summary = await get_portfolio_summary(account_id=account_id, db=db, current_user=current_user)
     return summary.top_holdings
+
+
+@router.get("/closed-holdings", response_model=List[HoldingSummary])
+async def get_closed_holdings(
+    account_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Returns list of closed holdings for user or specific account."""
+    summary = await get_portfolio_summary(account_id=account_id, db=db, current_user=current_user)
+    return summary.closed_holdings
 
 
 @router.get("/annual_snapshot", response_model=AnnualSnapshotResponse)

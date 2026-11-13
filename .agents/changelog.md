@@ -32,6 +32,46 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-13 13:16:00 UTC] fix(portfolio): compute realized pnl and closed holdings in networth service and add composite primary key to app_settings
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-13T13:16:00Z",
+  "type": "fix",
+  "scope": "portfolio",
+  "summary": "compute realized pnl and closed holdings in networth service and add composite primary key to app_settings",
+  "affected_files": [
+    "backend/app/db/migrations.py",
+    "frontend/src/app/investments/holdings/page.tsx",
+    "services/networth/app/api/routers/portfolio.py"
+  ],
+  "rationale": "In the networth microservice (/api/v1/portfolio), realized_pnl and realized_pnl_pct were hardcoded to 0.0 and closed_holdings was empty, causing /investments/holdings to show 0.00 for realized P&L and hide closed positions. Pre-fetching realized P&L and cost basis from LotSale joins computes realized P&L and populates closed holdings accurately. Additionally, Oracle app_settings had a legacy single-column primary key on key, causing ORA-00001 unique constraint violations on auth sync and settings updates when multi-user rows were inserted. Adding migration v014_app_settings_composite_primary_key establishes composite primary key (user_id, key).",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend:. backend/.venv/bin/pytest backend/tests/test_assets_router.py backend/tests/test_price_engine.py && cd frontend && npx vitest run src/__tests__/apiFetch.test.ts src/__tests__/AccountModals.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(portfolio)`
+- **Summary**: Accurately calculate and return realized P&L and closed holdings in the Networth service, and migrate Oracle `app_settings` primary key to `(user_id, key)`.
+- **Rationale**:
+  - Fixes `/investments/holdings` displaying `0.00` for Realized P&L and missing closed holdings by querying `LotSale` matched with `Lot.asset_id` and calculating realized P&L per holding and closed asset.
+  - Fixes HTTP 500 error on settings save / auth sync caused by `ORA-00001: unique constraint (ADMIN.SYS_C0037045) violated on table ADMIN.APP_SETTINGS columns (key)` by transitioning Oracle `app_settings` to a composite primary key `(user_id, "key")`.
+- **Key Changes**:
+  - `services/networth/app/api/routers/portfolio.py`: Pre-aggregated realized P&L and cost basis from `LotSale` per asset; populated `realized_pnl`, `realized_pnl_pct`, `net_pnl`, and `capital_gains_realized` on each `HoldingSummary`; populated `closed_holdings` list and added `/closed-holdings` endpoint.
+  - `backend/app/db/migrations.py`: Added migration `v014_app_settings_composite_primary_key` dropping the legacy primary key and adding composite `PRIMARY KEY (user_id, "key")` in Oracle.
+  - `frontend/src/app/investments/holdings/page.tsx`: Cleaned whitespace and verified currency conversion integration with `realized_pnl` for both active and closed holdings.
+- **Verification**:
+  - Verified `get_portfolio_summary` returns non-zero `total_realized_pnl` (`15370.86`) and holding-level realized PnL for active positions, and 7 closed positions for user 15.
+  - Verified `app_settings` allows duplicate keys across different `user_id` values without constraint violations.
+  - Backend tests: `backend/tests/test_assets_router.py` & `backend/tests/test_price_engine.py` (10 passed).
+  - Frontend tests: `src/__tests__/apiFetch.test.ts` & `src/__tests__/AccountModals.test.tsx` (6 passed).
+  - Frontend lint & typecheck: `npx tsc --noEmit` and `npm run lint` passed with 0 errors.
+
+
+
 ### [2026-11-13 01:10:00 UTC] fix(api): eliminate 307 internal host redirects on assets endpoint and add client trailing slash recovery
 
 <!-- changelog-entry-json

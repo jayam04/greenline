@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 try:
     from ..db.models import CommunityPost, CommunityComment
     from ..schemas.comment import CommentCreate
+    from .user_service import get_user_uuid, get_or_create_user, update_user_pseudonym
 except (ImportError, ValueError):
     from app.db.models import CommunityPost, CommunityComment
     from app.schemas.comment import CommentCreate
+    from app.services.user_service import get_user_uuid, get_or_create_user, update_user_pseudonym
 
 
 async def create_comment(
@@ -42,12 +44,19 @@ async def create_comment(
                 detail=f"Parent comment {comment_in.parent_comment_id} not found on post {post_id}"
             )
 
-    pseudonym = comment_in.author_pseudonym.strip() if (comment_in.author_pseudonym and comment_in.author_pseudonym.strip()) else "Anonymous"
+    user_uuid = get_user_uuid(author_sub)
+
+    if comment_in.author_pseudonym and comment_in.author_pseudonym.strip():
+        await update_user_pseudonym(db, author_sub, comment_in.author_pseudonym.strip())
+        pseudonym = comment_in.author_pseudonym.strip()
+    else:
+        user = await get_or_create_user(db, author_sub)
+        pseudonym = user.pseudonym or "Anonymous"
 
     comment = CommunityComment(
         post_id=post_id,
         parent_comment_id=comment_in.parent_comment_id,
-        user_id=author_sub,
+        user_id=user_uuid,
         author_pseudonym=pseudonym,
         content=comment_in.content
     )

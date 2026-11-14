@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 try:
     from ..db.models import CommunityPost
     from ..schemas.post import PostCreate
+    from .user_service import get_user_uuid, get_or_create_user, update_user_pseudonym
 except (ImportError, ValueError):
     from app.db.models import CommunityPost
     from app.schemas.post import PostCreate
+    from app.services.user_service import get_user_uuid, get_or_create_user, update_user_pseudonym
 
 
 async def create_post(
@@ -16,15 +18,24 @@ async def create_post(
     author_sub: str,
     post_in: PostCreate
 ) -> CommunityPost:
-    """Create a new community post."""
+    """Create a new community post identifying author by standard UUID."""
+    user_uuid = get_user_uuid(author_sub)
+
     media_json = None
     if post_in.media_attachments:
         media_json = json.dumps([m.model_dump() for m in post_in.media_attachments])
 
-    pseudonym = post_in.author_pseudonym.strip() if (post_in.author_pseudonym and post_in.author_pseudonym.strip()) else "Anonymous"
+    if post_in.author_pseudonym and post_in.author_pseudonym.strip():
+        # User specified or updated pseudonym; sync to user profile and update older posts
+        await update_user_pseudonym(db, author_sub, post_in.author_pseudonym.strip())
+        pseudonym = post_in.author_pseudonym.strip()
+    else:
+        # Retrieve configured pseudonym from community user profile
+        user = await get_or_create_user(db, author_sub)
+        pseudonym = user.pseudonym or "Anonymous"
 
     post = CommunityPost(
-        user_id=author_sub,
+        user_id=user_uuid,
         author_pseudonym=pseudonym,
         content=post_in.content,
         media_attachments=media_json,
@@ -81,8 +92,10 @@ async def delete_post(
     post = await get_post_by_id(db, post_id)
     if not post:
         return False
-    if author_sub and post.user_id != author_sub:
-        return False
+    if author_sub:
+        user_uuid = get_user_uuid(author_sub)
+        if post.user_id not in (user_uuid, author_sub):
+            return False
 
     await db.delete(post)
     await db.commit()

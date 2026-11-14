@@ -14,6 +14,7 @@ import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
 import { useFont, AppFont, FONT_STORAGE_KEY } from "@/components/FontProvider";
 import { SnapshotDateControl } from "@/components/SnapshotDateControl";
 import { generateRandomPseudonym } from "@/lib/pseudonym";
+import { updateCommunityPseudonym } from "@/lib/community";
 
 const FONT_PRESETS = [
   {
@@ -284,6 +285,9 @@ export default function SettingsPage() {
     setSavedPseudonym(value);
     if (value) {
       localStorage.setItem("greenline_community_pseudonym", value);
+      updateCommunityPseudonym(value).catch((e) => {
+        console.warn("Could not sync pseudonym to community microservice:", e);
+      });
     } else {
       localStorage.removeItem("greenline_community_pseudonym");
     }

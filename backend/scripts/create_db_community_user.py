@@ -24,6 +24,7 @@ load_dotenv(os.path.join(ROOT_DIR, ".env"))
 COMMUNITY_TABLES = [
     "community_posts",
     "community_comments",
+    "community_users",
 ]
 
 CORE_FINANCIAL_TABLES = [
@@ -141,13 +142,33 @@ def main():
             )
             """)
 
+        cursor.execute("SELECT table_name FROM all_tables WHERE owner = :o AND table_name = 'COMMUNITY_USERS'", o=target_schema)
+        if not cursor.fetchone():
+            print(f"[*] Creating {target_schema}.community_users...")
+            cursor.execute(f"""
+            CREATE TABLE {target_schema}.community_users (
+                user_uuid VARCHAR2(36) PRIMARY KEY,
+                auth0_sub VARCHAR2(255) NOT NULL UNIQUE,
+                pseudonym VARCHAR2(255) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+            )
+            """)
+
         # 2. Check if user exists; create or alter
         cursor.execute("SELECT username FROM all_users WHERE username = :u", u=user_name)
         exists = cursor.fetchone() is not None
 
         if exists:
             print(f"[*] User {user_name} already exists. Updating password...")
-            cursor.execute(f'ALTER USER {user_name} IDENTIFIED BY "{user_password}"')
+            try:
+                cursor.execute(f'ALTER USER {user_name} IDENTIFIED BY "{user_password}"')
+            except oracledb.DatabaseError as dbe:
+                (err,) = dbe.args
+                if err.code == 28007:  # Password cannot be reused (already identical)
+                    print(f"[*] Password for {user_name} is already current.")
+                else:
+                    raise
         else:
             print(f"[*] Creating user {user_name} with tablespace {default_ts}...")
             cursor.execute(

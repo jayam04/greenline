@@ -11,6 +11,7 @@ try:
         get_post_by_id as get_post_by_id_service,
         delete_post as delete_post_service
     )
+    from ...services.user_service import get_user_uuid
     from ..deps import get_current_author_sub, get_optional_author_sub
 except (ImportError, ValueError):
     from app.db.database import get_db
@@ -21,6 +22,7 @@ except (ImportError, ValueError):
         get_post_by_id as get_post_by_id_service,
         delete_post as delete_post_service
     )
+    from app.services.user_service import get_user_uuid
     from app.api.deps import get_current_author_sub, get_optional_author_sub
 
 router = APIRouter(tags=["posts"])
@@ -89,7 +91,8 @@ async def delete_post(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Post {post_id} not found"
         )
-    if post.user_id != author_sub:
+    user_uuid = get_user_uuid(author_sub)
+    if post.user_id not in (user_uuid, author_sub):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not authorized to delete this post"

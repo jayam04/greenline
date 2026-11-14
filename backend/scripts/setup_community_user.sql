@@ -41,6 +41,14 @@ CREATE TABLE ADMIN.community_comments (
   CONSTRAINT fk_community_comments_parent FOREIGN KEY (parent_comment_id) REFERENCES ADMIN.community_comments(id) ON DELETE CASCADE
 );
 
+CREATE TABLE ADMIN.community_users (
+  user_uuid VARCHAR2(36) PRIMARY KEY,
+  auth0_sub VARCHAR2(255) NOT NULL UNIQUE,
+  pseudonym VARCHAR2(255) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- 2. Create the dedicated Community microservice database user
 -- In Oracle Autonomous Cloud DB: Passwords must be 12-30 characters, contain
 -- uppercase, lowercase, numbers, and not include username.
@@ -55,6 +63,7 @@ GRANT CREATE SESSION TO GREENLINE_COMMUNITY;
 -- 4. Grant DML (SELECT, INSERT, UPDATE, DELETE) ONLY on dedicated Community tables
 GRANT SELECT, INSERT, UPDATE, DELETE ON ADMIN.community_posts TO GREENLINE_COMMUNITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ADMIN.community_comments TO GREENLINE_COMMUNITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ADMIN.community_users TO GREENLINE_COMMUNITY;
 
 -- 5. Excluded Tables (Explicitly NO grants):
 -- Zero privileges on all 21 core financial tables (users, accounts, assets, transactions,

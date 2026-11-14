@@ -30,6 +30,8 @@ class PostResponse(BaseModel):
     id: int
     post_id: int
     author_sub: str
+    author_uuid: Optional[str] = None
+    user_uuid: Optional[str] = None
     author_pseudonym: Optional[str] = None
     content: str
     media_attachments: Optional[List[MediaAttachment]] = None

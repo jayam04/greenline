@@ -32,6 +32,60 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-14 17:58:00 UTC] feat(community): identify users by UUID and dynamically synchronize pseudonyms across older posts
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T17:58:00Z",
+  "type": "feat",
+  "scope": "community",
+  "summary": "identify users by UUID and dynamically synchronize pseudonyms across older posts",
+  "affected_files": [
+    "services/community/app/services/user_service.py",
+    "services/community/app/db/models.py",
+    "services/community/app/schemas/pseudonym.py",
+    "services/community/app/schemas/post.py",
+    "services/community/app/schemas/comment.py",
+    "services/community/app/services/post_service.py",
+    "services/community/app/services/comment_service.py",
+    "services/community/app/api/routers/posts.py",
+    "services/community/app/api/routers/pseudonyms.py",
+    "services/community/tests/test_user_uuid_and_pseudonym_sync.py",
+    "services/community/tests/conftest.py",
+    "backend/scripts/setup_community_user.sql",
+    "backend/scripts/create_db_community_user.py",
+    "frontend/src/lib/community.ts",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/__tests__/communityApi.test.ts"
+  ],
+  "rationale": "Identify community post and comment authors by an RFC 4122 standard UUID in the backend, and enable dynamic pseudonym synchronization via a dedicated community_users table and cascading updates so that updating a user's pseudonym in Settings instantly updates their display name across all older posts and comments.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests && cd frontend && npx vitest run src/__tests__/communityApi.test.ts && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(community)`
+- **Summary**: Identified users by UUID in the backend for community posts and comments, and dynamically propagated pseudonym updates to all historical posts and comments.
+- **Rationale**: Previously, author pseudonyms were snapshot statically as string columns during post/comment creation. Users are now canonically identified by an RFC 4122 UUID (`user_id` / `user_uuid`). A dedicated `community_users` table tracks user UUID profiles, and pseudonym updates via `/api/v1/community/pseudonyms/me` cascade to all older posts and comments in the database.
+- **Key Changes**:
+  - `services/community/app/services/user_service.py`: Added RFC 4122 deterministic UUID generator `get_user_uuid`, user profile resolver, and `update_user_pseudonym` cascading updates across `community_posts` and `community_comments`.
+  - `services/community/app/db/models.py`: Added `CommunityUser` model; exposed `author_uuid` and `user_uuid` properties on `CommunityPost` and `CommunityComment`; joined `user` relationship to maintain `author_sub` backwards compatibility.
+  - `services/community/app/schemas/pseudonym.py`: Added `UpdatePseudonymRequest` and `UserProfileResponse` schemas.
+  - `services/community/app/schemas/post.py` & `schemas/comment.py`: Added `author_uuid` and `user_uuid` to response schemas.
+  - `services/community/app/api/routers/pseudonyms.py`: Added `GET /pseudonyms/me` and `PUT /pseudonyms/me` to fetch and update community profile with cascading updates.
+  - `services/community/app/services/post_service.py` & `services/comment_service.py`: Stored canonical user UUID in `user_id` on post/comment creation and synced pseudonyms.
+  - `backend/scripts/setup_community_user.sql` & `backend/scripts/create_db_community_user.py`: Added `COMMUNITY_USERS` table DDL, permissions grants, and idempotent creation for Oracle DB.
+  - `frontend/src/lib/community.ts`: Added `updateCommunityPseudonym` and `fetchMyCommunityPseudonym` API functions.
+  - `frontend/src/app/settings/page.tsx`: Updated `handleSavePseudonym` to synchronize chosen pseudonyms to `/community/pseudonyms/me`.
+  - `services/community/tests/test_user_uuid_and_pseudonym_sync.py`: Added TDD unit and regression tests verifying user UUID identification and older post pseudonym updates.
+- **Verification**:
+  - `PYTHONPATH=services/community backend/.venv/bin/pytest services/community/tests`: 34 passed (100%).
+  - `cd frontend && npx vitest run src/__tests__/communityApi.test.ts src/__tests__/CommunityComponents.test.tsx src/__tests__/SettingsPseudonym.test.tsx`: 28 passed (100%).
+  - `cd frontend && npx tsc --noEmit && npm run lint`: 0 type errors, 0 lint errors.
+
 ### [2026-11-14 13:28:00 UTC] feat(community): implement standalone community microservice, unified home page, and pseudonym settings
 
 <!-- changelog-entry-json

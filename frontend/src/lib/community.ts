@@ -167,3 +167,28 @@ export async function fetchRandomPseudonym(): Promise<RandomPseudonymResponse> {
   }
   return { pseudonym: generateRandomPseudonym() };
 }
+
+export interface UserProfileResponse {
+  user_uuid: string;
+  pseudonym: string;
+  updated_posts?: number;
+  updated_comments?: number;
+}
+
+/**
+ * Update the user's community pseudonym in the community microservice,
+ * dynamically changing the display name across all older posts and comments.
+ */
+export async function updateCommunityPseudonym(pseudonym: string): Promise<UserProfileResponse> {
+  return apiFetch<UserProfileResponse>("/community/pseudonyms/me", {
+    method: "PUT",
+    body: JSON.stringify({ pseudonym }),
+  });
+}
+
+/**
+ * Fetch the current user's community pseudonym and user UUID from the microservice.
+ */
+export async function fetchMyCommunityPseudonym(): Promise<UserProfileResponse> {
+  return apiFetch<UserProfileResponse>("/community/pseudonyms/me");
+}

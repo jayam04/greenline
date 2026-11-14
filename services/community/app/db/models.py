@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
 
 try:
     from .database import Base
@@ -39,12 +39,28 @@ class CommunityPost(Base):
         passive_deletes=True
     )
 
+    user = relationship(
+        "CommunityUser",
+        primaryjoin="foreign(CommunityPost.user_id) == CommunityUser.user_uuid",
+        lazy="selectin"
+    )
+
     @property
     def post_id(self) -> int:
         return self.id
 
     @property
     def author_sub(self) -> str:
+        if getattr(self, "user", None) is not None and getattr(self.user, "auth0_sub", None):
+            return self.user.auth0_sub
+        return self.user_id
+
+    @property
+    def author_uuid(self) -> str:
+        return self.user_id
+
+    @property
+    def user_uuid(self) -> str:
         return self.user_id
 
 
@@ -90,10 +106,47 @@ class CommunityComment(Base):
         passive_deletes=True
     )
 
+    user = relationship(
+        "CommunityUser",
+        primaryjoin="foreign(CommunityComment.user_id) == CommunityUser.user_uuid",
+        lazy="selectin"
+    )
+
     @property
     def comment_id(self) -> int:
         return self.id
 
     @property
     def author_sub(self) -> str:
+        if getattr(self, "user", None) is not None and getattr(self.user, "auth0_sub", None):
+            return self.user.auth0_sub
         return self.user_id
+
+    @property
+    def author_uuid(self) -> str:
+        return self.user_id
+
+    @property
+    def user_uuid(self) -> str:
+        return self.user_id
+
+
+class CommunityUser(Base):
+    __tablename__ = "community_users"
+
+    user_uuid = Column(String(36), primary_key=True)
+    auth0_sub = Column(String(255), unique=True, nullable=False, index=True)
+    pseudonym = Column(String(255), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )

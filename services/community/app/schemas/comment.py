@@ -24,6 +24,8 @@ class CommentResponse(BaseModel):
     post_id: int
     parent_comment_id: Optional[int] = None
     author_sub: str
+    author_uuid: Optional[str] = None
+    user_uuid: Optional[str] = None
     author_pseudonym: Optional[str] = None
     content: str
     created_at: datetime

@@ -158,6 +158,7 @@ async def community_db_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             await session.execute(text("DELETE FROM community_comments"))
             await session.execute(text("DELETE FROM community_posts"))
+            await session.execute(text("DELETE FROM community_users"))
             await session.commit()
         except Exception:
             await session.rollback()
@@ -168,6 +169,7 @@ async def community_db_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             await session.execute(text("DELETE FROM community_comments"))
             await session.execute(text("DELETE FROM community_posts"))
+            await session.execute(text("DELETE FROM community_users"))
             await session.commit()
         except Exception:
             await session.rollback()

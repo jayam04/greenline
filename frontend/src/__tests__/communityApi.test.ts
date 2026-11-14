@@ -8,6 +8,8 @@ import {
   fetchComments,
   createComment,
   fetchRandomPseudonym,
+  updateCommunityPseudonym,
+  fetchMyCommunityPseudonym,
 } from '@/lib/community';
 
 vi.mock('@/lib/api', () => ({
@@ -176,5 +178,34 @@ describe('Community API Client (src/lib/community.ts)', () => {
     expect(result.pseudonym).toBeTruthy();
     expect(typeof result.pseudonym).toBe('string');
     expect(result.pseudonym.split(' ').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('updateCommunityPseudonym calls PUT /community/pseudonyms/me with new pseudonym', async () => {
+    const mockProfile = {
+      user_uuid: '8f14e45f-b52b-5b32-9b25-a6a38df48210',
+      pseudonym: 'Crazy Dog',
+      updated_posts: 3,
+      updated_comments: 1,
+    };
+    (api.apiFetch as any).mockResolvedValue(mockProfile);
+
+    const result = await updateCommunityPseudonym('Crazy Dog');
+    expect(api.apiFetch).toHaveBeenCalledWith('/community/pseudonyms/me', {
+      method: 'PUT',
+      body: JSON.stringify({ pseudonym: 'Crazy Dog' }),
+    });
+    expect(result).toEqual(mockProfile);
+  });
+
+  it('fetchMyCommunityPseudonym calls GET /community/pseudonyms/me', async () => {
+    const mockProfile = {
+      user_uuid: '8f14e45f-b52b-5b32-9b25-a6a38df48210',
+      pseudonym: 'Wise Owl',
+    };
+    (api.apiFetch as any).mockResolvedValue(mockProfile);
+
+    const result = await fetchMyCommunityPseudonym();
+    expect(api.apiFetch).toHaveBeenCalledWith('/community/pseudonyms/me');
+    expect(result).toEqual(mockProfile);
   });
 });

@@ -32,6 +32,301 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-14 13:28:00 UTC] feat(community): implement standalone community microservice, unified home page, and pseudonym settings
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T13:28:00Z",
+  "type": "feat",
+  "scope": "community",
+  "summary": "implement standalone community microservice, unified home page, and pseudonym settings",
+  "affected_files": [
+    "backend/app/api/routers/settings.py",
+    "backend/scripts/create_db_community_user.py",
+    "backend/scripts/setup_community_user.sql",
+    "backend/tests/test_oracle_community_user_permissions.py",
+    "docker-compose.yml",
+    "frontend/next.config.ts",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/lib/community.ts",
+    "frontend/src/lib/pseudonym.ts",
+    "services/community/app/main.py"
+  ],
+  "rationale": "Add community post and commenting functionality to Greenline. Implemented a dedicated standalone microservice in services/community/ on port 8002 backed by dedicated Oracle tables and a scoped database user. Redesigned the overview page at / into a unified Home page integrating portfolio overview metrics alongside the community feed with multi-mode view toggles, and added community pseudonym management with a whimsical random pseudonym generator in user settings.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(community)`
+- **Summary**: Implemented standalone Community microservice (`services/community/`), dedicated least-privilege Oracle DB user and tables, unified Home page redesign (`/`), and user settings pseudonym management with a whimsical random generator.
+- **Rationale**: Enables users to share posts with rich text formatting and media attachments, reply to nested comment threads, configure a custom community display name or generate whimsical pseudonyms, and view community discussions directly alongside their portfolio overview metrics.
+- **Key Changes**:
+  - `services/community/`: Standalone FastAPI microservice on port 8002 with dedicated models, schemas, and REST endpoints (`/api/v1/community/posts`, `/api/v1/community/comments`), containerized via Dockerfile and configured in `docker-compose.yml`.
+  - `backend/scripts/setup_community_user.sql` & `create_db_community_user.py`: Provisioned dedicated Oracle tables (`community_posts`, `community_comments`) and dedicated user `GREENLINE_COMMUNITY` with scoped DML on community tables and strict denial on all core financial tables.
+  - `frontend/src/app/page.tsx`: Redesigned root page into the unified Home page with view mode toggles (`[Unified]`, `[Overview Only]`, `[Community Feed]`), embedded `CommunityFeed`, post composer with media chips, and nested comment threads.
+  - `frontend/src/app/settings/page.tsx`: Added "Community Profile & Pseudonym" configuration card with custom display name input and whimsical random pseudonym generator ("Giant Elephant", "Crazy Dog").
+  - `frontend/next.config.ts`: Configured Next.js proxy rewrites to route `/api/v1/community/:path*` to `http://community:8002`.
+- **Verification**:
+  - 81/81 automated tests passed (32 microservice tests, 8 Oracle security permission tests, 3 backend settings tests, 38 frontend vitest tests).
+  - TypeScript type check (`npx tsc --noEmit`) and ESLint passed with 0 errors.
+  - Independent post-victory audit verified genuine Oracle persistence and strict least-privilege isolation.
+
+
+
+### [2026-11-14 12:55:00 UTC] test(community): add adversarial stress probes and test matrix validation for milestone 5
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T12:55:00Z",
+  "type": "test",
+  "scope": "community",
+  "summary": "add adversarial stress probes and test matrix validation for milestone 5",
+  "affected_files": [
+    "services/community/tests/test_adversarial_probes.py"
+  ],
+  "rationale": "Harden Community microservice test suite with Tier 5 adversarial stress loops verifying deterministic sorting, authentication and authorization boundaries, input edge cases, and Oracle DB isolation.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests/test_adversarial_probes.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `test(community)`
+- **Summary**: Add adversarial stress probes and test matrix validation for milestone 5.
+- **Rationale**: Harden Community microservice test suite with Tier 5 adversarial stress loops verifying deterministic sorting, authentication and authorization boundaries, input edge cases, and Oracle DB isolation.
+- **Key Changes**:
+  - `services/community/tests/test_adversarial_probes.py`: Implemented 5 adversarial probe suites testing post/comment sorting determinism stress loops (50 repetitions), authentication/authorization denial (401/403/404), input boundary limits (empty, 10k/5k limits, unicode/emojis/RTL, SQLi, XSS, cross-post comments), and Oracle DB least-privilege table denials (all 21 financial tables ORA-00942 and zero DDL ORA-01031).
+- **Verification**:
+  - Command: `PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests/test_adversarial_probes.py -v`
+  - Output: `5 passed in 3.18s`
+
+### [2026-11-14 12:31:00 UTC] feat(frontend): implement unified home page redesign and community feed ui
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T12:31:00Z",
+  "type": "feat",
+  "scope": "frontend",
+  "summary": "implement unified home page redesign and community feed ui",
+  "affected_files": [
+    "docker-compose.yml",
+    "frontend/next.config.ts",
+    "frontend/src/lib/community.ts",
+    "frontend/src/components/community/MarkdownContent.tsx",
+    "frontend/src/components/community/PostComposer.tsx",
+    "frontend/src/components/community/PostCard.tsx",
+    "frontend/src/components/community/CommentThread.tsx",
+    "frontend/src/components/community/CommunityFeed.tsx",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/__tests__/Sidebar.test.tsx",
+    "frontend/src/__tests__/communityApi.test.ts",
+    "frontend/src/__tests__/CommunityComponents.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx",
+    "frontend/src/__tests__/communityRewrites.test.ts"
+  ],
+  "rationale": "Implements Milestone 4 by redesigning the home page to integrate portfolio overview metrics alongside a standalone community feed with rich formatting, media attachments, and comments.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/communityApi.test.ts src/__tests__/CommunityComponents.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/communityRewrites.test.ts src/__tests__/Sidebar.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(frontend)`
+- **Summary**: Implement unified home page redesign and community feed UI with rich markdown composer, media attachments, and commenting.
+- **Rationale**: Satisfies Milestone 4 requirements to bridge frontend users to the standalone community microservice via Next.js proxy rewrites and interactive social components embedded on the Home dashboard.
+- **Key Changes**:
+  - `docker-compose.yml`: Passed `COMMUNITY_URL=http://community:8002/api/v1/community` to the frontend container environment.
+  - `frontend/next.config.ts`: Configured gateway proxy rewrites routing `/api/v1/community/:path*` to the community microservice on port 8002.
+  - `frontend/src/lib/community.ts`: Implemented typed API client functions for fetching posts, creating posts, fetching comments, creating comments, and fetching random pseudonyms with Auth0 Bearer token injection.
+  - `frontend/src/components/community/MarkdownContent.tsx`: Created AST-based safe markdown compiler supporting headings, bold, italic, code, quotes, lists, and sanitized links without dangerouslySetInnerHTML.
+  - `frontend/src/components/community/PostComposer.tsx`: Built post composer with rich markdown toolbar, media attachments input and chip previews, and author pseudonym display with randomize button.
+  - `frontend/src/components/community/PostCard.tsx`: Created post card component displaying author pseudonym, relative timestamp, media previews, and collapsible comment threads.
+  - `frontend/src/components/community/CommentThread.tsx`: Built comment thread component supporting threaded replies, author pseudonym display, and inline reply submission.
+  - `frontend/src/components/community/CommunityFeed.tsx`: Built feed container with sort switching (Latest/Oldest), manual refresh, loading skeletons, and empty state.
+  - `frontend/src/components/Sidebar.tsx`: Updated navigation branding to label `/` as "Home" with Home icon.
+  - `frontend/src/app/page.tsx`: Redesigned root page into a unified Home hub featuring portfolio overview metrics and interactive community feed with view mode switcher (`Unified`, `Overview Only`, `Community Feed`).
+  - `frontend/src/__tests__/`: Added comprehensive test suites covering API client methods, community UI components, unified home page rendering, and gateway rewrites.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/communityApi.test.ts src/__tests__/CommunityComponents.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/communityRewrites.test.ts src/__tests__/Sidebar.test.tsx`
+  - Output: TypeScript 0 errors, ESLint 0 errors, Vitest 52/52 tests passed.
+
+### [2026-11-14 11:53:00 UTC] fix(community): add deterministic id tie-breaker for comment ordering in community microservice
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T11:53:00Z",
+  "type": "fix",
+  "scope": "community",
+  "summary": "add deterministic id tie-breaker for comment ordering in community microservice",
+  "affected_files": [
+    "services/community/app/services/comment_service.py",
+    "services/community/app/db/models.py",
+    "services/community/tests/test_comments.py",
+    "services/community/tests/test_community_models.py"
+  ],
+  "rationale": "Oracle DB produces non-deterministic ordering when sorting comments with identical created_at timestamps without a secondary unique tie-breaker. Adding CommunityComment.id.asc() ensures stable chronological ordering under concurrency.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v && for i in {1..5}; do PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -q || exit 1; done && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(community)`
+- **Summary**: Add deterministic `id.asc()` secondary tie-breaker to comment queries and post comments relationship in the Community microservice.
+- **Rationale**: Prevent intermittent race conditions and indeterminate sorting order in Oracle DB when multiple comments share identical `created_at` timestamps.
+- **Key Changes**:
+  - `services/community/app/services/comment_service.py`: Add `CommunityComment.id.asc()` to `get_comments` order_by clause.
+  - `services/community/app/db/models.py`: Update `CommunityPost.comments` relationship `order_by` to include `[CommunityComment.created_at.asc(), CommunityComment.id.asc()]`.
+  - `services/community/tests/test_comments.py`: Add `test_get_comments_deterministic_tie_breaker_same_timestamp` asserting deterministic order when comments share identical timestamps.
+  - `services/community/tests/test_community_models.py`: Add `test_community_models_comments_relationship_order_by_tie_breaker` testing relationship order_by expressions.
+- **Verification**:
+  - Command: `PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v`
+  - Output: 27 passed in 4.19s
+  - Command: `for i in {1..5}; do PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -q || exit 1; done`
+  - Output: 5/5 loop passes with zero regressions
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v`
+  - Output: 8 passed in 1.48s
+
+
+### [2026-11-14 11:15:00 UTC] feat(community): implement standalone community microservice with posts, comments, and pseudonyms
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T11:15:00Z",
+  "type": "feat",
+  "scope": "community",
+  "summary": "implement standalone community microservice with posts, comments, and pseudonyms",
+  "affected_files": [
+    "services/community/app/config.py",
+    "services/community/app/db/database.py",
+    "services/community/app/db/models.py",
+    "services/community/app/schemas/post.py",
+    "services/community/app/schemas/comment.py",
+    "services/community/app/schemas/pseudonym.py",
+    "services/community/app/services/auth0_service.py",
+    "services/community/app/services/post_service.py",
+    "services/community/app/services/comment_service.py",
+    "services/community/app/services/pseudonym_service.py",
+    "services/community/app/api/deps.py",
+    "services/community/app/api/routers/posts.py",
+    "services/community/app/api/routers/comments.py",
+    "services/community/app/api/routers/pseudonyms.py",
+    "services/community/app/main.py",
+    "services/community/Dockerfile",
+    "services/community/requirements.txt",
+    "services/community/tests/conftest.py",
+    "services/community/tests/test_posts.py",
+    "services/community/tests/test_comments.py",
+    "services/community/tests/test_pseudonyms.py",
+    "services/community/tests/test_community_models.py",
+    "services/community/tests/test_service_health.py",
+    "services/community/tests/test_e2e_community_service.py",
+    "docker-compose.yml",
+    "backend/tests/conftest.py"
+  ],
+  "rationale": "Implement Milestone 2 standalone community microservice (port 8002) connecting via dedicated Oracle user GREENLINE_COMMUNITY to access community_posts and community_comments tables, offering stateless RS256 Auth0 verification and REST endpoints for creating posts with rich text and media attachments, threaded comments, and random pseudonyms.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(community)`
+- **Summary**: Implement standalone FastAPI Community microservice at `services/community/` with posts, threaded comments, random pseudonym generator, and container orchestration.
+- **Rationale**: Decouple community discussions from the core financial ledger by creating an isolated microservice running on port 8002 that connects exclusively using the dedicated least-privilege `GREENLINE_COMMUNITY` Oracle user.
+- **Key Changes**:
+  - `services/community/app/config.py`: BaseSettings reading port 8002, API prefix `/api/v1/community`, dedicated user `GREENLINE_COMMUNITY`, and Auth0 configuration.
+  - `services/community/app/db/database.py` & `models.py`: Async engine and ORM models for `CommunityPost` and `CommunityComment` with cascade deletion and properties for `post_id`, `comment_id`, and `author_sub`.
+  - `services/community/app/schemas/`: Pydantic validation schemas for posts, comments, media attachments, and pseudonyms.
+  - `services/community/app/services/`: Services for Auth0 token verification, random pseudonym generation, post creation/retrieval, and threaded comments.
+  - `services/community/app/api/deps.py` & `routers/`: Auth dependencies and REST endpoints under `/api/v1/community`.
+  - `services/community/Dockerfile` & `requirements.txt`: Container packaging and dependencies.
+  - `docker-compose.yml`: Added `community` microservice container service on port 8002 and linked to frontend gateway.
+  - `services/community/tests/`: 25 automated tests covering endpoints, validation, pagination, multi-user threads, cascade deletion, and least-privilege DB security.
+- **Verification**:
+  - Command: `PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v`
+  - Output: 25 passed in 4.05s (community) and 8 passed in 1.52s (security user permissions).
+
+### [2026-11-14 10:17:00 UTC] feat(settings): integrate community pseudonym management card and preview in settings page
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T10:17:00Z",
+  "type": "feat",
+  "scope": "settings",
+  "summary": "integrate community pseudonym management card and preview in settings page",
+  "affected_files": [
+    "frontend/src/app/settings/page.tsx"
+  ],
+  "rationale": "Implement Milestone 3 frontend community pseudonym configuration interface, providing users with a dedicated settings card to configure their community pseudonym, generate whimsical aliases using the pseudonym library, view a live preview badge, and display their configured alias in the current profile card.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/SettingsPseudonym.test.tsx src/__tests__/pseudonym.test.ts && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_settings.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(settings)`
+- **Summary**: Integrate Community Profile & Pseudonym configuration card with live preview badge and random name generation in settings page.
+- **Rationale**: Users need the ability to customize or randomize their community pseudonym for anonymous benchmarking and community discussions, with full persistence to backend settings and local storage.
+- **Key Changes**:
+  - `frontend/src/app/settings/page.tsx`: Added Community Profile & Pseudonym configuration card with controlled input, "Pick Random Name" button powered by `generateRandomPseudonym()`, Save button, Enter-key handler, live preview badge, and Community Alias row in Current Profile card.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/SettingsPseudonym.test.tsx src/__tests__/pseudonym.test.ts && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_settings.py`
+  - Output: 10/10 Vitest tests passed, 0 TypeScript errors, 0 ESLint errors, 3/3 pytest backend settings tests passed.
+
+### [2026-11-14 10:02:00 UTC] feat(database): provision dedicated community tables and scoped db user with least privilege
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T10:02:00Z",
+  "type": "feat",
+  "scope": "database",
+  "summary": "provision dedicated community tables and scoped db user with least privilege",
+  "affected_files": [
+    "backend/scripts/setup_community_user.sql",
+    "backend/scripts/create_db_community_user.py",
+    "scripts/setup_community_user.sql",
+    "backend/tests/test_oracle_community_user_permissions.py"
+  ],
+  "rationale": "In alignment with the standalone microservice architectural requirement, dedicated database tables (community_posts, community_comments) and a scoped database user (GREENLINE_COMMUNITY) are provisioned. The user has strictly least-privilege DML permissions on the community tables, an AFTER LOGON trigger setting CURRENT_SCHEMA, zero DDL privileges, and zero access to all 21 core financial tables. Core backend models and migrations have zero community post/comment definitions.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py backend/tests/test_migrations.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(database)`
+- **Summary**: Provision dedicated database tables and least-privilege scoped user for Community microservice.
+- **Rationale**: Standalone microservice architecture requires community post and comment persistence to be owned exclusively by dedicated tables and accessed via a scoped database user, isolating financial records and credentials from community interactions.
+- **Key Changes**:
+  - `backend/scripts/setup_community_user.sql`: Least-privilege SQL DDL and grants provisioning `community_posts` and `community_comments` with `GREENLINE_COMMUNITY` user and `AFTER LOGON` trigger.
+  - `backend/scripts/create_db_community_user.py`: Python CLI tool provisioning tables and credentials against Autonomous Cloud DB and local Oracle Free 23ai containers.
+  - `scripts/setup_community_user.sql`: Root mirror of setup script.
+  - `backend/tests/test_oracle_community_user_permissions.py`: Security and permissions verification suite covering all 8 static and live database assertions.
+- **Verification**:
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py backend/tests/test_migrations.py -v`
+  - Output: 10 passed in 3.27s (100% pass rate).
+
+
 ### [2026-11-13 17:33:00 UTC] feat(portfolio): incorporate dividends into realized pnl and compute holding-level xirr in networth service
 
 <!-- changelog-entry-json

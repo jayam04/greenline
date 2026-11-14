@@ -7,7 +7,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { removeAuthToken } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
 import { 
-  TrendingUp, Briefcase, Building2, LogOut, User,
+  Home, TrendingUp, Briefcase, Building2, LogOut, User,
   ArrowLeftRight, Settings, Sun, Moon, Laptop,
   ChevronDown, Menu, Search, X
 } from "lucide-react";
@@ -54,9 +54,9 @@ interface NavItem {
 
   const navItems: NavItem[] = [
     {
-      name: "Overview",
+      name: "Home",
       href: "/",
-      icon: TrendingUp,
+      icon: Home,
       active: pathname === "/",
     },
     {

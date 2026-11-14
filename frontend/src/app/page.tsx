@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import Link from "next/link";
+import { CommunityFeed } from "@/components/community/CommunityFeed";
+import { getSavedCommunityPseudonym, saveCommunityPseudonymLocally } from "@/lib/community";
 
 interface Account {
   account_id: number;
@@ -128,9 +130,16 @@ export default function NetWorthDashboardPage() {
   const [accountOrder, setAccountOrder] = useState<number[]>([]);
   const [hiddenAccountIds, setHiddenAccountIds] = useState<number[]>([]);
   const [hideZeroBalance, setHideZeroBalance] = useState(false);
+  const [communityPseudonym, setCommunityPseudonym] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return getSavedCommunityPseudonym() || "";
+    }
+    return "";
+  });
+  const [homeViewTab, setHomeViewTab] = useState<"unified" | "overview" | "community">("unified");
 
   useEffect(() => {
-    document.title = "Overview · greenline";
+    document.title = "Home · greenline";
     loadSettingsAndAccounts();
     loadSavedLayout();
   }, []);
@@ -172,7 +181,7 @@ export default function NetWorthDashboardPage() {
   const loadSettingsAndAccounts = async () => {
     try {
       const [settingsRes, accRes] = await Promise.all([
-        apiFetch<{ master_currency?: string; fiscal_year_start?: string }>("/settings").catch(() => null),
+        apiFetch<{ master_currency?: string; fiscal_year_start?: string; community_pseudonym?: string }>("/settings").catch(() => null),
         apiFetch<Account[]>("/accounts").catch(() => []),
       ]);
 
@@ -183,6 +192,11 @@ export default function NetWorthDashboardPage() {
         }
         if (settingsRes.fiscal_year_start) {
           setFiscalYearStart(settingsRes.fiscal_year_start.trim());
+        }
+        if (settingsRes.community_pseudonym) {
+          const pseudo = settingsRes.community_pseudonym.trim();
+          setCommunityPseudonym(pseudo);
+          saveCommunityPseudonymLocally(pseudo);
         }
       }
 
@@ -466,12 +480,65 @@ export default function NetWorthDashboardPage() {
 
   return (
     <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
+      {/* Top Header Bar with View Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[#F1F5F9] dark:border-slate-800">
+        <div>
+          <h1 className="text-lg font-bold text-[#0F172A] dark:text-white tracking-tight flex items-center gap-2">
+            <span>Portfolio & Community</span>
+            <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 rounded-full border border-emerald-200 dark:border-emerald-800">
+              Home
+            </span>
+          </h1>
+          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-0.5">
+            Real-time portfolio net worth, asset allocation, and community discussions
+          </p>
+        </div>
+
+        {/* View Tabs */}
+        <div className="flex items-center bg-slate-100 dark:bg-[#1A2333] p-0.5 rounded-xl border border-slate-200/70 dark:border-slate-800 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setHomeViewTab("unified")}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              homeViewTab === "unified"
+                ? "bg-white dark:bg-[#0E1522] text-[#0F172A] dark:text-white shadow-xs font-extrabold"
+                : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <span>Unified</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setHomeViewTab("overview")}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              homeViewTab === "overview"
+                ? "bg-white dark:bg-[#0E1522] text-[#0F172A] dark:text-white shadow-xs font-extrabold"
+                : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <span>Overview Only</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setHomeViewTab("community")}
+            className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+              homeViewTab === "community"
+                ? "bg-white dark:bg-[#0E1522] text-[#0F172A] dark:text-white shadow-xs font-extrabold"
+                : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+            }`}
+          >
+            <span>Community Feed</span>
+          </button>
+        </div>
+      </div>
+
       {/* Main Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* LEFT COLUMN: Net Worth Hero & Accounts/Balances Table (~68% width) */}
         <div className="lg:col-span-8 space-y-5">
           {/* Card 1: Global Net Worth Hero Card */}
-          <Card className="p-5 shadow-sm">
+          {(homeViewTab === "unified" || homeViewTab === "overview") && (
+            <Card className="p-5 shadow-sm">
             {/* Header Row 1: Title on Left, Action Buttons on Right */}
             <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-2">
@@ -672,9 +739,21 @@ export default function NetWorthDashboardPage() {
               <span className="bg-[#99EF2E] text-[#0F172A] px-1.5 py-0.2 rounded-xs font-black lowercase text-[10px]">greenline</span>
             </div>
           </Card>
+          )}
+
+          {/* Card: Interactive Community Feed */}
+          {(homeViewTab === "unified" || homeViewTab === "community") && (
+            <Card className="p-5 shadow-sm">
+              <CommunityFeed
+                currentPseudonym={communityPseudonym}
+                onPseudonymChange={(p) => setCommunityPseudonym(p)}
+              />
+            </Card>
+          )}
 
           {/* Card 2: Accounts & Balances Table (Replaced Holdings) */}
-          <Card className="p-5 shadow-sm">
+          {(homeViewTab === "unified" || homeViewTab === "overview") && (
+            <Card className="p-5 shadow-sm">
             {/* Header: Title, Type Tabs, Action Button */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-2 border-b border-[#F1F5F9]">
               <div className="flex items-center gap-4 flex-wrap">
@@ -860,10 +939,35 @@ export default function NetWorthDashboardPage() {
               </Link>
             </div>
           </Card>
+          )}
         </div>
 
         {/* RIGHT COLUMN: Net Worth Across Entities Donut & Full Year Snapshot (~32% width) */}
         <div className="lg:col-span-4 space-y-5">
+          {/* Quick Portfolio Valuation Summary (visible in Community mode) */}
+          {homeViewTab === "community" && (
+            <Card className="p-5 shadow-sm space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <span className="text-xs font-bold text-slate-500">Portfolio Net Worth</span>
+                <span className="text-[10px] font-extrabold uppercase bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">
+                  Live
+                </span>
+              </div>
+              <div className="text-2xl font-extrabold text-[#0F172A]">
+                {renderFormattedMaster(totalNetWorthMaster)}
+              </div>
+              <div className="flex items-center gap-3 text-xs font-semibold">
+                <span className="text-emerald-700 font-bold">
+                  Cash: {hideBalances ? "••••" : formatMoney(totalCashMaster, masterCurrency, 0)}
+                </span>
+                <span className="text-slate-300">•</span>
+                <span className="text-blue-700 font-bold">
+                  Securities: {hideBalances ? "••••" : formatMoney(totalStocksValuationMaster, masterCurrency, 0)}
+                </span>
+              </div>
+            </Card>
+          )}
+
           {/* Card 1: Net Worth Across Entities Donut Chart (Replaced Allocation) */}
           <Card className="p-5 shadow-sm">
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">

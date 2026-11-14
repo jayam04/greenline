@@ -102,6 +102,15 @@ def mock_auth0_jwks():
     except (ImportError, AttributeError):
         pass
 
+    try:
+        from services.community.app.services import auth0_service as comm_auth0
+        patches.append(patch.object(comm_auth0, "get_jwks", return_value=TEST_JWKS))
+        patches.append(patch.object(comm_auth0, "fetch_jwks", return_value=TEST_JWKS))
+        if hasattr(comm_auth0, "clear_jwks_cache"):
+            comm_auth0.clear_jwks_cache()
+    except (ImportError, AttributeError):
+        pass
+
     with patch.object(httpx.AsyncClient, "get", mock_get):
         for p in patches:
             p.start()

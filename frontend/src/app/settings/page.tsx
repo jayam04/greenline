@@ -8,11 +8,12 @@ import {
   Coins, CheckCircle2, AlertCircle, LogOut, ArrowRight,
   HelpCircle, Sliders, Database, Check, Calendar, Download,
   RefreshCw, Trash2, RotateCcw, Clock, HardDrive, FileJson, AlertTriangle,
-  Key, Copy, Type
+  Key, Copy, Type, Users, Sparkles
 } from "lucide-react";
 import { SUPPORTED_CURRENCIES, CurrencyOption } from "@/lib/format";
 import { useFont, AppFont, FONT_STORAGE_KEY } from "@/components/FontProvider";
 import { SnapshotDateControl } from "@/components/SnapshotDateControl";
+import { generateRandomPseudonym } from "@/lib/pseudonym";
 
 const FONT_PRESETS = [
   {
@@ -108,6 +109,8 @@ export default function SettingsPage() {
   const { font, setFont } = useFont();
   const [masterCurrency, setMasterCurrency] = useState("EUR");
   const [fiscalYearStart, setFiscalYearStart] = useState("01-01");
+  const [communityPseudonym, setCommunityPseudonym] = useState("");
+  const [savedPseudonym, setSavedPseudonym] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
@@ -140,6 +143,7 @@ export default function SettingsPage() {
           master_currency: string;
           fiscal_year_start?: string;
           app_font?: string;
+          community_pseudonym?: string | null;
         }>("/settings"),
         apiFetch<BackupConfig>("/backup/config").catch(() => null),
         apiFetch<{ total_count: number; backups: BackupItem[] }>("/backup/list").catch(() => ({ total_count: 0, backups: [] }))
@@ -168,6 +172,20 @@ export default function SettingsPage() {
               : "general-sans";
           setFont(normFont);
         }
+        if (res.community_pseudonym !== undefined && res.community_pseudonym !== null) {
+          const pseudo = res.community_pseudonym.trim();
+          setCommunityPseudonym(pseudo);
+          setSavedPseudonym(pseudo);
+          if (pseudo) {
+            localStorage.setItem("greenline_community_pseudonym", pseudo);
+          } else {
+            localStorage.removeItem("greenline_community_pseudonym");
+          }
+        } else {
+          setCommunityPseudonym("");
+          setSavedPseudonym("");
+          localStorage.removeItem("greenline_community_pseudonym");
+        }
       }
 
       if (bConfig) setBackupConfig(bConfig);
@@ -178,9 +196,12 @@ export default function SettingsPage() {
       const localCurr = localStorage.getItem("greenline_master_currency") || "EUR";
       const localFy = localStorage.getItem("greenline_fiscal_year_start") || "01-01";
       const localFont = (localStorage.getItem(FONT_STORAGE_KEY) || "general-sans") as AppFont;
+      const localPseudo = localStorage.getItem("greenline_community_pseudonym") || "";
       setMasterCurrency(localCurr);
       setFiscalYearStart(localFy);
       setFont(localFont);
+      setCommunityPseudonym(localPseudo);
+      setSavedPseudonym(localPseudo);
     } finally {
       setLoading(false);
     }
@@ -252,18 +273,58 @@ export default function SettingsPage() {
     saveSettings({ master_currency: masterCurrency, fiscal_year_start: newFy, app_font: font });
   };
 
-  const saveSettings = async (payload: { master_currency: string; fiscal_year_start: string; app_font?: string }) => {
+  const handlePickRandomPseudonym = () => {
+    const randomName = generateRandomPseudonym();
+    setCommunityPseudonym(randomName);
+  };
+
+  const handleSavePseudonym = async (nameToSave?: string) => {
+    const value = (nameToSave !== undefined ? nameToSave : communityPseudonym).trim();
+    setCommunityPseudonym(value);
+    setSavedPseudonym(value);
+    if (value) {
+      localStorage.setItem("greenline_community_pseudonym", value);
+    } else {
+      localStorage.removeItem("greenline_community_pseudonym");
+    }
+    await saveSettings({
+      master_currency: masterCurrency,
+      fiscal_year_start: fiscalYearStart,
+      app_font: font,
+      community_pseudonym: value || null,
+    });
+  };
+
+  const saveSettings = async (payload: { 
+    master_currency?: string; 
+    fiscal_year_start?: string; 
+    app_font?: string;
+    community_pseudonym?: string | null;
+  }) => {
     setSaving(true);
     setSavedMessage("");
 
     try {
-      await apiFetch("/settings", {
+      const bodyPayload: Record<string, any> = {
+        master_currency: payload.master_currency || masterCurrency,
+        fiscal_year_start: payload.fiscal_year_start || fiscalYearStart,
+        app_font: payload.app_font || font,
+      };
+
+      if (payload.community_pseudonym !== undefined) {
+        bodyPayload.community_pseudonym = payload.community_pseudonym;
+      } else if (savedPseudonym) {
+        bodyPayload.community_pseudonym = savedPseudonym;
+      }
+
+      const res = await apiFetch<any>("/settings", {
         method: "PUT",
-        body: JSON.stringify({
-          ...payload,
-          app_font: payload.app_font || font,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
+      if (res && res.community_pseudonym !== undefined) {
+        const p = res.community_pseudonym ? String(res.community_pseudonym).trim() : "";
+        setSavedPseudonym(p);
+      }
       setSavedMessage("Settings saved successfully!");
       setTimeout(() => setSavedMessage(""), 3500);
     } catch (e) {
@@ -577,6 +638,77 @@ export default function SettingsPage() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* Card: Community Profile & Pseudonym */}
+          <div className="getquin-card p-5 space-y-4">
+            <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 rounded-xl">
+                <Users className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+                  Community Profile & Pseudonym
+                </h2>
+                <p className="text-[11px] font-medium text-slate-400">
+                  Choose a custom community display name or generate a whimsical pseudonym for anonymous peer benchmarking and shared insights
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-1">
+              <div className="space-y-2">
+                <label
+                  htmlFor="community-pseudonym"
+                  className="text-xs font-bold text-[#0F172A] dark:text-white"
+                >
+                  Community Display Name
+                </label>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <input
+                    id="community-pseudonym"
+                    type="text"
+                    value={communityPseudonym}
+                    onChange={(e) => setCommunityPseudonym(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleSavePseudonym();
+                      }
+                    }}
+                    placeholder="e.g. Golden Falcon, Giant Elephant"
+                    className="flex-1 px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#151D2B] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePickRandomPseudonym}
+                      className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Pick Random Name</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSavePseudonym()}
+                      disabled={loading || saving}
+                      className="btn-pill-black text-xs px-4 py-2 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>Save</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Preview Display */}
+              <div className="flex items-center gap-2 pt-1 text-xs">
+                <span className="text-[11px] font-medium text-slate-400">Live Preview:</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>@{communityPseudonym.trim() || "anonymous"}</span>
+                </span>
+              </div>
             </div>
           </div>
 
@@ -910,6 +1042,13 @@ export default function SettingsPage() {
                 <span className="font-semibold text-slate-500">Interface Font</span>
                 <span className="font-bold text-indigo-700 dark:text-indigo-400">
                   {font === "inter" ? "Inter" : "General Sans"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                <span className="font-semibold text-slate-500">Community Alias</span>
+                <span className="font-bold text-amber-600 dark:text-amber-400">
+                  {savedPseudonym || "Not set"}
                 </span>
               </div>
 

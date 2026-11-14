@@ -70,4 +70,17 @@ describe('Sidebar Component', () => {
     expect(screen.queryByText(/AI Import/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /AI Import/i })).not.toBeInTheDocument();
   });
+
+  it('renders Home navigation link pointing to /', () => {
+    currentPath = '/';
+    render(
+      <ThemeProvider>
+        <Sidebar />
+      </ThemeProvider>
+    );
+
+    const homeLinks = screen.getAllByRole('link', { name: /Home/i });
+    expect(homeLinks.length).toBeGreaterThan(0);
+    expect(homeLinks[0]).toHaveAttribute('href', '/');
+  });
 });

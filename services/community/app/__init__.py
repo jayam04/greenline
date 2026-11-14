@@ -1,0 +1,3 @@
+"""
+Greenline Standalone Community Microservice.
+"""

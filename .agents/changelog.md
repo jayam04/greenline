@@ -32,6 +32,77 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-17 21:17:30 UTC] feat(navigation): adopt design-2 sleek theme toggle and compact footer with red logout and settings icon
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T21:17:30Z",
+  "type": "feat",
+  "scope": "navigation",
+  "summary": "adopt design-2 sleek theme toggle and compact footer with red logout and settings icon",
+  "affected_files": [
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/__tests__/Sidebar.test.tsx"
+  ],
+  "rationale": "Adopted the sleek rounded-full segmented theme toggle control inspired by demo/design-2. Replaced the user profile card logout icon with a Settings gear icon pointing to /settings and removed the redundant standalone Settings button. Repositioned the logout button alongside the theme toggle in the bottom row with red accent styling.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(navigation)`
+- **Summary**: Adopt design-2 sleek theme toggle and compact footer with red logout and settings icon
+- **Rationale**: Adopted the sleek rounded-full segmented theme toggle control inspired by demo/design-2. Replaced the user profile card logout icon with a Settings gear icon pointing to `/settings` and removed the redundant standalone Settings button. Repositioned the logout button alongside the theme toggle in the bottom row with red accent styling.
+- **Key Changes**:
+  - `frontend/src/components/Sidebar.tsx`: Removed the standalone full-width Settings button; added `<Settings className="w-4 h-4" />` link inside the user profile row; updated the theme switcher to a compact rounded-full pill design and placed a red-accented `<LogOut className="w-3.5 h-3.5" />` button beside it in the same row.
+  - `frontend/src/__tests__/Sidebar.test.tsx`: Added unit tests asserting the removal of the standalone Settings button, existence of the single Settings icon link in the user profile row, and presence of the red logout button next to the theme toggle.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: `10 passed (Sidebar.test.tsx); TypeScript check passed; ESLint passed with 0 errors`
+
+
+### [2026-11-17 21:03:00 UTC] feat(navigation): redesign navigation sidebar to flat grouped layout based on design-1 specification
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T21:03:00Z",
+  "type": "feat",
+  "scope": "navigation",
+  "summary": "redesign navigation sidebar to flat grouped layout based on design-1 specification",
+  "affected_files": [
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/__tests__/Sidebar.test.tsx"
+  ],
+  "rationale": "Ported the navigation sidebar design from demo/design-1 into the main frontend. Replaced collapsible chevron menus and the non-functional search box with an always-expanded, flat, grouped sidebar layout (Investing, Cashflow, Manage). Updated item labels to match page titles directly (Portfolio, Trades, Reconcile, Income & spend), streamlined user profile footer with initials avatar and logout icon button, and compacted vertical item spacing to fit on 768px height screens.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(navigation)`
+- **Summary**: Upgraded the main navigation sidebar to the flat, grouped layout from `demo/design-1`.
+- **Rationale**: The previous sidebar had collapsible sub-menus, an unused search box, and duplicated navigation patterns. Following the `demo/design-1` design specification, the sidebar is now grouped, flat, and always expanded with cleaner terminology (`Portfolio`, `Trades`, `Reconcile`, `Income & spend`, `Categories`, `Accounts`), integrated user initials avatar with logout action, and compact vertical geometry that fits 768px displays.
+- **Key Changes**:
+  - `frontend/src/components/Sidebar.tsx`:
+    - Replaced collapsible sub-item tree with flat grouped sections: `Investing` (Portfolio, Holdings, Trades, Valuations, Reconcile), `Cashflow` (Income & spend, Transactions, Categories), and `Manage` (Accounts).
+    - Removed non-functional search input box.
+    - Updated active path resolution with exact matching and `aria-current="page"`.
+    - Compacted vertical padding (`py-1.5`) and icon sizing (`w-4 h-4`) to fit viewport height.
+    - Redesigned user profile footer with initials badge, user name/email, and hover-styled logout button.
+    - Integrated clean 3-button theme mode switcher (Light, Dark, System) with accessibility labels.
+  - `frontend/src/__tests__/Sidebar.test.tsx`:
+    - Updated unit tests to assert the flat grouped navigation structure, active state indicators, absence of search box, user profile footer, and theme controls.
+- **Verification**:
+  - `cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx`: 8 passed (100%).
+  - `cd frontend && npx tsc --noEmit`: 0 errors.
+  - `cd frontend && npm run lint`: 0 errors.
+
 ### [2026-11-17 20:22:00 UTC] fix(frontend): resolve Next.js API proxy ECONNREFUSED 500 error by pointing BACKEND_URL to backend container
 
 <!-- changelog-entry-json

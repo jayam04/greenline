@@ -143,16 +143,16 @@ describe('Unified Home Page (src/app/page.tsx)', () => {
 
     // Verify Overview metrics cards
     await waitFor(() => {
-      expect(screen.getByText('Full Net Worth')).toBeInTheDocument();
-      expect(screen.getByText('Accounts & Balances')).toBeInTheDocument();
-      expect(screen.getByText('Net Worth Across Entities')).toBeInTheDocument();
-      expect(screen.getByText(/Annual Snapshot|2026 Snapshot/i)).toBeInTheDocument();
+      expect(screen.getByText('Home')).toBeInTheDocument();
+      expect(screen.getByText('Net worth')).toBeInTheDocument();
+      expect(screen.getByText('Where it sits')).toBeInTheDocument();
+      expect(screen.getByText(/2026 so far|so far/i)).toBeInTheDocument();
     });
 
     // Verify Community Feed integration
-    expect(screen.getByText('Community Insights & Feed')).toBeInTheDocument();
+    expect(screen.getByText('Community')).toBeInTheDocument();
     expect(screen.getByText('Just rebalanced my index fund portfolio for Q4!')).toBeInTheDocument();
-    expect(screen.getByText(/@Giant Elephant/i)).toBeInTheDocument();
+    expect(screen.getByText('Giant Elephant')).toBeInTheDocument();
   });
 
   it('submits a new post from the home page composer and displays it', async () => {
@@ -176,10 +176,10 @@ describe('Unified Home Page (src/app/page.tsx)', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Community Insights & Feed')).toBeInTheDocument();
+      expect(screen.getByText('Community')).toBeInTheDocument();
     });
 
-    const textarea = screen.getByPlaceholderText(/What's on your mind|Share an insight/i);
+    const textarea = screen.getByPlaceholderText(/Share an idea or ask a question|What's on your mind/i);
     fireEvent.change(textarea, { target: { value: 'Bought more VUAA today!' } });
 
     const shareBtn = screen.getByRole('button', { name: /Post|Publish|Share/i });
@@ -221,7 +221,7 @@ describe('Unified Home Page (src/app/page.tsx)', () => {
       expect(screen.getByText('Just rebalanced my index fund portfolio for Q4!')).toBeInTheDocument();
     });
 
-    const commentsToggle = screen.getByRole('button', { name: /1 comments|comments/i });
+    const commentsToggle = screen.getByRole('button', { name: /1 comment|1 comments|comments/i });
     fireEvent.click(commentsToggle);
 
     await waitFor(() => {

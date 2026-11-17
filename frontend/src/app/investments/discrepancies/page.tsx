@@ -70,7 +70,7 @@ export default function DiscrepanciesPage() {
   const [setDefaultDemat, setSetDefaultDemat] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    document.title = "Discrepancies · greenline";
+    document.title = "Reconcile · greenline";
     loadData();
   }, []);
 
@@ -297,7 +297,7 @@ export default function DiscrepanciesPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-[#0F172A] dark:text-white tracking-tight">
-              Investments Discrepancies
+              Reconcile
             </h1>
             {data && data.total_count > 0 && (
               <span className="px-2 py-0.5 text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 rounded-full">

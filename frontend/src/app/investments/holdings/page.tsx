@@ -420,8 +420,6 @@ export default function HoldingsPage() {
                   </div>
                 </th>
 
-                <th className="py-2.5 px-3">Type</th>
-
                 {/* Quantity Column */}
                 <th
                   onClick={() => handleSort("quantity_held")}
@@ -537,11 +535,6 @@ export default function HoldingsPage() {
                               <div className="text-[11px] font-semibold text-slate-400">{h.symbol}</div>
                             </div>
                           </div>
-                        </td>
-                        <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-slate-100 text-slate-700 rounded-md">
-                            {h.asset_type}
-                          </span>
                         </td>
                         <td className="py-3 px-3 text-right font-bold">{formatQty(h.quantity_held)}</td>
 
@@ -736,7 +729,6 @@ export default function HoldingsPage() {
               <thead>
                 <tr className="text-[11px] font-bold text-slate-400 border-b border-slate-100">
                   <th className="py-2.5 px-3">Asset</th>
-                  <th className="py-2.5 px-3">Type</th>
                   <th className="py-2.5 px-3 text-right">Cost Basis</th>
                   <th className="py-2.5 px-3 text-right">Last Price</th>
                   <th className="py-2.5 px-3 text-right">Realized P&L</th>
@@ -766,11 +758,6 @@ export default function HoldingsPage() {
                             <div className="text-[11px] font-semibold text-slate-400">{c.symbol}</div>
                           </div>
                         </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-slate-100 text-slate-600 rounded-md">
-                          {c.asset_type}
-                        </span>
                       </td>
                       <td className="py-3 px-3 text-right font-semibold text-slate-700">
                         {formatCleanMoney(c.total_cost, c.currency)}

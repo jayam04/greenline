@@ -32,6 +32,70 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-17 22:23:00 UTC] feat(design): implement design-1 system with spline sans, indigo theme, and auto dark mode defaults
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T22:23:00Z",
+  "type": "feat",
+  "scope": "design",
+  "summary": "implement design-1 system with spline sans, indigo theme, and auto dark mode defaults",
+  "affected_files": [
+    "frontend/src/app/globals.css",
+    "frontend/src/app/layout.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/app/accounts/page.tsx",
+    "frontend/src/app/investments/holdings/page.tsx",
+    "frontend/src/app/investments/discrepancies/page.tsx",
+    "frontend/src/components/ClientLayout.tsx",
+    "frontend/src/components/PageHeader.tsx",
+    "frontend/src/components/MetricCard.tsx",
+    "frontend/src/components/ThemePicker.tsx",
+    "frontend/src/components/CommunityPanel.tsx",
+    "frontend/src/components/AllocationChart.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/ThemeProvider.tsx",
+    "frontend/src/components/FontProvider.tsx",
+    "frontend/src/components/ui/badge.tsx",
+    "frontend/src/components/ui/tabs.tsx",
+    "frontend/src/lib/utils.ts",
+    "frontend/src/__tests__/DiscrepanciesPage.test.tsx",
+    "frontend/src/__tests__/FontProvider.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx",
+    "frontend/src/__tests__/SettingsBackups.test.tsx"
+  ],
+  "rationale": "Updated the entire website to match the design system from demo/design-1 and specifications in demo/design-changes.md. Set Midnight Indigo theme, Spline Sans font, and Auto (system) dark mode as defaults. Removed breadcrumbs and duplicate tabs across layout, restructured settings into a sectioned sidebar navigation including database backups, decluttered home page with compact allocation donut, annual snapshot, SVG net worth chart, and an expandable community panel with inline comments.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/OliveTheme.test.tsx src/__tests__/FontProvider.test.tsx src/__tests__/SettingsPseudonym.test.tsx src/__tests__/SettingsFont.test.tsx src/__tests__/SettingsBackups.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/DiscrepanciesPage.test.tsx src/__tests__/HoldingsTable.test.tsx src/__tests__/Sidebar.test.tsx src/__tests__/PageTitles.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(design)`
+- **Summary**: Implement design-1 design system with Spline Sans font, Midnight Indigo theme, and Auto dark mode defaults.
+- **Rationale**: Elevate UI aesthetics, declutter views across the app, standardize typography scale and custom themes with background textures, and integrate an interactive Home layout and sectioned Settings hub matching `demo/design-1` and `demo/design-changes.md`.
+- **Key Changes**:
+  - `frontend/src/app/globals.css`: Integrated all 5 themes (Lime, Indigo, Paper, Graphite, Amber) with light/dark tokens, subtle background textures (dot grid, blueprint, film grain), typography scale (`micro`, `label`, `body`, `title`, `heading`, `display`), and backwards compatibility mappings.
+  - `frontend/src/app/layout.tsx`: Configured default `data-theme="indigo"`, `data-font="spline"`, and inline pre-paint script resolving system dark mode preference, palette, texture, and font.
+  - `frontend/src/components/ClientLayout.tsx`: Removed redundant top breadcrumbs.
+  - `frontend/src/components/PageHeader.tsx`: Introduced clean page header with title, subtitle, and action slot, along with unified empty states.
+  - `frontend/src/components/MetricCard.tsx`: Created reusable metric cards supporting compact, hero, and display variants with delta badges.
+  - `frontend/src/components/ThemePicker.tsx`: Created theme picker cards with live swatches, texture toggles, and dark mode synchronization.
+  - `frontend/src/components/CommunityPanel.tsx`: Created home community panel featuring pseudonym posting, expand/collapse full-screen view, sorting, deletion, and expandable comment threads.
+  - `frontend/src/components/AllocationChart.tsx`: Added `compact` layout mode with donut on the left and 2-line legend on the right.
+  - `frontend/src/components/NetWorthChart.tsx`: Added SVG smooth curve chart with fill gradient, range tabs, and jsdom ResizeObserver safety guards.
+  - `frontend/src/app/page.tsx`: Rebuilt Home page into decluttered layout featuring Net worth hero + SVG chart, compact "Where it sits" allocation, "2026 so far" snapshot, and live Community panel.
+  - `frontend/src/app/settings/page.tsx`: Implemented sectioned settings layout (Profile, Finance, Appearance, Community, Data & API) with database auto-backup configuration, manual backup snapshotting, and API keys.
+  - `frontend/src/app/accounts/page.tsx`: Cleaned account badges to subtle plain text, made actions hover-only, and removed redundant header backup controls.
+  - `frontend/src/app/investments/holdings/page.tsx`: Removed redundant Type column and badge styling.
+  - `frontend/src/app/investments/discrepancies/page.tsx`: Renamed page title to "Reconcile · greenline" and simplified payout text.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/OliveTheme.test.tsx src/__tests__/FontProvider.test.tsx src/__tests__/SettingsPseudonym.test.tsx src/__tests__/SettingsFont.test.tsx src/__tests__/SettingsBackups.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/DiscrepanciesPage.test.tsx src/__tests__/HoldingsTable.test.tsx src/__tests__/Sidebar.test.tsx src/__tests__/PageTitles.test.tsx`
+  - Output: All 10 test suites passed (48/48 tests passing), TypeScript type check exited with 0 errors, and ESLint reported 0 errors.
+
 ### [2026-11-17 21:17:30 UTC] feat(navigation): adopt design-2 sleek theme toggle and compact footer with red logout and settings icon
 
 <!-- changelog-entry-json

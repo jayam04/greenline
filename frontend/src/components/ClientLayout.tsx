@@ -3,7 +3,6 @@
 import React from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
-import { Breadcrumb } from "@/components/Breadcrumb";
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,8 +17,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen">
       {!isLogin && <Sidebar />}
       <div className={`flex-1 flex flex-col w-full ${!isLogin ? "lg:pl-64" : ""}`}>
-        {!isLogin && <Breadcrumb />}
-        <main className="flex-1 w-full px-4 md:px-8 pb-8 pt-2">
+        <main className="flex-1 w-full px-4 md:px-8 pb-8 pt-4">
           {children}
         </main>
       </div>

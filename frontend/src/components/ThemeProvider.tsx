@@ -18,7 +18,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
+        const saved = (localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem("gl-theme")) as Theme | null;
         if (saved && (saved === "light" || saved === "dark" || saved === "system")) {
           return saved;
         }
@@ -69,6 +69,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setThemeState(newTheme);
     try {
       localStorage.setItem("greenline_theme", newTheme);
+      localStorage.setItem("gl-theme", newTheme);
     } catch (e) {
       console.error(e);
     }

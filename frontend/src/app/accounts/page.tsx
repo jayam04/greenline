@@ -235,31 +235,15 @@ export default function AccountsPage() {
 
         {/* Data Backup & Export / Import Actions */}
         <div className="flex items-center gap-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept=".json"
-            className="hidden"
-          />
-
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="btn-pill-gray text-xs cursor-pointer"
-            title="Import JSON portfolio backup"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            <span>{importing ? "Importing..." : "Import Backup"}</span>
-          </button>
-
-          <button
-            onClick={handleExportData}
+            onClick={() => {
+              setEditingAccount(null);
+              setIsAccountModalOpen(true);
+            }}
             className="btn-pill-black text-xs cursor-pointer"
-            title="Export complete portfolio backup as JSON"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Backup</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Account</span>
           </button>
         </div>
       </div>
@@ -308,11 +292,8 @@ export default function AccountsPage() {
                       <h3 className="text-xs font-bold text-[#0F172A] dark:text-white truncate">
                         {acc.account_name}
                       </h3>
-                      <span className="px-1.5 py-0.2 text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded shrink-0">
-                        {acc.currency || "USD"}
-                      </span>
-                      <span className="px-1.5 py-0.2 text-[9px] font-bold uppercase bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-400 rounded shrink-0">
-                        {acc.account_type.replace(/_/g, " ")}
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 capitalize">
+                        {acc.account_type.replace(/_/g, " ")} · {acc.currency || "EUR"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap mt-0.5">
@@ -330,7 +311,7 @@ export default function AccountsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-0.5 shrink-0 opacity-80 group-hover:opacity-100">
+                <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                   <button
                     onClick={() => {
                       setEditingAccount(acc);
@@ -419,7 +400,6 @@ export default function AccountsPage() {
               <tr className="border-b border-[#F1F5F9] dark:border-[#1E293B] text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                 <th className="py-2.5 px-3">Symbol / ISIN</th>
                 <th className="py-2.5 px-3">Asset Name</th>
-                <th className="py-2.5 px-3">Type</th>
                 <th className="py-2.5 px-3">Exchange</th>
                 <th className="py-2.5 px-3">Sector / Industry</th>
                 <th className="py-2.5 px-3 text-right">Currency</th>
@@ -438,11 +418,6 @@ export default function AccountsPage() {
                   <td className="py-2.5 px-3 font-semibold text-slate-700 dark:text-slate-300">
                     {ast.name}
                   </td>
-                  <td className="py-2.5 px-3 font-semibold">
-                    <span className="px-2 py-0.5 text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">
-                      {ast.asset_type}
-                    </span>
-                  </td>
                   <td className="py-2.5 px-3 font-semibold text-slate-500 dark:text-slate-400">
                     {ast.exchange || "US"}
                   </td>
@@ -460,7 +435,7 @@ export default function AccountsPage() {
                     {ast.currency || "USD"}
                   </td>
                   <td className="py-2.5 px-3 text-right">
-                    <div className="flex items-center justify-end gap-1 opacity-80 group-hover:opacity-100">
+                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                       <button
                         onClick={() => {
                           setEditingAsset(ast);

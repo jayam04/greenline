@@ -73,7 +73,10 @@ describe('SettingsPage Backups Management (Layer 3A)', () => {
 
     render(<SettingsPage />);
 
-    expect(screen.getByText(/System Settings/i)).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
+
+    const dataTab = screen.getByRole('button', { name: /Data & API/i });
+    fireEvent.click(dataTab);
 
     await waitFor(() => {
       expect(screen.getByText('investments.db')).toBeInTheDocument();
@@ -103,6 +106,9 @@ describe('SettingsPage Backups Management (Layer 3A)', () => {
 
     render(<SettingsPage />);
 
+    const dataTab = screen.getByRole('button', { name: /Data & API/i });
+    fireEvent.click(dataTab);
+
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Backup Now/i })).toBeInTheDocument();
     });
@@ -128,13 +134,15 @@ describe('SettingsPage Backups Management (Layer 3A)', () => {
 
     render(<SettingsPage />);
 
+    const dataTab = screen.getByRole('button', { name: /Data & API/i });
+    fireEvent.click(dataTab);
+
     await waitFor(() => {
       expect(screen.getByText('Daily (24 Hours)')).toBeInTheDocument();
     });
 
     // Find the select for backup interval
-    const intervalSelects = screen.getAllByRole('combobox');
-    const intervalSelect = intervalSelects[0];
+    const intervalSelect = screen.getByDisplayValue('Daily (24 Hours)');
     fireEvent.change(intervalSelect, { target: { value: '12' } });
 
     await waitFor(() => {

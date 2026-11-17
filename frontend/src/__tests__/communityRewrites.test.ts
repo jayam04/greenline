@@ -25,6 +25,18 @@ describe('Next.js Community Gateway Rewrites', () => {
       expect(communityIdx).toBeGreaterThanOrEqual(0);
       expect(catchAllIdx).toBeGreaterThanOrEqual(0);
       expect(communityIdx).toBeLessThan(catchAllIdx);
+
+      const catchAllRule = rules.find(
+        (rule: any) => rule.source === '/api/v1/:path*'
+      );
+      expect(catchAllRule).toBeDefined();
+      expect(catchAllRule?.destination).toContain('/api/v1/:path*');
+
+      const portfolioRule = rules.find(
+        (rule: any) => rule.source === '/api/v1/portfolio/:path*'
+      );
+      expect(portfolioRule).toBeDefined();
+      expect(portfolioRule?.destination).toContain('/api/v1/portfolio/:path*');
     }
   });
 });

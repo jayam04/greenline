@@ -32,6 +32,39 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-17 20:22:00 UTC] fix(frontend): resolve Next.js API proxy ECONNREFUSED 500 error by pointing BACKEND_URL to backend container
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T20:22:00Z",
+  "type": "fix",
+  "scope": "frontend",
+  "summary": "resolve Next.js API proxy ECONNREFUSED 500 error by pointing BACKEND_URL to backend container",
+  "affected_files": [
+    "docker-compose.yml",
+    "frontend/src/__tests__/communityRewrites.test.ts"
+  ],
+  "rationale": "Inside the Docker environment, Next.js rewrites were attempting to proxy /api/v1/accounts and /api/v1/settings to http://localhost:8000 rather than the Docker service hostname http://backend:8000. This resulted in connect ECONNREFUSED 127.0.0.1:8000 inside the frontend container, causing Next.js to return HTTP 500 Internal Server Error in apiFetch. Updated docker-compose.yml to set BACKEND_URL=${BACKEND_URL:-http://backend:8000} and added rewrite rule tests.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/communityRewrites.test.ts && npx tsc --noEmit && npm run lint && curl -i http://localhost:3000/api/v1/settings",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(frontend)`
+- **Summary**: Fixed HTTP 500 Internal Server Error caused by `ECONNREFUSED 127.0.0.1:8000` by pointing `BACKEND_URL` to `http://backend:8000` in `docker-compose.yml`.
+- **Rationale**: Next.js rewrites forward all non-microservice `/api/v1/:path*` requests to `BACKEND_URL`. Inside the frontend Docker container, `localhost:8000` is loopback within the frontend container where no listener exists. Setting `BACKEND_URL` to `http://backend:8000` routes traffic over Docker's bridge network directly to the backend service.
+- **Key Changes**:
+  - `docker-compose.yml`: Set `BACKEND_URL=${BACKEND_URL:-http://backend:8000}`, `NETWORTH_URL=${NETWORTH_URL:-http://networth:8001}`, and `COMMUNITY_URL=${COMMUNITY_URL:-http://community:8002/api/v1/community}`.
+  - `frontend/src/__tests__/communityRewrites.test.ts`: Added assertions verifying the catch-all `/api/v1/:path*` and `/api/v1/portfolio/:path*` destination rewrites.
+- **Verification**:
+  - Tested `curl -i http://localhost:3000/api/v1/settings` and `curl -i http://localhost:3000/api/v1/accounts`: Received clean 401 response from Uvicorn without 500 error or socket drop.
+  - `npx vitest run src/__tests__/communityRewrites.test.ts`: Passed.
+  - `npx tsc --noEmit`: 0 errors.
+  - `npm run lint`: 0 errors.
+
 ### [2026-11-14 17:58:00 UTC] feat(community): identify users by UUID and dynamically synchronize pseudonyms across older posts
 
 <!-- changelog-entry-json

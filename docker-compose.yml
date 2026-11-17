@@ -116,10 +116,10 @@ services:
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=
-      - INTERNAL_API_URL=http://backend:8000
-      - NETWORTH_URL=http://networth:8001
-      - COMMUNITY_URL=http://community:8002/api/v1/community
-      - BACKEND_URL=http://backend:8000
+      - INTERNAL_API_URL=http://localhost:3000
+      - NETWORTH_URL=${NETWORTH_URL:-http://networth:8001}
+      - COMMUNITY_URL=${COMMUNITY_URL:-http://community:8002/api/v1/community}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
       - NEXT_PUBLIC_AUTH0_DOMAIN=${NEXT_PUBLIC_AUTH0_DOMAIN:-jayam04.eu.auth0.com}
       - NEXT_PUBLIC_AUTH0_CLIENT_ID=${NEXT_PUBLIC_AUTH0_CLIENT_ID:-wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby}
       - NEXT_PUBLIC_AUTH0_AUDIENCE=${NEXT_PUBLIC_AUTH0_AUDIENCE:-http://localhost:8000}

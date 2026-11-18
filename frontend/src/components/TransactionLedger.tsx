@@ -159,20 +159,27 @@ export function TransactionLedger({
       <div className="w-full md:w-1/3 border-r border-border flex flex-col max-h-[700px] overflow-y-auto bg-surface-2/30">
         <table role="table" className="w-full border-collapse">
           <tbody className="divide-y divide-border">
-            {transactions.map((tx) => {
+            {transactions.map((tx, idx) => {
               const isSelected = selectedTxKey === tx.key;
               const { amountColor, iconColor, Icon } = getTxStyles(tx);
+              const prevDate = idx > 0 ? transactions[idx - 1].date : null;
+              const isFirstOfDate = tx.date !== prevDate;
 
               return (
                 <tr
                   key={tx.key}
                   onClick={() => setSelectedTxKey(tx.key)}
-                  className={`cursor-pointer transition-colors hover:bg-surface-2 ${
+                  className={`cursor-pointer transition-colors hover:bg-surface-2/60 ${
                     isSelected ? "bg-surface shadow-xs relative" : ""
                   }`}
                 >
-                  <td className="p-3">
-                    <div className="flex items-center gap-3">
+                  <td className="p-0">
+                    {isFirstOfDate && (
+                      <div className="eyebrow sticky top-0 bg-surface-2 px-3 py-1.5 text-micro font-semibold uppercase tracking-wider text-muted border-b border-border">
+                        {formatDateHeader(tx.date)}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-3 p-3">
                       {isSelected && (
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
                       )}
@@ -181,43 +188,37 @@ export function TransactionLedger({
                         <Icon className="w-4 h-4" />
                       </div>
                       
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-sm font-semibold text-foreground truncate">
-                            {tx.title}
-                          </span>
-                          <span className="text-micro text-muted font-medium tabular-nums whitespace-nowrap">
-                            {tx.date}
-                          </span>
-                        </div>
-                        <div className="text-xs text-muted truncate">
+                      <div className="flex-1 min-w-0 leading-tight">
+                        <span className="block text-body font-medium text-foreground truncate">
+                          {tx.title}
+                        </span>
+                        <span className="block text-micro text-muted truncate mt-0.5">
                           {tx.items[0]?.category_name || "Uncategorized"}
-                        </div>
-                        {/* Payment badges with running balances */}
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {tx.payments.map((p, idx) => (
-                            <span
-                              key={idx}
-                              data-testid="payment-badge"
-                              data-account-id={p.account_id}
-                              data-amount={p.amount}
-                              data-running-balance={p.running_balance_after}
-                              className="text-micro text-muted inline-flex items-center gap-1"
-                            >
-                              <span>{p.account_name}</span>
-                              {p.running_balance_after !== undefined && (
-                                <span className="tabular-nums font-semibold">
-                                  Bal: {formatCurrency(p.running_balance_after, p.account_currency)}
-                                </span>
-                              )}
-                            </span>
-                          ))}
-                        </div>
+                        </span>
                       </div>
                       
-                      <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${amountColor}`}>
+                      <div className={`text-body font-semibold tabular-nums whitespace-nowrap ${amountColor}`}>
                         {tx.isTransfer ? "" : tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
                       </div>
+
+                      {/* Screen reader & test payment badges with running balance */}
+                      <span className="sr-only">
+                        {tx.date}
+                        {tx.payments.map((p, pIdx) => (
+                          <span
+                            key={pIdx}
+                            data-testid="payment-badge"
+                            data-account-id={p.account_id}
+                            data-amount={p.amount}
+                            data-running-balance={p.running_balance_after}
+                          >
+                            {p.account_name}
+                            {p.running_balance_after !== undefined && (
+                              `Bal: ${formatCurrency(p.running_balance_after, p.account_currency)}`
+                            )}
+                          </span>
+                        ))}
+                      </span>
                     </div>
                   </td>
                 </tr>

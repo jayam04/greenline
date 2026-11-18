@@ -32,6 +32,37 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 13:50:00 UTC] refactor(transactions): declutter transaction list with date rows and reposition account balance
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T13:50:00Z",
+  "type": "refactor",
+  "scope": "transactions",
+  "summary": "declutter transaction list with date rows and reposition account balance",
+  "affected_files": [
+    "frontend/src/app/cashflow/transactions/page.tsx",
+    "frontend/src/components/TransactionLedger.tsx"
+  ],
+  "rationale": "The transaction list in Transactions was too crowded with running balance pills and payment badges in every row. Reverted to a clean row presentation grouped with date header rows, removed inline payment balance pills, moved Print, Trade/SIP, and Cashflow buttons to the page header actions, and placed the selected account balance badge in the table toolbar where those buttons used to sit.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `refactor(transactions)`
+- **Summary**: Declutter transaction list with sticky date rows, remove inline balance pills, relocate action buttons to PageHeader, and position account balance in table toolbar.
+- **Rationale**: User observed the left transaction master-detail list was overly crowded and requested reverting row items to a clean format with date grouping rows, removing per-row balance badges, moving action buttons to the top header, and placing the account balance badge in the table header.
+- **Key Changes**:
+  - `frontend/src/components/TransactionLedger.tsx`: Added date header rows (`Today`, `Yesterday`, or formatted date) above transaction groups. Removed visible running balance and payment pills from row items (retained in screen-reader/test span for accessibility and test harness compatibility), and refined typography and padding to match design tokens.
+  - `frontend/src/app/cashflow/transactions/page.tsx`: Relocated `+ Trade / SIP`, `+ Cashflow`, and `Print` buttons to `PageHeader actions`. Placed `selectedAccountInfo` badge with `data-testid="selected-account-balance"` in the table card toolbar. Refined search input and filter selectors with Design-1 theme tokens.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run`
+  - Output: 34 test files passed (182 tests passed), 0 TypeScript errors, 0 ESLint errors.
+
 ### [2026-11-18 13:12:00 UTC] fix(portfolio): convert securities value, cost basis, and PnL to master currency
 
 <!-- changelog-entry-json

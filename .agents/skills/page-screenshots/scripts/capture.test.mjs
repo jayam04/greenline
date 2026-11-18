@@ -1,0 +1,79 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import {
+  discoverRoutes,
+  parseThemes,
+  slugifyRoute,
+  archiveExistingScreenshot
+} from './capture.mjs';
+
+test('parseThemes parses single and comma-separated themes', () => {
+  assert.deepEqual(parseThemes('light'), ['light']);
+  assert.deepEqual(parseThemes('dark'), ['dark']);
+  assert.deepEqual(parseThemes('auto'), ['auto']);
+  assert.deepEqual(parseThemes('system'), ['auto']);
+  assert.deepEqual(parseThemes('light,dark'), ['light', 'dark']);
+  assert.deepEqual(parseThemes('all'), ['light', 'dark', 'auto']);
+  assert.deepEqual(parseThemes(''), ['light']);
+  assert.deepEqual(parseThemes(null), ['light']);
+});
+
+test('slugifyRoute creates clean filenames from URLs', () => {
+  assert.equal(slugifyRoute('/'), 'overview');
+  assert.equal(slugifyRoute('/accounts'), 'accounts');
+  assert.equal(slugifyRoute('/investments/holdings'), 'investments-holdings');
+  assert.equal(slugifyRoute('/cashflow/transactions/print'), 'cashflow-transactions-print');
+});
+
+test('discoverRoutes finds all Next.js pages in directory tree', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'next-routes-'));
+  try {
+    fs.mkdirSync(path.join(tmpDir, 'accounts'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'investments', 'holdings'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '(auth)', 'login'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, 'api', 'health'), { recursive: true });
+    fs.mkdirSync(path.join(tmpDir, '_components'), { recursive: true });
+
+    fs.writeFileSync(path.join(tmpDir, 'page.tsx'), 'export default function Page() {}');
+    fs.writeFileSync(path.join(tmpDir, 'layout.tsx'), 'export default function Layout() {}');
+    fs.writeFileSync(path.join(tmpDir, 'accounts', 'page.tsx'), 'export default function Page() {}');
+    fs.writeFileSync(path.join(tmpDir, 'investments', 'holdings', 'page.tsx'), 'export default function Page() {}');
+    fs.writeFileSync(path.join(tmpDir, '(auth)', 'login', 'page.tsx'), 'export default function Page() {}');
+    fs.writeFileSync(path.join(tmpDir, 'api', 'health', 'route.ts'), 'export async function GET() {}');
+    fs.writeFileSync(path.join(tmpDir, '_components', 'sidebar.tsx'), 'export function Sidebar() {}');
+
+    const routes = discoverRoutes(tmpDir);
+    assert.ok(routes.includes('/'));
+    assert.ok(routes.includes('/accounts'));
+    assert.ok(routes.includes('/investments/holdings'));
+    assert.ok(routes.includes('/login')); // route group (auth) stripped
+    assert.ok(!routes.includes('/api/health')); // API routes excluded
+    assert.ok(!routes.some(r => r.includes('_components'))); // private folders excluded
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('archiveExistingScreenshot moves existing photo to timestamped archive', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'archive-test-'));
+  try {
+    const currentDir = path.join(tmpDir, 'current');
+    const archiveDir = path.join(tmpDir, 'archive');
+    fs.mkdirSync(currentDir, { recursive: true });
+    fs.mkdirSync(archiveDir, { recursive: true });
+
+    const photoPath = path.join(currentDir, 'overview-light.png');
+    fs.writeFileSync(photoPath, 'FAKE_IMAGE_DATA_V1');
+
+    const archivedPath = archiveExistingScreenshot(photoPath, archiveDir, '2026-11-18T12-00-00Z');
+    assert.ok(archivedPath, 'Archived path should be returned');
+    assert.ok(fs.existsSync(archivedPath), 'Archived file must exist in archive dir');
+    assert.equal(fs.readFileSync(archivedPath, 'utf8'), 'FAKE_IMAGE_DATA_V1');
+    assert.ok(!fs.existsSync(photoPath), 'Original photo should be moved out of current');
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

@@ -32,6 +32,39 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 15:53:39 UTC] feat(agents): add page-screenshots skill with Next.js router discovery and photo archival
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T15:53:39Z",
+  "type": "feat",
+  "scope": "agents",
+  "summary": "add page-screenshots skill with Next.js router discovery and photo archival",
+  "affected_files": [
+    ".agents/skills/page-screenshots/SKILL.md",
+    ".agents/skills/page-screenshots/scripts/capture.mjs",
+    ".agents/skills/page-screenshots/scripts/capture.test.mjs"
+  ],
+  "rationale": "Provide a self-contained Playwright skill to discover Next.js routes, capture high-DPI screenshots across light, dark, and auto themes, and automatically preserve historical screenshots.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "node --test .agents/skills/page-screenshots/scripts/capture.test.mjs",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(agents)`
+- **Summary**: Added `page-screenshots` skill in `.agents/skills/page-screenshots` with automated Next.js route discovery, Playwright headless screenshot runner, multi-theme switching (`light`, `dark`, `auto`), and automatic historical photo archival.
+- **Rationale**: Allow developers and agents to run a clean, deterministic script to take screenshots of individual or all Next.js pages without overwriting old photos.
+- **Key Changes**:
+  - `.agents/skills/page-screenshots/SKILL.md`: Documented CLI flags, options, common recipes, and runtime conventions.
+  - `.agents/skills/page-screenshots/scripts/capture.mjs`: Implemented Next.js directory crawler, Playwright browser launcher with Google Chrome fallback, theme injection, and screenshot archival logic.
+  - `.agents/skills/page-screenshots/scripts/capture.test.mjs`: Added unit tests for route discovery, theme parsing, route slugification, and photo preservation.
+- **Verification**:
+  - Command: `node --test .agents/skills/page-screenshots/scripts/capture.test.mjs`
+  - Output: 4 passing tests (0 failures).
+
 ### [2026-11-18 13:50:00 UTC] refactor(transactions): declutter transaction list with date rows and reposition account balance
 
 <!-- changelog-entry-json

@@ -32,6 +32,39 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 16:34:12 UTC] feat(agents): add cookie and storage state authentication to page-screenshots skill
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T16:34:12Z",
+  "type": "feat",
+  "scope": "agents",
+  "summary": "add cookie and storage state authentication to page-screenshots skill",
+  "affected_files": [
+    ".agents/skills/page-screenshots/SKILL.md",
+    ".agents/skills/page-screenshots/scripts/capture.mjs",
+    ".agents/skills/page-screenshots/scripts/capture.test.mjs"
+  ],
+  "rationale": "Enable users and agents to pass authentication cookies (via string header, JSON, or cookie file) and Playwright storage states to capture protected routes reliably without relying on form logins.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "node --test .agents/skills/page-screenshots/scripts/capture.test.mjs",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(agents)`
+- **Summary**: Added cookie injection and Playwright storage state support to `capture.mjs` via `--cookie`, `--cookies`, `--storage-state`, and `SCREENSHOT_COOKIE` env var.
+- **Rationale**: Form logins fail when external identity providers (Auth0/OAuth) or session cookies are required. Passing cookies directly allows seamless access to protected dashboards.
+- **Key Changes**:
+  - `.agents/skills/page-screenshots/scripts/capture.mjs`: Added `parseCookies` supporting standard HTTP `Cookie` header strings (`name=val; name2=val2`), JSON arrays, and cookie files. Added `--cookie` and `--storage-state` CLI flags.
+  - `.agents/skills/page-screenshots/scripts/capture.test.mjs`: Added unit tests covering header string, raw JSON, and file path cookie parsing.
+  - `.agents/skills/page-screenshots/SKILL.md`: Documented `--cookie` and `--storage-state` flags and recipes.
+- **Verification**:
+  - Command: `node --test .agents/skills/page-screenshots/scripts/capture.test.mjs`
+  - Output: 6 passing tests (0 failures).
+
 ### [2026-11-18 15:53:39 UTC] feat(agents): add page-screenshots skill with Next.js router discovery and photo archival
 
 <!-- changelog-entry-json

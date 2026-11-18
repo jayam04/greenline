@@ -58,6 +58,8 @@ node .agents/skills/page-screenshots/scripts/capture.mjs [options]
 | `--page` | `<route>` | `/` | Target a specific route (e.g. `/`, `/accounts`, `/investments/holdings`). |
 | `--all` | None | `false` | Discover and capture all Next.js pages found in the app directory. |
 | `--theme` | `<modes>` | `light` | Target theme: `light`, `dark`, `auto`, `all`, or comma-separated `light,dark`. |
+| `--cookie` | `<string\|file>` | None | Inject cookies: HTTP string (`"sid=123; auth=abc"`), JSON array, or cookie file path. (Also reads `SCREENSHOT_COOKIE` or `COOKIE` env). |
+| `--storage-state` | `<path>` | None | Path to Playwright storage state JSON file (`storageState.json`) containing cookies and localStorage. |
 | `--list` | None | `false` | Scan and display all discovered Next.js routes without capturing screenshots. |
 | `--auth` | None | `false` | Log in at `/login` before capturing protected application pages. |
 | `--base-url` | `<url>` | `http://localhost:3000` | Target web server URL (reads `BASE_URL` env var if set). |
@@ -79,14 +81,28 @@ node .agents/skills/page-screenshots/scripts/capture.mjs --list
 node .agents/skills/page-screenshots/scripts/capture.mjs --page /login --theme light,dark
 ```
 
-### Capture an authenticated dashboard
+### Capture using an authenticated session Cookie
+```bash
+# Via CLI argument
+node .agents/skills/page-screenshots/scripts/capture.mjs --page /accounts --theme dark --cookie "session_id=your_cookie_here"
+
+# Or via environment variable
+SCREENSHOT_COOKIE="session_id=your_cookie_here" node .agents/skills/page-screenshots/scripts/capture.mjs --page /accounts --theme light
+```
+
+### Capture using Playwright Storage State file
+```bash
+node .agents/skills/page-screenshots/scripts/capture.mjs --page /investments --theme dark --storage-state ./playwright/.auth/user.json
+```
+
+### Capture an authenticated dashboard with automated form login
 ```bash
 node .agents/skills/page-screenshots/scripts/capture.mjs --page /accounts --theme dark --auth
 ```
 
 ### Capture all discovered pages across all themes
 ```bash
-node .agents/skills/page-screenshots/scripts/capture.mjs --all --theme all --auth
+node .agents/skills/page-screenshots/scripts/capture.mjs --all --theme all --cookie "session=..."
 ```
 
 ---

@@ -45,6 +45,138 @@ export function slugifyRoute(route) {
 }
 
 /**
+ * Parses cookies from HTTP header string, raw JSON string, or JSON file path.
+ * Returns an array of Playwright cookie objects: { name, value, domain, path }.
+ */
+export function parseCookies(cookieInput, baseUrl = 'http://localhost:3000') {
+  if (!cookieInput || typeof cookieInput !== 'string') return [];
+
+  let defaultDomain = 'localhost';
+  try {
+    defaultDomain = new URL(baseUrl).hostname;
+  } catch (e) {}
+
+  const trimmed = cookieInput.trim();
+  if (!trimmed) return [];
+
+  // 1. Check if it's a file path
+  if (fs.existsSync(trimmed)) {
+    try {
+      const fileContent = fs.readFileSync(trimmed, 'utf8').trim();
+      const parsed = JSON.parse(fileContent);
+      const rawCookies = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.cookies) ? parsed.cookies : []);
+      return rawCookies.map((c) => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain || defaultDomain,
+        path: c.path || '/'
+      }));
+    } catch (e) {
+      // Fall back to treating file content as cookie string
+      try {
+        const fileContent = fs.readFileSync(trimmed, 'utf8').trim();
+        return parseCookies(fileContent, baseUrl);
+      } catch (e2) {}
+    }
+  }
+
+  // 2. Check if it's a raw JSON string
+  if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const rawCookies = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.cookies) ? parsed.cookies : []);
+      return rawCookies.map((c) => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain || defaultDomain,
+        path: c.path || '/'
+      }));
+    } catch (e) {}
+  }
+
+  // 3. Parse standard HTTP Cookie string: "name1=val1; name2=val2"
+  const cookies = [];
+  const pairs = trimmed.split(';');
+  for (const pair of pairs) {
+    const eqIdx = pair.indexOf('=');
+    if (eqIdx === -1) continue;
+    const name = pair.slice(0, eqIdx).trim();
+    const value = pair.slice(eqIdx + 1).trim();
+    if (name) {
+      cookies.push({
+        name,
+        value,
+        domain: defaultDomain,
+        path: '/'
+      });
+    }
+  }
+  return cookies;
+}
+
+/**
+ * Parses custom HTTP headers from string, raw JSON string, or JSON file path.
+ * Supports "Header: Value", "Header Value", or multiple lines / semicolons.
+ */
+export function parseHeaders(headerInput) {
+  if (!headerInput || typeof headerInput !== 'string') return {};
+
+  const trimmed = headerInput.trim();
+  if (!trimmed) return {};
+
+  // 1. Check if it's a file path
+  if (fs.existsSync(trimmed)) {
+    try {
+      const fileContent = fs.readFileSync(trimmed, 'utf8').trim();
+      const parsed = JSON.parse(fileContent);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return parsed;
+      }
+    } catch (e) {
+      try {
+        const fileContent = fs.readFileSync(trimmed, 'utf8').trim();
+        return parseHeaders(fileContent);
+      } catch (e2) {}
+    }
+  }
+
+  // 2. Check if it's a raw JSON string
+  if (trimmed.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'object' && parsed !== null) {
+        return parsed;
+      }
+    } catch (e) {}
+  }
+
+  // 3. Parse header string (e.g. "Authorization: Bearer ...", "Authorization Bearer ...")
+  const headers = {};
+  const lines = trimmed.split(/[\r\n]+|;\s*(?=[A-Za-z0-9_-]+[:\s])/);
+
+  for (const line of lines) {
+    const l = line.trim();
+    if (!l) continue;
+
+    const colonIdx = l.indexOf(':');
+    if (colonIdx !== -1) {
+      const key = l.slice(0, colonIdx).trim();
+      const val = l.slice(colonIdx + 1).trim();
+      if (key) headers[key] = val;
+    } else {
+      const spaceIdx = l.indexOf(' ');
+      if (spaceIdx !== -1) {
+        const key = l.slice(0, spaceIdx).trim();
+        const val = l.slice(spaceIdx + 1).trim();
+        if (key) headers[key] = val;
+      }
+    }
+  }
+
+  return headers;
+}
+
+/**
  * Discovers Next.js routes from an App Router or Pages Router directory tree.
  */
 export function discoverRoutes(baseAppDir) {
@@ -202,6 +334,9 @@ export async function run(argv = process.argv.slice(2)) {
     theme: 'light',
     list: false,
     auth: false,
+    cookie: process.env.SCREENSHOT_COOKIE || process.env.COOKIE || null,
+    header: process.env.SCREENSHOT_HEADER || process.env.HEADER || null,
+    storageState: process.env.STORAGE_STATE || null,
     baseUrl: process.env.BASE_URL || 'http://localhost:3000',
     appDir: null,
     outputDir: path.resolve(__dirname, '../screenshots'),
@@ -215,6 +350,9 @@ export async function run(argv = process.argv.slice(2)) {
     else if (arg === '--theme') args.theme = argv[++i];
     else if (arg === '--list') args.list = true;
     else if (arg === '--auth') args.auth = true;
+    else if (arg === '--cookie' || arg === '--cookies') args.cookie = argv[++i];
+    else if (arg === '--header' || arg === '--headers') args.header = argv[++i];
+    else if (arg === '--storage-state') args.storageState = argv[++i];
     else if (arg === '--base-url') args.baseUrl = argv[++i];
     else if (arg === '--app-dir') args.appDir = argv[++i];
     else if (arg === '--output-dir') args.outputDir = argv[++i];
@@ -224,16 +362,19 @@ export async function run(argv = process.argv.slice(2)) {
 Usage: node capture.mjs [options]
 
 Options:
-  --page <route>       Capture a specific page (e.g. "/" or "/accounts")
-  --all                Capture all pages discovered in the Next.js app directory
-  --theme <mode>       Theme: "light", "dark", "auto", or comma-separated list "light,dark" (default: "light")
-  --list               List all discovered Next.js pages and exit
-  --auth               Perform automated login before capturing protected dashboards
-  --base-url <url>     Base URL (default: "http://localhost:3000")
-  --app-dir <path>     Path to Next.js app directory (default: auto-detected)
-  --output-dir <path>  Screenshots output directory (default: .agents/skills/page-screenshots/screenshots)
-  --viewport <WxH>     Viewport dimensions (default: "1440x900")
-  --help, -h           Show this help message
+  --page <route>          Capture a specific page (e.g. "/" or "/accounts")
+  --all                   Capture all pages discovered in the Next.js app directory
+  --theme <mode>          Theme: "light", "dark", "auto", or comma-separated list "light,dark" (default: "light")
+  --cookie <string|file>  Pass cookie header ("a=1; b=2"), JSON array, or cookie file path
+  --header <string|file>  Pass HTTP headers ("Authorization: Bearer ...") or JSON
+  --storage-state <path>  Playwright storage state JSON file path (cookies + localStorage)
+  --list                  List all discovered Next.js pages and exit
+  --auth                  Perform automated login before capturing protected dashboards
+  --base-url <url>        Base URL (default: "http://localhost:3000")
+  --app-dir <path>        Path to Next.js app directory (default: auto-detected)
+  --output-dir <path>     Screenshots output directory (default: .agents/skills/page-screenshots/screenshots)
+  --viewport <WxH>        Viewport dimensions (default: "1440x900")
+  --help, -h              Show this help message
 `);
       return;
     }
@@ -270,11 +411,31 @@ Options:
   if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
 
   const runTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const parsedCookies = parseCookies(args.cookie, args.baseUrl);
+  const parsedHeaders = parseHeaders(args.header);
+  const authHeader = parsedHeaders['Authorization'] || parsedHeaders['authorization'];
+  let bearerToken = null;
+  if (authHeader) {
+    bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  }
+
   console.log(`[page-screenshots] Target routes: ${targetRoutes.join(', ')}`);
   console.log(`[page-screenshots] Themes: ${themes.join(', ')}`);
   console.log(`[page-screenshots] Viewport: ${vpWidth}x${vpHeight} @ 2x DPR`);
   console.log(`[page-screenshots] Base URL: ${args.baseUrl}`);
   console.log(`[page-screenshots] Output directory: ${currentDir}`);
+  if (parsedCookies.length > 0) {
+    console.log(`[page-screenshots] Custom cookies loaded: ${parsedCookies.length} cookie(s)`);
+  }
+  if (Object.keys(parsedHeaders).length > 0) {
+    console.log(`[page-screenshots] Custom headers loaded: ${Object.keys(parsedHeaders).join(', ')}`);
+  }
+  if (bearerToken) {
+    console.log(`[page-screenshots] Bearer authentication token active`);
+  }
+  if (args.storageState) {
+    console.log(`[page-screenshots] Storage state: ${args.storageState}`);
+  }
 
   const browser = await launchBrowser();
   let archivedCount = 0;
@@ -284,20 +445,34 @@ Options:
   try {
     for (const theme of themes) {
       const colorScheme = theme === 'dark' ? 'dark' : theme === 'light' ? 'light' : 'no-preference';
-      const context = await browser.newContext({
+      const contextOptions = {
         viewport: { width: vpWidth || 1440, height: vpHeight || 900 },
         deviceScaleFactor: 2,
-        colorScheme
-      });
+        colorScheme,
+        ...(Object.keys(parsedHeaders).length > 0 ? { extraHTTPHeaders: parsedHeaders } : {})
+      };
+      if (args.storageState && fs.existsSync(args.storageState)) {
+        contextOptions.storageState = args.storageState;
+      }
 
-      // Inject theme into localStorage
-      await context.addInitScript((th) => {
+      const context = await browser.newContext(contextOptions);
+
+      if (parsedCookies.length > 0) {
+        await context.addCookies(parsedCookies);
+      }
+
+      // Inject theme and auth token into localStorage
+      await context.addInitScript(({ th, token }) => {
         try {
           const storageVal = th === 'dark' ? 'dark' : th === 'light' ? 'light' : 'system';
           window.localStorage.setItem('greenline_theme', storageVal);
           window.localStorage.setItem('gl-theme', storageVal);
+          if (token) {
+            window.localStorage.setItem('token', token);
+            window.localStorage.setItem('access_token', token);
+          }
         } catch (e) {}
-      }, theme);
+      }, { th: theme, token: bearerToken });
 
       const page = await context.newPage();
 
@@ -339,8 +514,8 @@ Options:
         console.log(`[page-screenshots] Capturing ${targetUrl} (${theme})...`);
         try {
           await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          // Ensure theme classes on root element
-          await page.evaluate((th) => {
+          // Ensure theme classes and token on page
+          await page.evaluate(({ th, token }) => {
             const root = document.documentElement;
             if (th === 'dark') {
               root.classList.add('dark');
@@ -349,10 +524,18 @@ Options:
               root.classList.remove('dark');
               root.classList.add('light');
             }
-          }, theme);
+            if (token) {
+              window.localStorage.setItem('token', token);
+              window.localStorage.setItem('access_token', token);
+            }
+          }, { th: theme, token: bearerToken });
 
           // Allow charts and animations to settle
           await page.waitForTimeout(1000);
+
+          const currentUrl = page.url();
+          const pageTitle = await page.title();
+          console.log(`[page-screenshots] Rendered: "${pageTitle}" (${currentUrl})`);
 
           await page.screenshot({ path: currentPath, fullPage: false });
           capturedCount++;

@@ -7,7 +7,9 @@ import {
   discoverRoutes,
   parseThemes,
   slugifyRoute,
-  archiveExistingScreenshot
+  archiveExistingScreenshot,
+  parseCookies,
+  parseHeaders
 } from './capture.mjs';
 
 test('parseThemes parses single and comma-separated themes', () => {
@@ -77,3 +79,73 @@ test('archiveExistingScreenshot moves existing photo to timestamped archive', ()
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('parseCookies handles header string format', () => {
+  const cookieHeader = 'session_id=abc123xyz; auth_token=token456==; user_pref=compact';
+  const cookies = parseCookies(cookieHeader, 'http://localhost:3000');
+  assert.equal(cookies.length, 3);
+  assert.deepEqual(cookies[0], {
+    name: 'session_id',
+    value: 'abc123xyz',
+    domain: 'localhost',
+    path: '/'
+  });
+  assert.deepEqual(cookies[1], {
+    name: 'auth_token',
+    value: 'token456==',
+    domain: 'localhost',
+    path: '/'
+  });
+  assert.deepEqual(cookies[2], {
+    name: 'user_pref',
+    value: 'compact',
+    domain: 'localhost',
+    path: '/'
+  });
+});
+
+test('parseCookies handles JSON string and file path', () => {
+  const jsonString = JSON.stringify([
+    { name: 'app_session', value: 's_987', domain: 'example.com', path: '/app' }
+  ]);
+  const parsedFromString = parseCookies(jsonString, 'http://localhost:3000');
+  assert.equal(parsedFromString.length, 1);
+  assert.equal(parsedFromString[0].name, 'app_session');
+  assert.equal(parsedFromString[0].value, 's_987');
+
+  const tmpFile = path.join(os.tmpdir(), `cookie-test-${Date.now()}.json`);
+  try {
+    fs.writeFileSync(
+      tmpFile,
+      JSON.stringify({
+        cookies: [{ name: 'storage_cookie', value: 'sc_123', domain: 'localhost', path: '/' }]
+      })
+    );
+    const parsedFromFile = parseCookies(tmpFile, 'http://localhost:3000');
+    assert.equal(parsedFromFile.length, 1);
+    assert.equal(parsedFromFile[0].name, 'storage_cookie');
+  } finally {
+    if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+  }
+});
+
+test('parseHeaders parses standard headers, authorization bearer, and json', () => {
+  const h1 = parseHeaders('Authorization: Bearer token123');
+  assert.deepEqual(h1, { Authorization: 'Bearer token123' });
+
+  // Handle header without colon e.g. "Authorization Bearer token123"
+  const h2 = parseHeaders('Authorization Bearer token123');
+  assert.deepEqual(h2, { Authorization: 'Bearer token123' });
+
+  // Handle JSON
+  const h3 = parseHeaders(JSON.stringify({ 'X-Custom-Header': 'val1', Authorization: 'Bearer 456' }));
+  assert.equal(h3['X-Custom-Header'], 'val1');
+  assert.equal(h3['Authorization'], 'Bearer 456');
+
+  // Handle multiple newline or semicolon separated headers
+  const h4 = parseHeaders('X-Key-1: val1\nX-Key-2: val2');
+  assert.equal(h4['X-Key-1'], 'val1');
+  assert.equal(h4['X-Key-2'], 'val2');
+});
+
+

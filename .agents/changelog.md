@@ -32,6 +32,44 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 00:06:00 UTC] fix(home): resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T00:06:00Z",
+  "type": "fix",
+  "scope": "home",
+  "summary": "resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles",
+  "affected_files": [
+    "frontend/src/app/page.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/CommunityPanel.tsx",
+    "frontend/src/__tests__/NetWorthChart.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx"
+  ],
+  "rationale": "Add skeleton loading state to eliminate static placeholder numbers during initial load; compute dynamic y-axis chart bounds to prevent exaggerated ranges; synchronize hero net worth with latest snapshot and accounts cash balances; remove Add transaction action from Home; enable comment thread toggle in community posts.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(home)`
+- **Summary**: Resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles on Home page.
+- **Rationale**: User reported five issues: placeholder numbers flash before data loads; NetWorthChart bounds were overly wide (-35k to 35k for 3k-5k portfolios); net worth and asset allocation did not match snapshots/accounts; 'Add transaction' button was redundant on Home; post comments were not opening.
+- **Key Changes**:
+  - `frontend/src/app/page.tsx`: Added skeleton loader during `loading`; removed static fallback values (`FALLBACK_NETWORTH_SERIES`, `155,359.24`); fetched `/accounts` to derive real cash balances for net worth and "Where it sits" allocation; removed "Add transaction" button and modal trigger.
+  - `frontend/src/components/NetWorthChart.tsx`: Dynamically scaled y-axis bounds (floor at 0 for non-negative series, rounded upper bound steps e.g. 6k for 3k-5k); formatted zero ticks as `${sym}0`.
+  - `frontend/src/components/CommunityPanel.tsx`: Created individual `PostItem` component with stateful comment thread toggling (`showComments`) rendering `<CommentThread />`.
+  - `frontend/src/__tests__/NetWorthChart.test.tsx`: Added unit test validating dynamic bounds calculation and preventing exaggerated boundaries.
+  - `frontend/src/__tests__/HomePageUnified.test.tsx`: Verified absence of "Add transaction" and static placeholders, and validated comment thread expansion.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: Vitest 4/4 passing tests; TypeScript 0 errors; ESLint 0 errors.
+
+
 ### [2026-11-17 22:23:00 UTC] feat(design): implement design-1 system with spline sans, indigo theme, and auto dark mode defaults
 
 <!-- changelog-entry-json

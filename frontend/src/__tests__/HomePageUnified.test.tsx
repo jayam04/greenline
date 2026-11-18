@@ -149,10 +149,18 @@ describe('Unified Home Page (src/app/page.tsx)', () => {
       expect(screen.getByText(/2026 so far|so far/i)).toBeInTheDocument();
     });
 
+    // Verify Add transaction button has been removed from Home page
+    expect(screen.queryByText(/Add transaction/i)).not.toBeInTheDocument();
+
+    // Verify static fallback numbers are not shown
+    expect(screen.queryByText(/155,359/)).not.toBeInTheDocument();
+
     // Verify Community Feed integration
     expect(screen.getByText('Community')).toBeInTheDocument();
-    expect(screen.getByText('Just rebalanced my index fund portfolio for Q4!')).toBeInTheDocument();
-    expect(screen.getByText('Giant Elephant')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Just rebalanced my index fund portfolio for Q4!')).toBeInTheDocument();
+      expect(screen.getByText('Giant Elephant')).toBeInTheDocument();
+    });
   });
 
   it('submits a new post from the home page composer and displays it', async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Maximize2, Minimize2, MessageCircle, Trash2, Send, Loader2 } from "lucide-react";
+import { Maximize2, Minimize2, MessageCircle, Trash2, Send, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Segmented } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,68 @@ function formatAgo(dateStr: string) {
   }
 }
 
+function PostItem({
+  post,
+  alias,
+  onDelete,
+}: {
+  post: PostResponse;
+  alias: string;
+  onDelete: (id: number) => void;
+}) {
+  const [showComments, setShowComments] = React.useState(false);
+  const [commentsCount, setCommentsCount] = React.useState(post.comments_count ?? 0);
+  const authorName = post.author_pseudonym || "Anonymous";
+  const initials = authorName.split(" ").map((w) => w[0]).join("").slice(0, 2);
+  const isMine = post.author_pseudonym === alias;
+  const postId = Number(post.post_id ?? post.id ?? 0);
+
+  return (
+    <li className="group px-5 py-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="grid size-7 place-items-center rounded-full bg-surface-2 text-micro font-semibold uppercase">
+            {initials}
+          </span>
+          <span className="text-label font-medium">{authorName}</span>
+          <span className="text-micro text-muted">{formatAgo(post.created_at)}</span>
+        </div>
+        {isMine && (
+          <button
+            type="button"
+            aria-label="Delete post"
+            onClick={() => onDelete(postId)}
+            className="rounded-control p-1 text-subtle opacity-0 transition-opacity hover:text-loss group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        )}
+      </div>
+      <p className="mt-2 text-body whitespace-pre-wrap">{post.content}</p>
+      <button
+        type="button"
+        onClick={() => setShowComments((prev) => !prev)}
+        className="mt-2 inline-flex items-center gap-1.5 text-label text-muted hover:text-foreground transition-colors cursor-pointer"
+      >
+        <MessageCircle className="size-4" />
+        <span>
+          {commentsCount} {commentsCount === 1 ? "comment" : "comments"}
+        </span>
+        {showComments ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+      </button>
+      {showComments && (
+        <div className="mt-3">
+          <CommentThread
+            postId={postId}
+            currentPseudonym={alias}
+            onCommentCountChange={(newCount) => setCommentsCount(newCount)}
+          />
+        </div>
+      )}
+    </li>
+  );
+}
+
 interface CommunityPanelProps {
   expanded: boolean;
   onToggle: () => void;
@@ -49,7 +111,6 @@ export function CommunityPanel({
   const [sort, setSort] = React.useState<"latest" | "oldest">("latest");
   const [loading, setLoading] = React.useState(true);
   const [submitting, setSubmitting] = React.useState(false);
-  const [expandedPostIds, setExpandedPostIds] = React.useState<number[]>([]);
 
   React.useEffect(() => {
     if (propAlias) {
@@ -176,66 +237,14 @@ export function CommunityPanel({
             No community posts yet. Be the first to share!
           </li>
         ) : (
-          posts.map((p) => {
-            const authorName = p.author_pseudonym || "Anonymous";
-            const initials = authorName.split(" ").map((w) => w[0]).join("").slice(0, 2);
-            const isMine = p.author_pseudonym === alias;
-            const postId = p.post_id || p.id;
-
-            return (
-              <li key={postId} className="group px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="grid size-7 place-items-center rounded-full bg-surface-2 text-micro font-semibold uppercase">
-                      {initials}
-                    </span>
-                    <span className="text-label font-medium">{authorName}</span>
-                    <span className="text-micro text-muted">{formatAgo(p.created_at)}</span>
-                  </div>
-                  {isMine && (
-                    <button
-                      type="button"
-                      aria-label="Delete post"
-                      onClick={() => handleDelete(postId)}
-                      className="rounded-control p-1 text-subtle opacity-0 transition-opacity hover:text-loss group-hover:opacity-100 focus-visible:opacity-100"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
-                  )}
-                </div>
-                <p className="mt-2 text-body whitespace-pre-wrap">{p.content}</p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandedPostIds((prev) =>
-                      prev.includes(postId) ? prev.filter((id) => id !== postId) : [...prev, postId]
-                    )
-                  }
-                  className="mt-2 inline-flex items-center gap-1.5 text-label text-muted hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <MessageCircle className="size-4" /> {p.comments_count || 0}{" "}
-                  {p.comments_count === 1 ? "comment" : "comments"}
-                </button>
-                {expandedPostIds.includes(postId) && (
-                  <div className="mt-3">
-                    <CommentThread
-                      postId={postId}
-                      currentPseudonym={alias}
-                      onCommentCountChange={(newCount) => {
-                        setPosts((prev) =>
-                          prev.map((item) =>
-                            (item.post_id || item.id) === postId
-                              ? { ...item, comments_count: newCount }
-                              : item
-                          )
-                        );
-                      }}
-                    />
-                  </div>
-                )}
-              </li>
-            );
-          })
+          posts.map((p) => (
+            <PostItem
+              key={p.post_id ?? p.id}
+              post={p}
+              alias={alias}
+              onDelete={handleDelete}
+            />
+          ))
         )}
       </ul>
     </section>

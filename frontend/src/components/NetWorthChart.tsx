@@ -109,8 +109,32 @@ export function NetWorthChart({
 
   const rawMin = Math.min(...slice);
   const rawMax = Math.max(...slice);
-  const min = Math.floor(rawMin / 25) * 25 - 10;
-  const max = Math.ceil(rawMax / 25) * 25 + 10;
+
+  // Dynamic bounds calculation
+  let min: number;
+  let max: number;
+
+  if (rawMin >= 0) {
+    min = 0;
+    if (rawMax <= 1) {
+      max = 1;
+    } else if (rawMax <= 6) {
+      max = 6;
+    } else if (rawMax <= 12) {
+      max = 12;
+    } else if (rawMax <= 25) {
+      max = Math.max(Math.ceil((rawMax * 1.15) / 5) * 5, 5);
+    } else if (rawMax <= 60) {
+      max = Math.max(Math.ceil((rawMax * 1.15) / 10) * 10, 10);
+    } else {
+      max = Math.max(Math.ceil((rawMax * 1.12) / 25) * 25, 25);
+    }
+  } else {
+    const span = rawMax - rawMin;
+    const step = span <= 10 ? 2 : span <= 50 ? 5 : span <= 200 ? 25 : 50;
+    min = Math.floor(rawMin / step) * step;
+    max = Math.ceil(rawMax / step) * step;
+  }
   const deltaSpan = Math.max(max - min, 1);
 
   const x = (i: number) => padL + (i / Math.max(slice.length - 1, 1)) * (W - padL - padR);
@@ -118,6 +142,8 @@ export function NetWorthChart({
   const line = slice.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const area = `${line} L${x(slice.length - 1)},${H - padB} L${x(0)},${H - padB} Z`;
   const ticks = [0, 1, 2, 3].map((i) => Math.round(min + (deltaSpan * i) / 3));
+
+  const sym = currency === "USD" ? "$" : currency === "INR" ? "₹" : currency === "GBP" ? "£" : "€";
 
   const labelAt = (i: number) => sliceDates[i] || "";
 
@@ -170,7 +196,7 @@ export function NetWorthChart({
             <g key={t}>
               <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeDasharray="3 4" />
               <text x={padL - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--muted)" className="tnum">
-                €{t}k
+                {t === 0 ? `${sym}0` : `${sym}${t}k`}
               </text>
             </g>
           ))}

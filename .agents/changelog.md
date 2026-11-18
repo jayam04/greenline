@@ -32,6 +32,38 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 01:13:00 UTC] feat(accounts): redesign accounts page with balance cards, summary metrics, and clean typography
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T01:13:00Z",
+  "type": "feat",
+  "scope": "accounts",
+  "summary": "redesign accounts page with balance cards, summary metrics, and clean typography",
+  "affected_files": [
+    "frontend/src/app/accounts/page.tsx",
+    "frontend/src/__tests__/AccountsPageRedesign.test.tsx"
+  ],
+  "rationale": "Redesigned /accounts to align with the new design-1 design system (Spline Sans, Midnight Indigo tokens, clean typography, PageHeader). Since account balances were removed from the Home page, accounts now displays a prominent master-currency KPI summary strip (Net Balance, Bank Cash, Securities Valuation) and detailed account cards displaying native balances, converted equivalents, and demat securities/cash breakdowns without heavy decorative heading icons.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/AccountsPageRedesign.test.tsx src/__tests__/AccountModals.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(accounts)`
+- **Summary**: Redesign `/accounts` with balance cards, summary KPI strip, clean typography, and filter tabs matching the new home page design system.
+- **Rationale**: User requested `/accounts` redesign to align with the new Home page aesthetic, surface balances removed from home page, strip unnecessary icon boxes from section headings, and apply design thinking for financial overview.
+- **Key Changes**:
+  - `frontend/src/app/accounts/page.tsx`: Replaced legacy layout with standard `PageHeader`, top 3-metric KPI summary row (Total Net Balance, Total Bank Cash, Securities Valuation in master currency), clean "Connected Accounts" card grid with native and converted currency balances, Demat securities/cash breakdowns, filter buttons (`All`, `Banks`, `Brokerage`), clean search-enabled Securities Master table, and refreshed modal dialogues without decorative icon boxes.
+  - `frontend/src/__tests__/AccountsPageRedesign.test.tsx`: Created comprehensive unit test suite validating PageHeader, absence of heading icon boxes, balance displays, type filtering, and real-time security search.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/AccountsPageRedesign.test.tsx src/__tests__/AccountModals.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: All 6 unit tests in both suites passed cleanly; TypeScript zero errors; ESLint zero errors.
+
+
 ### [2026-11-18 00:58:00 UTC] fix(chart): implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart
 
 <!-- changelog-entry-json

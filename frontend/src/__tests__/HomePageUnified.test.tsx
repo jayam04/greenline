@@ -155,6 +155,16 @@ describe('Unified Home Page (src/app/page.tsx)', () => {
     // Verify static fallback numbers are not shown
     expect(screen.queryByText(/155,359/)).not.toBeInTheDocument();
 
+    // Verify timeframe selector updates baseline label
+    expect(screen.getByText('YTD baseline')).toBeInTheDocument();
+    const oneMonthTab = screen.getByRole('tab', { name: '1M' });
+    fireEvent.click(oneMonthTab);
+    expect(screen.getByText('1M baseline')).toBeInTheDocument();
+
+    const maxTab = screen.getByRole('tab', { name: 'Max' });
+    fireEvent.click(maxTab);
+    expect(screen.getByText('All time baseline')).toBeInTheDocument();
+
     // Verify Community Feed integration
     expect(screen.getByText('Community')).toBeInTheDocument();
     await waitFor(() => {

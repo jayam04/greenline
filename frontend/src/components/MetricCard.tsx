@@ -46,6 +46,7 @@ export function HeroCard({
   delta,
   deltaAmount,
   currency = "EUR",
+  deltaLabel = "YTD baseline",
   children,
 }: {
   label: string;
@@ -53,19 +54,21 @@ export function HeroCard({
   delta?: number;
   deltaAmount?: number;
   currency?: string;
+  deltaLabel?: string;
   children?: React.ReactNode;
 }) {
   const parts = Math.abs(value).toFixed(2).split(".");
   const whole = parts[0];
   const cents = parts[1];
   const isNeg = value < 0;
+  const sym = currency === "USD" ? "$" : currency === "INR" ? "₹" : currency === "GBP" ? "£" : "€";
 
   return (
     <div>
       <div className="eyebrow">{label}</div>
       <div className="mt-1 flex items-baseline gap-1 tnum">
         <span className="text-display font-semibold tracking-tight">
-          {isNeg ? "−" : ""}€{Number(whole).toLocaleString("en-IE")}
+          {isNeg ? "−" : ""}{sym}{Number(whole).toLocaleString("en-IE")}
         </span>
         <span className="text-title text-subtle">.{cents}</span>
       </div>
@@ -77,7 +80,7 @@ export function HeroCard({
               {deltaAmount >= 0 ? "+" : "−"}{money(Math.abs(deltaAmount), currency)}
             </span>
           )}
-          <span className="text-label text-muted">YTD baseline</span>
+          <span className="text-label text-muted">{deltaLabel || "YTD baseline"}</span>
         </div>
       )}
       {children}

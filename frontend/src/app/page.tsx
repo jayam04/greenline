@@ -61,6 +61,7 @@ interface AnnualSnapshot {
 export default function Home() {
   const [loading, setLoading] = React.useState(true);
   const [expanded, setExpanded] = React.useState(false);
+  const [chartRange, setChartRange] = React.useState("YTD");
   const [summary, setSummary] = React.useState<PortfolioSummary | null>(null);
   const [snapshots, setSnapshots] = React.useState<SnapshotData[]>([]);
   const [annualSnapshot, setAnnualSnapshot] = React.useState<AnnualSnapshot | null>(null);
@@ -155,14 +156,6 @@ export default function Home() {
     ? computedNetWorth
     : convertCurrency(summary?.total_net_worth ?? summary?.net_worth ?? 0, "EUR", masterCurrency);
 
-  const firstSnapshot = snapshots.length > 0 ? snapshots[0] : null;
-  const deltaAmt = annualSnapshot?.net_worth_delta !== undefined
-    ? convertCurrency(annualSnapshot.net_worth_delta, annualSnapshot.currency || "EUR", masterCurrency)
-    : latestSnapshot && firstSnapshot
-    ? convertCurrency(latestSnapshot.net_worth - firstSnapshot.net_worth, "EUR", masterCurrency)
-    : 0;
-  const deltaPct = annualSnapshot?.net_worth_delta_pct ?? (firstSnapshot && firstSnapshot.net_worth > 0 ? (deltaAmt / convertCurrency(firstSnapshot.net_worth, "EUR", masterCurrency)) * 100 : 0);
-
   const snapshotsInMaster = React.useMemo(() => {
     return snapshots.map((s) => ({
       ...s,
@@ -170,6 +163,62 @@ export default function Home() {
       total_invested: s.total_invested !== undefined ? convertCurrency(s.total_invested, "EUR", masterCurrency) : undefined,
     }));
   }, [snapshots, masterCurrency]);
+
+  const filteredTimeline = React.useMemo(() => {
+    if (!snapshotsInMaster || snapshotsInMaster.length === 0) return [];
+    const sorted = [...snapshotsInMaster].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    const latestStr = sorted[sorted.length - 1].snapshot_date;
+    const parts = latestStr.split("-");
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1] || "1", 10) - 1;
+    const d = parseInt(parts[2] || "1", 10);
+
+    let cutoffStr = "";
+    if (chartRange === "1M") {
+      const dt = new Date(y, m - 1, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    } else if (chartRange === "3M") {
+      const dt = new Date(y, m - 3, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    } else if (chartRange === "6M") {
+      const dt = new Date(y, m - 6, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    } else if (chartRange === "YTD") {
+      cutoffStr = `${y}-01-01`;
+    } else if (chartRange === "1Y") {
+      const dt = new Date(y - 1, m, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    }
+
+    if (!cutoffStr) return sorted;
+    const filtered = sorted.filter((s) => s.snapshot_date >= cutoffStr);
+    return filtered.length > 0 ? filtered : sorted.slice(-2);
+  }, [snapshotsInMaster, chartRange]);
+
+  const rangeStartSnapshot = filteredTimeline.length > 0 ? filteredTimeline[0] : null;
+  const rangeEndSnapshot = filteredTimeline.length > 0 ? filteredTimeline[filteredTimeline.length - 1] : null;
+
+  const deltaAmt = React.useMemo(() => {
+    if (chartRange === "YTD" && annualSnapshot?.net_worth_delta !== undefined) {
+      return convertCurrency(annualSnapshot.net_worth_delta, annualSnapshot.currency || "EUR", masterCurrency);
+    }
+    if (rangeStartSnapshot && rangeEndSnapshot) {
+      return rangeEndSnapshot.net_worth - rangeStartSnapshot.net_worth;
+    }
+    return 0;
+  }, [chartRange, annualSnapshot, rangeStartSnapshot, rangeEndSnapshot, masterCurrency]);
+
+  const deltaPct = React.useMemo(() => {
+    if (chartRange === "YTD" && annualSnapshot?.net_worth_delta_pct !== undefined) {
+      return annualSnapshot.net_worth_delta_pct;
+    }
+    if (rangeStartSnapshot && rangeStartSnapshot.net_worth > 0 && deltaAmt !== undefined) {
+      return (deltaAmt / rangeStartSnapshot.net_worth) * 100;
+    }
+    return 0;
+  }, [chartRange, annualSnapshot, rangeStartSnapshot, deltaAmt]);
+
+  const deltaLabel = chartRange === "YTD" ? "YTD baseline" : chartRange === "Max" ? "All time baseline" : `${chartRange} baseline`;
 
   // Allocation slices ("Where it sits")
   const allocationSlices: Slice[] = React.useMemo(() => {
@@ -370,12 +419,15 @@ export default function Home() {
                   currency={masterCurrency}
                   compact
                   fill
+                  range={chartRange}
+                  onRangeChange={setChartRange}
                   header={
                     <HeroCard
                       label="Net worth"
                       value={netWorthValue}
                       delta={deltaPct}
                       deltaAmount={deltaAmt}
+                      deltaLabel={deltaLabel}
                       currency={masterCurrency}
                     />
                   }

@@ -15,6 +15,8 @@ export interface SnapshotData {
   snapshot_date: string;
   net_worth: number;
   total_invested?: number;
+  total_current_value?: number;
+  cash_balance?: number;
 }
 
 interface NetWorthChartProps {
@@ -28,6 +30,24 @@ interface NetWorthChartProps {
   mode?: "value" | "performance";
   currency?: string;
   benchmarks?: BenchmarkSeries[];
+  range?: string;
+  onRangeChange?: (range: string) => void;
+}
+
+function parseDateParts(str: string) {
+  const parts = str.split("-");
+  return {
+    year: parseInt(parts[0], 10),
+    month: parseInt(parts[1] || "1", 10) - 1,
+    day: parseInt(parts[2] || "1", 10),
+  };
+}
+
+function formatDateISO(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export function NetWorthChart({
@@ -39,10 +59,17 @@ export function NetWorthChart({
   header,
   className,
   currency = "EUR",
+  range: propRange,
+  onRangeChange: propOnRangeChange,
 }: NetWorthChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: height });
-  const [range, setRange] = useState("YTD");
+  const [internalRange, setInternalRange] = useState("YTD");
+  const activeRange = propRange !== undefined ? propRange : internalRange;
+  const setRange = (newRange: string) => {
+    if (propOnRangeChange) propOnRangeChange(newRange);
+    else setInternalRange(newRange);
+  };
   const [hover, setHover] = useState<number | null>(null);
 
   useEffect(() => {
@@ -63,42 +90,86 @@ export function NetWorthChart({
     );
   }
 
-  // Normalize data into number[] and date[]
-  let numericValues: number[] = [];
-  let dateLabels: string[] = [];
-  let startDate = propStart || "2026-01-01";
+  // Normalize data into uniform points
+  interface NormalizedPoint {
+    val: number;
+    rawDate: string;
+    label: string;
+  }
+
+  let normalized: NormalizedPoint[] = [];
+  const defaultStart = propStart || "2026-01-01";
 
   if (typeof data[0] === "number") {
-    numericValues = data as number[];
-    dateLabels = numericValues.map((_, i) => {
-      const d = new Date(startDate);
+    const { year: sY, month: sM, day: sD } = parseDateParts(defaultStart);
+    const baseD = new Date(sY, sM, sD);
+    normalized = (data as number[]).map((v, i) => {
+      const d = new Date(baseD);
       d.setDate(d.getDate() + i * 7);
-      return d.toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" });
+      return {
+        val: v,
+        rawDate: formatDateISO(d),
+        label: d.toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" }),
+      };
     });
   } else {
-    const snapshots = data as SnapshotData[];
-    startDate = snapshots[0].snapshot_date;
-    numericValues = snapshots.map((s) => s.net_worth / 1000);
-    dateLabels = snapshots.map((s) => {
+    const snapshots = [...(data as SnapshotData[])].sort((a, b) =>
+      a.snapshot_date.localeCompare(b.snapshot_date)
+    );
+    normalized = snapshots.map((s) => {
+      let label = s.snapshot_date;
       try {
-        const d = new Date(s.snapshot_date);
-        return d.toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" });
+        const { year, month, day } = parseDateParts(s.snapshot_date);
+        const d = new Date(year, month, day);
+        label = d.toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" });
       } catch {
-        return s.snapshot_date;
+        // fallback
       }
+      return {
+        val: s.net_worth / 1000,
+        rawDate: s.snapshot_date,
+        label,
+      };
     });
   }
 
-  const counts: Record<string, number> = {
-    "1M": 5,
-    "3M": 14,
-    "6M": 28,
-    "1Y": 52,
-    YTD: numericValues.length,
-    Max: numericValues.length,
-  };
-  const slice = numericValues.slice(-(counts[range] ?? numericValues.length));
-  const sliceDates = dateLabels.slice(-(counts[range] ?? dateLabels.length));
+  // Calculate cutoff date string based on activeRange
+  const latestDateStr = normalized[normalized.length - 1].rawDate;
+  const { year: lYear, month: lMonth, day: lDay } = parseDateParts(latestDateStr);
+
+  let cutoffStr = "";
+  if (activeRange === "1M") {
+    const d = new Date(lYear, lMonth - 1, lDay);
+    cutoffStr = formatDateISO(d);
+  } else if (activeRange === "3M") {
+    const d = new Date(lYear, lMonth - 3, lDay);
+    cutoffStr = formatDateISO(d);
+  } else if (activeRange === "6M") {
+    const d = new Date(lYear, lMonth - 6, lDay);
+    cutoffStr = formatDateISO(d);
+  } else if (activeRange === "YTD") {
+    cutoffStr = `${lYear}-01-01`;
+  } else if (activeRange === "1Y") {
+    const d = new Date(lYear - 1, lMonth, lDay);
+    cutoffStr = formatDateISO(d);
+  } else {
+    cutoffStr = ""; // Max
+  }
+
+  let filtered = cutoffStr ? normalized.filter((p) => p.rawDate >= cutoffStr) : normalized;
+
+  // Anchor with prior baseline point if filtered only has 1 point, so chart draws line
+  if (cutoffStr && filtered.length < 2) {
+    const priorIdx = normalized.findIndex((p) => p.rawDate >= cutoffStr) - 1;
+    if (priorIdx >= 0) {
+      filtered = [normalized[priorIdx], ...filtered];
+    } else if (filtered.length === 0) {
+      filtered = normalized.slice(-2);
+    }
+  }
+
+  const slice = filtered.map((p) => p.val);
+  const sliceDates = filtered.map((p) => p.label);
 
   const W = fill ? size.w : 800;
   const H = fill ? size.h : height;
@@ -150,7 +221,7 @@ export function NetWorthChart({
   const selector = (
     <Segmented
       size="sm"
-      value={range}
+      value={activeRange}
       onChange={setRange}
       options={["1M", "3M", "6M", "YTD", "1Y", "Max"].map((r) => ({ value: r, label: r }))}
     />

@@ -32,6 +32,44 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 00:58:00 UTC] fix(chart): implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T00:58:00Z",
+  "type": "fix",
+  "scope": "chart",
+  "summary": "implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart",
+  "affected_files": [
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/MetricCard.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/__tests__/NetWorthChart.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx"
+  ],
+  "rationale": "NetWorthChart previously used a fixed length (numericValues.length) for YTD making it identical to Max, and arbitrary step counts (5, 14, 28, 52) that broke on daily or multi-year snapshots (showing all history from 2024 on YTD). Replaced with date-based ISO calendar cutoffs for YTD, 1M, 3M, 6M, and 1Y, and tied Home page HeroCard delta calculations to the active timeframe.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(chart)`
+- **Summary**: Implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart.
+- **Rationale**: User observed that filtering charts by YTD did not work as expected. In `NetWorthChart.tsx`, `YTD` was hardcoded to `numericValues.length`, causing it to render all historical snapshots (including years 2024 and 2025) identically to `Max`.
+- **Key Changes**:
+  - `frontend/src/components/NetWorthChart.tsx`: Replaced count-based slicing with date-based calendar cutoffs: `YTD` strictly filters snapshots from `${year}-01-01` to today; `1M`, `3M`, `6M`, and `1Y` filter by exact calendar intervals from latest snapshot; added support for controlled `range` and `onRangeChange` props.
+  - `frontend/src/components/MetricCard.tsx`: Added `deltaLabel` prop and currency symbol rendering in `HeroCard`.
+  - `frontend/src/app/page.tsx`: Lifted `chartRange` state, connected `onRangeChange`, and dynamically recalculated HeroCard delta amounts, percentage returns, and baseline labels based on the active timeframe.
+  - `frontend/src/__tests__/NetWorthChart.test.tsx`: Added test verifying multi-year data is filtered strictly to `${currentYear}-01-01` on YTD and expands back to 2024 on Max.
+  - `frontend/src/__tests__/HomePageUnified.test.tsx`: Added assertions verifying timeframe switching updates baseline labels.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: 6/6 tests passed; TypeScript 0 errors; ESLint 0 errors.
+
+
 ### [2026-11-18 00:41:00 UTC] fix(portfolio): convert asset allocation slices to master currency in "Where it sits" chart
 
 <!-- changelog-entry-json

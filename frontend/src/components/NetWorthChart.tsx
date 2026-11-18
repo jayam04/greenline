@@ -270,8 +270,8 @@ export function NetWorthChart({
               <stop offset="100%" stopColor="var(--chart-1)" stopOpacity="0" />
             </linearGradient>
           </defs>
-          {ticks.map((t) => (
-            <g key={t}>
+          {ticks.map((t, idx) => (
+            <g key={`tick-${t}-${idx}`}>
               <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeDasharray="3 4" />
               <text x={padL - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="var(--muted)" className="tnum">
                 {t === 0 ? `${sym}0` : `${sym}${t}k`}

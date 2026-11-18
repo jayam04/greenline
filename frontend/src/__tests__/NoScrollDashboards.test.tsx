@@ -134,6 +134,48 @@ describe('No-Scroll Executive Dashboards', () => {
     expect(screen.queryByText('Closed Positions / Capital Gains History')).not.toBeInTheDocument();
   });
 
+  it('converts holdings to master currency in Portfolio Value metric card and allocation', async () => {
+    const foreignSummary = {
+      ...mockPortfolioSummary,
+      total_current_value: 4000,
+      total_cost: 2000,
+      top_holdings: [
+        {
+          asset_id: 1,
+          symbol: 'AAPL',
+          name: 'Apple Inc.',
+          asset_type: 'stock',
+          currency: 'USD',
+          quantity_held: 10,
+          total_cost: 2000,
+          current_value: 4000,
+          unrealized_pnl: 2000,
+          unrealized_pnl_pct: 100,
+          realized_pnl: 0,
+          weight_pct: 100,
+        },
+      ],
+    };
+
+    (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/portfolio/summary') return foreignSummary;
+      if (endpoint === '/snapshots') return mockSnapshots;
+      if (endpoint === '/accounts') return [{ account_id: 1, account_name: 'Schwab', account_type: 'demat', currency: 'USD' }];
+      if (endpoint === '/settings') return { master_currency: 'EUR' };
+      return null;
+    });
+
+    render(<InvestmentsDashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Value')).toBeInTheDocument();
+    });
+
+    // 4000 USD converted to EUR @ 0.92 = 3680 EUR
+    expect(screen.getByText('€3,680.00')).toBeInTheDocument();
+    expect(screen.queryByText('€4,000.00')).not.toBeInTheDocument();
+  });
+
   it('renders Income & Spend as a compact executive cockpit with Sankey and no scrolling transactions table', async () => {
     render(<CashflowOverviewPage />);
 

@@ -44,6 +44,7 @@ interface PortfolioSummary {
   total_taxes?: number;
   portfolio_xirr?: number | null;
   top_holdings?: HoldingSummary[];
+  closed_holdings?: HoldingSummary[];
   asset_allocation?: Record<string, number>;
   sector_allocation?: Record<string, number>;
 }
@@ -115,11 +116,69 @@ export default function InvestmentsDashboardPage() {
     return accounts.filter((a) => a.account_type !== "bank");
   }, [accounts]);
 
-  const portfolioValue = summary?.total_current_value ?? summary?.total_net_worth ?? summary?.net_worth ?? 0;
-  const unrealizedPnl = summary?.unrealized_pnl ?? 0;
-  const unrealizedPnlPct = summary?.unrealized_pnl_pct ?? 0;
-  const realizedPnl = summary?.realized_pnl ?? 0;
-  const totalCost = summary?.total_cost ?? summary?.total_invested ?? 0;
+  const portfolioValue = useMemo(() => {
+    if (summary?.top_holdings && summary.top_holdings.length > 0) {
+      return summary.top_holdings.reduce(
+        (acc, h) => acc + convertCurrency(h.current_value, h.currency || masterCurrency, masterCurrency),
+        0
+      );
+    }
+    if (selectedAccountId !== "all") {
+      const acc = accounts.find((a) => String(a.account_id) === String(selectedAccountId));
+      const accCurr = acc?.currency || masterCurrency;
+      const rawVal = summary?.total_current_value ?? summary?.total_net_worth ?? summary?.net_worth ?? 0;
+      return convertCurrency(rawVal, accCurr, masterCurrency);
+    }
+    return convertCurrency(
+      summary?.total_current_value ?? summary?.total_net_worth ?? summary?.net_worth ?? 0,
+      "EUR",
+      masterCurrency
+    );
+  }, [summary, accounts, selectedAccountId, masterCurrency]);
+
+  const totalCost = useMemo(() => {
+    if (summary?.top_holdings && summary.top_holdings.length > 0) {
+      return summary.top_holdings.reduce(
+        (acc, h) => acc + convertCurrency(h.total_cost, h.currency || masterCurrency, masterCurrency),
+        0
+      );
+    }
+    if (selectedAccountId !== "all") {
+      const acc = accounts.find((a) => String(a.account_id) === String(selectedAccountId));
+      const accCurr = acc?.currency || masterCurrency;
+      const rawCost = summary?.total_cost ?? summary?.total_invested ?? 0;
+      return convertCurrency(rawCost, accCurr, masterCurrency);
+    }
+    return convertCurrency(
+      summary?.total_cost ?? summary?.total_invested ?? 0,
+      "EUR",
+      masterCurrency
+    );
+  }, [summary, accounts, selectedAccountId, masterCurrency]);
+
+  const unrealizedPnl = portfolioValue - totalCost;
+  const unrealizedPnlPct = totalCost > 0 ? (unrealizedPnl / totalCost) * 100 : 0;
+
+  const realizedPnl = useMemo(() => {
+    const fromOpen = (summary?.top_holdings || []).reduce(
+      (acc, h) => acc + convertCurrency(h.realized_pnl || 0, h.currency || masterCurrency, masterCurrency),
+      0
+    );
+    const fromClosed = (summary?.closed_holdings || []).reduce(
+      (acc, h) => acc + convertCurrency(h.realized_pnl || 0, h.currency || masterCurrency, masterCurrency),
+      0
+    );
+    if (fromOpen !== 0 || fromClosed !== 0) {
+      return fromOpen + fromClosed;
+    }
+    if (selectedAccountId !== "all") {
+      const acc = accounts.find((a) => String(a.account_id) === String(selectedAccountId));
+      const accCurr = acc?.currency || masterCurrency;
+      return convertCurrency(summary?.realized_pnl ?? 0, accCurr, masterCurrency);
+    }
+    return convertCurrency(summary?.realized_pnl ?? 0, "EUR", masterCurrency);
+  }, [summary, accounts, selectedAccountId, masterCurrency]);
+
   const portfolioXirr = summary?.portfolio_xirr ?? null;
 
   // Chart data preparation
@@ -132,10 +191,10 @@ export default function InvestmentsDashboardPage() {
     }
     return snapshots.map((s) => ({
       snapshot_date: s.snapshot_date,
-      net_worth: s.total_current_value ?? s.net_worth,
-      total_invested: s.total_invested,
+      net_worth: convertCurrency(s.total_current_value ?? s.net_worth, "EUR", masterCurrency),
+      total_invested: s.total_invested !== undefined ? convertCurrency(s.total_invested, "EUR", masterCurrency) : undefined,
     }));
-  }, [snapshots, portfolioValue]);
+  }, [snapshots, portfolioValue, masterCurrency]);
 
   // Allocation slices
   const allocationSlices: Slice[] = useMemo(() => {
@@ -143,21 +202,21 @@ export default function InvestmentsDashboardPage() {
       const top5 = summary.top_holdings.slice(0, 5);
       return top5.map((h, i) => ({
         label: h.symbol,
-        value: h.current_value,
+        value: convertCurrency(h.current_value, h.currency || masterCurrency, masterCurrency),
         color: ALLOCATION_COLORS[i % ALLOCATION_COLORS.length],
       }));
     }
     if (summary?.asset_allocation && Object.keys(summary.asset_allocation).length > 0) {
       return Object.entries(summary.asset_allocation).map(([key, val], i) => ({
         label: key,
-        value: val,
+        value: convertCurrency(val, "EUR", masterCurrency),
         color: ALLOCATION_COLORS[i % ALLOCATION_COLORS.length],
       }));
     }
     return [
       { label: "Equities", value: portfolioValue || 100, color: ALLOCATION_COLORS[0] },
     ];
-  }, [summary, portfolioValue]);
+  }, [summary, portfolioValue, masterCurrency]);
 
   return (
     <>

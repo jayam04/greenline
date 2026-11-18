@@ -32,6 +32,40 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 13:12:00 UTC] fix(portfolio): convert securities value, cost basis, and PnL to master currency
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T13:12:00Z",
+  "type": "fix",
+  "scope": "portfolio",
+  "summary": "convert securities value, cost basis, and PnL to master currency",
+  "affected_files": [
+    "frontend/src/app/investments/page.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/__tests__/NoScrollDashboards.test.tsx"
+  ],
+  "rationale": "In the Portfolio dashboard (/investments), the Value KPI card, cost basis, unrealized/realized P&L, chart snapshots, and allocation slices were displaying raw numbers in native transaction/holding currencies directly formatted with the master currency symbol, causing substantial multi-currency distortions. All metrics are now converted from each holding's currency to the active masterCurrency.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/NoScrollDashboards.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(portfolio)`
+- **Summary**: Convert portfolio valuation, cost basis, unrealized/realized P&L, timeline snapshots, and allocation slices to master currency.
+- **Rationale**: Portfolio cockpit was reading raw numbers from `/portfolio/summary` without converting each holding from its base currency to the user's active master currency.
+- **Key Changes**:
+  - `frontend/src/app/investments/page.tsx`: Dynamically converted `portfolioValue`, `totalCost`, `unrealizedPnl`, `realizedPnl`, `chartSnapshots`, and `allocationSlices` from native currencies (`h.currency` / account currency) to `masterCurrency` using `convertCurrency()`.
+  - `frontend/src/components/NetWorthChart.tsx`: Deduplicated SVG tick keys in `NetWorthChart` to prevent React key collision warnings when ticks evaluate to 0.
+  - `frontend/src/__tests__/NoScrollDashboards.test.tsx`: Added unit test asserting currency conversion of foreign holdings (USD to EUR) in the Portfolio Value card and verified expected converted amounts.
+- **Verification**:
+  - `cd frontend && npx tsc --noEmit && npm run lint`: 0 errors.
+  - `cd frontend && npx vitest run src/__tests__/NoScrollDashboards.test.tsx`: 3/3 passed.
+  - `cd frontend && npx vitest run`: 34/34 test files passed, 182/182 tests passed.
+
 ### [2026-11-18 12:36:00 UTC] feat(ui): redesign all pages with no-scroll cockpits, design-1 tokens, and optimized IA
 
 <!-- changelog-entry-json

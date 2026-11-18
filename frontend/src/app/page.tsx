@@ -123,14 +123,14 @@ export default function Home() {
   const totalBankCash = React.useMemo(() => {
     return bankAccounts.reduce((acc, a) => {
       const bal = a.cash_balance !== undefined ? a.cash_balance : (a.current_balance || 0);
-      return acc + convertCurrency(bal, a.currency || "EUR", masterCurrency);
+      return acc + convertCurrency(bal, a.currency || masterCurrency, masterCurrency);
     }, 0);
   }, [bankAccounts, masterCurrency]);
 
   const totalDematCash = React.useMemo(() => {
     return dematAccounts.reduce((acc, a) => {
       const bal = a.cash_balance !== undefined ? a.cash_balance : 0;
-      return acc + convertCurrency(bal, a.currency || "INR", masterCurrency);
+      return acc + convertCurrency(bal, a.currency || masterCurrency, masterCurrency);
     }, 0);
   }, [dematAccounts, masterCurrency]);
 
@@ -139,39 +139,96 @@ export default function Home() {
   const totalSecurities = React.useMemo(() => {
     if (summary?.top_holdings && summary.top_holdings.length > 0) {
       return summary.top_holdings.reduce((acc, h) => {
-        return acc + convertCurrency(h.current_value, h.currency || "USD", masterCurrency);
+        return acc + convertCurrency(h.current_value, h.currency || masterCurrency, masterCurrency);
       }, 0);
     }
     return dematAccounts.reduce((acc, a) => {
-      return acc + convertCurrency(a.securities_value || 0, a.currency || "EUR", masterCurrency);
+      return acc + convertCurrency(a.securities_value || 0, a.currency || masterCurrency, masterCurrency);
     }, 0);
   }, [summary, dematAccounts, masterCurrency]);
 
   const computedNetWorth = totalCash + totalSecurities;
   const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
   const netWorthValue = latestSnapshot
-    ? latestSnapshot.net_worth
+    ? convertCurrency(latestSnapshot.net_worth, "EUR", masterCurrency)
     : computedNetWorth > 0
     ? computedNetWorth
-    : (summary?.total_net_worth ?? summary?.net_worth ?? 0);
+    : convertCurrency(summary?.total_net_worth ?? summary?.net_worth ?? 0, "EUR", masterCurrency);
 
   const firstSnapshot = snapshots.length > 0 ? snapshots[0] : null;
-  const deltaAmt = annualSnapshot?.net_worth_delta ?? (latestSnapshot && firstSnapshot ? latestSnapshot.net_worth - firstSnapshot.net_worth : 0);
-  const deltaPct = annualSnapshot?.net_worth_delta_pct ?? (firstSnapshot && firstSnapshot.net_worth > 0 ? (deltaAmt / firstSnapshot.net_worth) * 100 : 0);
+  const deltaAmt = annualSnapshot?.net_worth_delta !== undefined
+    ? convertCurrency(annualSnapshot.net_worth_delta, annualSnapshot.currency || "EUR", masterCurrency)
+    : latestSnapshot && firstSnapshot
+    ? convertCurrency(latestSnapshot.net_worth - firstSnapshot.net_worth, "EUR", masterCurrency)
+    : 0;
+  const deltaPct = annualSnapshot?.net_worth_delta_pct ?? (firstSnapshot && firstSnapshot.net_worth > 0 ? (deltaAmt / convertCurrency(firstSnapshot.net_worth, "EUR", masterCurrency)) * 100 : 0);
+
+  const snapshotsInMaster = React.useMemo(() => {
+    return snapshots.map((s) => ({
+      ...s,
+      net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency),
+      total_invested: s.total_invested !== undefined ? convertCurrency(s.total_invested, "EUR", masterCurrency) : undefined,
+    }));
+  }, [snapshots, masterCurrency]);
 
   // Allocation slices ("Where it sits")
   const allocationSlices: Slice[] = React.useMemo(() => {
     const slices: Slice[] = [];
-    const colors = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
+    const colors = [
+      "var(--chart-1)",
+      "var(--chart-2)",
+      "var(--chart-3)",
+      "var(--chart-4)",
+      "var(--chart-5)",
+    ];
 
-    if (summary?.asset_allocation && Object.keys(summary.asset_allocation).length > 0) {
-      const entries = Object.entries(summary.asset_allocation).filter(([_, v]) => v > 0);
-      let colorIdx = 0;
-      for (const [rawLabel, val] of entries) {
-        if (rawLabel.toLowerCase().includes("cash") || rawLabel.toLowerCase().includes("bank")) {
-          continue;
+    // 1. Group securities by asset type converted to masterCurrency
+    const holdingsByType: Record<string, number> = {};
+    if (summary?.top_holdings && summary.top_holdings.length > 0) {
+      for (const h of summary.top_holdings) {
+        const rawType = (h.asset_type || "stock").toLowerCase().trim();
+        let typeName = "Stocks";
+        if (rawType.includes("etf")) typeName = "ETFs";
+        else if (rawType.includes("crypto")) typeName = "Crypto";
+        else if (rawType.includes("fund")) typeName = "Mutual funds";
+        else if (rawType.includes("bond")) typeName = "Bonds";
+        else if (rawType.includes("gold") || rawType.includes("commodity")) typeName = "Commodities";
+        else if (rawType.includes("real_estate") || rawType.includes("reit")) typeName = "Real Estate";
+        else typeName = "Stocks";
+
+        const convertedVal = convertCurrency(h.current_value, h.currency || masterCurrency, masterCurrency);
+        holdingsByType[typeName] = (holdingsByType[typeName] || 0) + convertedVal;
+      }
+    } else if (summary?.asset_allocation && Object.keys(summary.asset_allocation).length > 0) {
+      // Normalize raw summary.asset_allocation proportions to totalSecurities in masterCurrency
+      const entries = Object.entries(summary.asset_allocation).filter(
+        ([k, v]) => v > 0 && !k.toLowerCase().includes("cash") && !k.toLowerCase().includes("bank")
+      );
+      const rawSecuritiesTotal = entries.reduce((sum, [_, v]) => sum + v, 0);
+
+      if (rawSecuritiesTotal > 0 && totalSecurities > 0) {
+        for (const [rawType, rawVal] of entries) {
+          const rawLower = rawType.toLowerCase().trim();
+          let typeName = "Stocks";
+          if (rawLower.includes("etf")) typeName = "ETFs";
+          else if (rawLower.includes("crypto")) typeName = "Crypto";
+          else if (rawLower.includes("fund")) typeName = "Mutual funds";
+          else if (rawLower.includes("bond")) typeName = "Bonds";
+          else if (rawLower.includes("gold") || rawLower.includes("commodity")) typeName = "Commodities";
+          else typeName = rawType.charAt(0).toUpperCase() + rawType.slice(1);
+
+          const proportion = rawVal / rawSecuritiesTotal;
+          holdingsByType[typeName] = (holdingsByType[typeName] || 0) + proportion * totalSecurities;
         }
-        const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+      }
+    }
+
+    const typeEntries = Object.entries(holdingsByType).filter(([_, v]) => v > 0);
+
+    let colorIdx = 0;
+    if (typeEntries.length > 1) {
+      // Multiple asset types: list each individually
+      for (const [label, val] of typeEntries) {
         slices.push({
           label,
           value: Math.round(val),
@@ -179,28 +236,32 @@ export default function Home() {
         });
         colorIdx++;
       }
-      if (totalCash > 0) {
-        slices.push({
-          label: "Cash & banks",
-          value: Math.round(totalCash),
-          color: colors[colorIdx % colors.length],
-        });
-      }
-    } else {
-      if (totalSecurities > 0) {
-        slices.push({
-          label: "Stocks & ETFs",
-          value: Math.round(totalSecurities),
-          color: colors[0],
-        });
-      }
-      if (totalCash > 0) {
-        slices.push({
-          label: "Cash & banks",
-          value: Math.round(totalCash),
-          color: colors[1],
-        });
-      }
+    } else if (typeEntries.length === 1) {
+      // Single asset type: if stocks, label "Stocks & ETFs" per design system, otherwise asset name
+      const [singleType, singleVal] = typeEntries[0];
+      const label = singleType.toLowerCase() === "stocks" ? "Stocks & ETFs" : singleType;
+      slices.push({
+        label,
+        value: Math.round(singleVal),
+        color: colors[colorIdx % colors.length],
+      });
+      colorIdx++;
+    } else if (totalSecurities > 0) {
+      slices.push({
+        label: "Stocks & ETFs",
+        value: Math.round(totalSecurities),
+        color: colors[colorIdx % colors.length],
+      });
+      colorIdx++;
+    }
+
+    // 2. Add Cash & banks slice in masterCurrency
+    if (totalCash > 0) {
+      slices.push({
+        label: "Cash & banks",
+        value: Math.round(totalCash),
+        color: colors[colorIdx % colors.length],
+      });
     }
 
     if (slices.length === 0 && netWorthValue > 0) {
@@ -212,7 +273,7 @@ export default function Home() {
     }
 
     return slices.sort((a, b) => b.value - a.value);
-  }, [summary, totalCash, totalSecurities, netWorthValue]);
+  }, [summary, totalCash, totalSecurities, netWorthValue, masterCurrency]);
 
   // Annual snapshot rows
   const currentYear = new Date().getFullYear();
@@ -304,7 +365,7 @@ export default function Home() {
             <div className="rounded-card border border-border bg-surface shadow-card flex flex-1 flex-col">
               <div className="flex min-h-0 flex-1 flex-col p-5">
                 <NetWorthChart
-                  data={snapshots}
+                  data={snapshotsInMaster}
                   height={250}
                   currency={masterCurrency}
                   compact

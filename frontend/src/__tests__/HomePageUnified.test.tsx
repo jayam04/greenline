@@ -237,4 +237,82 @@ describe('Unified Home Page (src/app/page.tsx)', () => {
       expect(screen.getByText(/@Wise Owl/i)).toBeInTheDocument();
     });
   });
+
+  it('correctly converts foreign currency holdings to master currency in "Where it sits" allocation chart', async () => {
+    (api.apiFetch as any).mockImplementation((url: string) => {
+      if (url.includes('/portfolio/summary')) {
+        return Promise.resolve({
+          net_worth: 3844,
+          total_invested: 3500,
+          total_current_value: 344848.15,
+          cash_balance: 326.51,
+          top_holdings: [
+            {
+              asset_id: 101,
+              symbol: 'TCS.NS',
+              name: 'Tata Consultancy Services',
+              asset_type: 'stock',
+              currency: 'INR',
+              quantity_held: 100,
+              total_cost: 300000,
+              current_value: 344848.15,
+            },
+          ],
+          asset_allocation: { stock: 344848.15 },
+        });
+      }
+      if (url.includes('/snapshots')) {
+        return Promise.resolve([
+          { snapshot_date: '2026-11-17', net_worth: 3844, total_invested: 3500 },
+        ]);
+      }
+      if (url.includes('/accounts')) {
+        return Promise.resolve([
+          {
+            account_id: 1,
+            account_name: 'Zerodha',
+            account_type: 'demat',
+            currency: 'INR',
+            cash_balance: 0,
+            securities_value: 344848.15,
+          },
+          {
+            account_id: 2,
+            account_name: 'Revolut',
+            account_type: 'bank',
+            currency: 'EUR',
+            cash_balance: 327,
+            current_balance: 327,
+          },
+        ]);
+      }
+      if (url.includes('/settings')) {
+        return Promise.resolve({ master_currency: 'EUR', community_pseudonym: 'Solar Beaver' });
+      }
+      if (url.includes('/community/posts')) {
+        return Promise.resolve([]);
+      }
+      return Promise.resolve(null);
+    });
+
+    render(
+      <ThemeProvider>
+        <NetWorthDashboardPage />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Where it sits')).toBeInTheDocument();
+    });
+
+    // Slices in EUR: ~3,517 EUR for Stocks & ETFs, not 344,848!
+    // And Cash & banks: €327
+    await waitFor(() => {
+      expect(screen.getByText('Stocks & ETFs')).toBeInTheDocument();
+      expect(screen.getByText(/€3,517/)).toBeInTheDocument();
+      expect(screen.getByText('Cash & banks')).toBeInTheDocument();
+      expect(screen.getByText(/€327/)).toBeInTheDocument();
+      expect(screen.queryByText(/344,848/)).not.toBeInTheDocument();
+    });
+  });
 });

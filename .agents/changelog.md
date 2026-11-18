@@ -32,6 +32,38 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 00:41:00 UTC] fix(portfolio): convert asset allocation slices to master currency in "Where it sits" chart
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T00:41:00Z",
+  "type": "fix",
+  "scope": "portfolio",
+  "summary": "convert asset allocation slices to master currency in Where it sits chart",
+  "affected_files": [
+    "frontend/src/app/page.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx"
+  ],
+  "rationale": "summary.asset_allocation from /portfolio/summary returned raw numbers in native currencies (e.g., INR for Indian equities) which were inserted into the master currency chart without FX conversion, causing multi-order-of-magnitude distortions (e.g. €344,848 instead of €3,517 for a €3,844 portfolio). Holdings and asset allocations are now converted to masterCurrency and normalized against totalSecurities.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/HomePageUnified.test.tsx src/__tests__/NetWorthChart.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(portfolio)`
+- **Summary**: Convert asset allocation slices to master currency in "Where it sits" chart.
+- **Rationale**: When users held securities in foreign currencies (e.g. INR or USD) with `masterCurrency` set to EUR, the backend returned raw amounts in `summary.asset_allocation`. The frontend was rendering these raw foreign numbers directly in the EUR donut chart without conversion, displaying €344,848 instead of ~€3,517 for a €3,844 portfolio.
+- **Key Changes**:
+  - `frontend/src/app/page.tsx`: Grouped `top_holdings` by asset type converting each holding via `convertCurrency(h.current_value, h.currency, masterCurrency)`; normalized `summary.asset_allocation` proportions against `totalSecurities`; converted `snapshots` series to `masterCurrency` for `NetWorthChart`.
+  - `frontend/src/__tests__/HomePageUnified.test.tsx`: Added unit test asserting currency conversion of foreign holdings in "Where it sits" allocation chart.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/HomePageUnified.test.tsx src/__tests__/NetWorthChart.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: 5/5 Vitest unit tests passed; TypeScript 0 errors; ESLint 0 errors.
+
+
 ### [2026-11-18 00:06:00 UTC] fix(home): resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles
 
 <!-- changelog-entry-json

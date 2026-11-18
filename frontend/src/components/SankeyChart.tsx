@@ -37,8 +37,13 @@ interface SankeyChartProps {
 }
 
 export function SankeyChart({ data, loading = false, currency = "EUR" }: SankeyChartProps) {
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+  let isDark = false;
+  try {
+    const themeCtx = useTheme();
+    isDark = themeCtx?.resolvedTheme === "dark";
+  } catch {
+    isDark = false;
+  }
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredLink, setHoveredLink] = useState<{ source: string; target: string; value: number } | null>(null);
 

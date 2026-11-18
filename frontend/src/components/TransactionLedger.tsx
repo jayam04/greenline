@@ -156,52 +156,75 @@ export function TransactionLedger({
     <div className="flex flex-col md:flex-row border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 min-h-[500px]">
       
       {/* LEFT PANE: List (1/3 width) */}
-      <div className="w-full md:w-1/3 border-r border-slate-200 dark:border-slate-800 flex flex-col max-h-[700px] overflow-y-auto bg-slate-50/50 dark:bg-slate-900/50">
-        {groupedTransactions.map((group) => (
-          <div key={group.date} className="flex flex-col">
-            <div className="sticky top-0 bg-slate-100/90 dark:bg-slate-800/90 backdrop-blur-sm z-10 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase px-3 py-1.5 border-b border-slate-200 dark:border-slate-800">
-              {formatDateHeader(group.date)}
-            </div>
-            
-            <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800/50">
-              {group.transactions.map((tx) => {
-                const isSelected = selectedTxKey === tx.key;
-                const { amountColor, iconColor, Icon } = getTxStyles(tx);
+      <div className="w-full md:w-1/3 border-r border-border flex flex-col max-h-[700px] overflow-y-auto bg-surface-2/30">
+        <table role="table" className="w-full border-collapse">
+          <tbody className="divide-y divide-border">
+            {transactions.map((tx) => {
+              const isSelected = selectedTxKey === tx.key;
+              const { amountColor, iconColor, Icon } = getTxStyles(tx);
 
-                return (
-                  <button
-                    key={tx.key}
-                    onClick={() => setSelectedTxKey(tx.key)}
-                    className={`flex items-center gap-3 p-3 text-left transition-colors hover:bg-accent/50 dark:hover:bg-accent/40 ${
-                      isSelected ? "bg-card shadow-sm relative" : ""
-                    }`}
-                  >
-                    {isSelected && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
-                    )}
-                    
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${iconColor}`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-foreground truncate">
-                        {tx.title}
+              return (
+                <tr
+                  key={tx.key}
+                  onClick={() => setSelectedTxKey(tx.key)}
+                  className={`cursor-pointer transition-colors hover:bg-surface-2 ${
+                    isSelected ? "bg-surface shadow-xs relative" : ""
+                  }`}
+                >
+                  <td className="p-3">
+                    <div className="flex items-center gap-3">
+                      {isSelected && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
+                      )}
+                      
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border ${iconColor}`}>
+                        <Icon className="w-4 h-4" />
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {tx.items[0]?.category_name || "Uncategorized"}
+                      
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-sm font-semibold text-foreground truncate">
+                            {tx.title}
+                          </span>
+                          <span className="text-micro text-muted font-medium tabular-nums whitespace-nowrap">
+                            {tx.date}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted truncate">
+                          {tx.items[0]?.category_name || "Uncategorized"}
+                        </div>
+                        {/* Payment badges with running balances */}
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {tx.payments.map((p, idx) => (
+                            <span
+                              key={idx}
+                              data-testid="payment-badge"
+                              data-account-id={p.account_id}
+                              data-amount={p.amount}
+                              data-running-balance={p.running_balance_after}
+                              className="text-micro text-muted inline-flex items-center gap-1"
+                            >
+                              <span>{p.account_name}</span>
+                              {p.running_balance_after !== undefined && (
+                                <span className="tabular-nums font-semibold">
+                                  Bal: {formatCurrency(p.running_balance_after, p.account_currency)}
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${amountColor}`}>
+                        {tx.isTransfer ? "" : tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
                       </div>
                     </div>
-                    
-                    <div className={`text-sm font-bold tabular-nums whitespace-nowrap ${amountColor}`}>
-                      {tx.isTransfer ? "" : tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* RIGHT PANE: Detail (2/3 width) */}
@@ -219,7 +242,7 @@ export function TransactionLedger({
                       </div>
                       <div>
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                          {selectedTx.title}
+                          Transaction Details: {selectedTx.title}
                         </h2>
                         <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                           {new Date(selectedTx.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}

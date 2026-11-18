@@ -32,6 +32,61 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-18 12:36:00 UTC] feat(ui): redesign all pages with no-scroll cockpits, design-1 tokens, and optimized IA
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T12:36:00Z",
+  "type": "feat",
+  "scope": "ui",
+  "summary": "redesign all pages with no-scroll cockpits, design-1 tokens, and optimized IA",
+  "affected_files": [
+    "frontend/src/app/investments/page.tsx",
+    "frontend/src/app/cashflow/page.tsx",
+    "frontend/src/app/investments/holdings/page.tsx",
+    "frontend/src/app/investments/transactions/page.tsx",
+    "frontend/src/app/investments/valuations/page.tsx",
+    "frontend/src/app/investments/discrepancies/page.tsx",
+    "frontend/src/app/cashflow/transactions/page.tsx",
+    "frontend/src/app/categories/page.tsx",
+    "frontend/src/components/TransactionLedger.tsx",
+    "frontend/src/components/SankeyChart.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/AllocationChart.tsx",
+    "frontend/src/__tests__/NoScrollDashboards.test.tsx",
+    "frontend/src/__tests__/CashflowLedger.test.tsx"
+  ],
+  "rationale": "Redesigned every application page across Greenline using insights from demo/design-1. Applied senior UI/UX design thinking: eliminated endless scrolling on executive cockpit pages (Portfolio and Cashflow Pulse) by separating macro summaries from micro tables, moving verbose multi-hundred row ledgers to dedicated sub-routes, adopting design-1 tokens (PageHeader, MetricCard, Segmented controls, Spline Sans typography, Midnight Indigo palette), and ensuring accessible semantic tables and 100% test compatibility.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(ui)`
+- **Summary**: Comprehensive redesign across all application pages with no-scroll cockpits, design-1 design tokens, and refined Information Architecture (IA).
+- **Rationale**: User requested complete redesign of all pages with executive no-scroll cockpits for Portfolio and Income & Spends, leveraging design-1 patterns and senior UX decision-making.
+- **Key Changes**:
+  - `frontend/src/app/investments/page.tsx`: Rewrote Portfolio into a single-screen executive cockpit (4 KPI cards: Value, Unrealized P&L, Realized P&L, Annualised return / XIRR; side-by-side NetWorth timeline chart and Allocation donut; direct sub-route link to `/investments/holdings`).
+  - `frontend/src/app/cashflow/page.tsx`: Rewrote Income & Spends into a single-screen executive cockpit (4 KPI cards: Total Inflow, Total Spends, Net Retained, Classification breakdown; interactive timeframe segmented control; Cashflow Sankey diagram; direct sub-route link to `/cashflow/transactions`).
+  - `frontend/src/app/investments/holdings/page.tsx`: Modernized Holdings table with `PageHeader`, design-1 tokens, clean badges, and preserved FIFO lots expandable drawer.
+  - `frontend/src/app/investments/transactions/page.tsx`: Modernized Trades page with monthly grouped stream, quiet hover actions, and filter tabs.
+  - `frontend/src/app/investments/valuations/page.tsx`: Redesigned Valuations to a responsive 2-column layout (manual price entry form on left, historical records table with empty state on right).
+  - `frontend/src/app/investments/discrepancies/page.tsx`: Modernized Reconcile hub with design-1 KPI cards, auto-link defaults button, candidate match 1-click pills, and clean resolution table.
+  - `frontend/src/app/cashflow/transactions/page.tsx`: Integrated design-1 `PageHeader`, account filter select matching demo-1, statement balance badge, and accessible ledger structure.
+  - `frontend/src/components/TransactionLedger.tsx`: Structured master-detail ledger with accessible table semantics, running balances, payment badges, and detail pane.
+  - `frontend/src/app/categories/page.tsx`: Modernized category hierarchy tree table with design-1 badge tokens, PageHeader, and responsive budget totals.
+  - `frontend/src/components/SankeyChart.tsx`: Hardened with safe fallback outside `ThemeProvider`.
+  - `frontend/src/components/NetWorthChart.tsx`: Hardened date parsing and snapshot normalization.
+  - `frontend/src/components/AllocationChart.tsx`: Deduplicated SVG slice keys and legend items.
+  - `frontend/src/__tests__/NoScrollDashboards.test.tsx`: Created test suite asserting no-scroll cockpit structure for Portfolio and Cashflow.
+  - `frontend/src/__tests__/CashflowLedger.test.tsx`: Updated tests to verify executive cockpit and category filtering.
+- **Verification**:
+  - `cd frontend && npx tsc --noEmit && npm run lint`: 0 TypeScript errors, 0 ESLint errors.
+  - `cd frontend && npx vitest run`: 34 test files passed (34/34), 181 tests passed (181/181).
+
 ### [2026-11-18 01:13:00 UTC] feat(accounts): redesign accounts page with balance cards, summary metrics, and clean typography
 
 <!-- changelog-entry-json

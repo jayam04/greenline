@@ -3,6 +3,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatCleanMoney, formatXirr, convertCurrencyToEUR, convertCurrency } from "@/lib/format";
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 import {
   ChevronDown, ChevronRight, Layers, ArrowUpRight, ArrowDownRight,
   Plus, ArrowUpDown, ArrowUp, ArrowDown, CheckCircle2
@@ -229,79 +231,68 @@ export default function HoldingsPage() {
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">
-            Positions & Holdings
-          </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-0.5">
-            Active asset positions, FIFO cost lots, current valuations, and annualized return metrics
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="btn-pill-black text-xs cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
+    <div className="space-y-6">
+      <PageHeader
+        title="Positions & Holdings"
+        description="Active asset positions, FIFO cost lots, current valuations, and annualized return metrics"
+        actions={
+          <Button size="sm" onClick={() => setIsModalOpen(true)}>
+            <Plus className="size-4" />
             <span>Add transaction</span>
-          </button>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
       {/* 7 Summary KPI Cards (Converted to Master Currency, Dynamic for 1D / All-Time) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
         {/* Card 1: Total Positions Value */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>Positions Value</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-surface-2 text-foreground px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className="text-xl font-extrabold text-[#0F172A] dark:text-white tabular-nums mt-1 truncate">
+          <div className="text-xl font-extrabold text-foreground tabular-nums mt-1 truncate">
             {formatCleanMoney(totalValueEUR, masterCurrency)}
           </div>
         </div>
 
         {/* Card 2: Invested Cost OR 1D Value Change */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>{viewMode === "1d" ? "1D Value Change" : "Invested Cost"}</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-surface-2 text-foreground px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
           {viewMode === "1d" ? (
-            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalValueChange1dMaster >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalValueChange1dMaster >= 0 ? "text-gain" : "text-loss"}`}>
               {totalValueChange1dMaster >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
               <span className="truncate">{formatCleanMoney(totalValueChange1dMaster, masterCurrency)}</span>
             </div>
           ) : (
-            <div className="text-xl font-extrabold text-slate-800 dark:text-slate-200 tabular-nums mt-1 truncate">
+            <div className="text-xl font-extrabold text-foreground tabular-nums mt-1 truncate">
               {formatCleanMoney(totalCostEUR, masterCurrency)}
             </div>
           )}
         </div>
 
         {/* Card 3: Total Unrealized P&L OR 1D Return % */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>{viewMode === "1d" ? "1D Return %" : "Unrealized P&L"}</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-surface-2 text-foreground px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
           {viewMode === "1d" ? (
-            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalChange1dPct >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalChange1dPct >= 0 ? "text-gain" : "text-loss"}`}>
               {totalChange1dPct >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
               <span className="truncate">{formatNum(Math.abs(totalChange1dPct), 2)}%</span>
             </div>
           ) : (
-            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalUnrealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalUnrealizedEUR >= 0 ? "text-gain" : "text-loss"}`}>
               {totalUnrealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
               <span className="truncate">{formatCleanMoney(totalUnrealizedEUR, masterCurrency)}</span>
             </div>
@@ -309,61 +300,61 @@ export default function HoldingsPage() {
         </div>
 
         {/* Card 4: Total Realized P&L */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>Realized P&L</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-surface-2 text-foreground px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalRealizedEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalRealizedEUR >= 0 ? "text-gain" : "text-loss"}`}>
             {totalRealizedEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
             <span className="truncate">{formatCleanMoney(totalRealizedEUR, masterCurrency)}</span>
           </div>
         </div>
 
         {/* Card 5: Fees & Taxes */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>Fees & Taxes</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-surface-2 text-foreground px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className="text-xl font-extrabold text-slate-700 dark:text-slate-300 tabular-nums mt-1 truncate">
+          <div className="text-xl font-extrabold text-muted tabular-nums mt-1 truncate">
             {formatCleanMoney(totalFeesAndTaxesMaster, masterCurrency)}
           </div>
         </div>
 
         {/* Card 6: Total Net P&L */}
-        <div className="getquin-card p-3.5">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>Total Net P&L</span>
-            <span className="text-[9px] font-extrabold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-surface-2 text-foreground px-1 py-0.2 rounded">
               {masterCurrency}
             </span>
           </div>
-          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalNetPnLEUR >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+          <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${totalNetPnLEUR >= 0 ? "text-gain" : "text-loss"}`}>
             {totalNetPnLEUR >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
             <span className="truncate">{formatCleanMoney(totalNetPnLEUR, masterCurrency)}</span>
           </div>
         </div>
 
         {/* Card 7: Net Portfolio XIRR */}
-        <div className="getquin-card p-3.5" data-testid="kpi-portfolio-xirr">
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="getquin-card rounded-card border border-border bg-surface p-3.5 shadow-card" data-testid="kpi-portfolio-xirr">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted">
             <span>Net Portfolio XIRR</span>
-            <span className="text-[9px] font-extrabold uppercase bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-extrabold uppercase bg-accent/20 text-accent px-1 py-0.2 rounded">
               Annualized
             </span>
           </div>
           {summary?.portfolio_xirr !== null && summary?.portfolio_xirr !== undefined && !isNaN(summary.portfolio_xirr) && isFinite(summary.portfolio_xirr) ? (
-            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${summary.portfolio_xirr >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+            <div className={`text-xl font-extrabold tabular-nums mt-1 flex items-center gap-1 truncate ${summary.portfolio_xirr >= 0 ? "text-gain" : "text-loss"}`}>
               {summary.portfolio_xirr >= 0 ? <ArrowUpRight className="w-4 h-4 shrink-0" /> : <ArrowDownRight className="w-4 h-4 shrink-0" />}
               <span className="truncate">{formatXirr(summary.portfolio_xirr)}</span>
             </div>
           ) : (
-            <div className="text-xl font-extrabold text-slate-400 tabular-nums mt-1 truncate">
+            <div className="text-xl font-extrabold text-muted tabular-nums mt-1 truncate">
               -
             </div>
           )}
@@ -371,11 +362,11 @@ export default function HoldingsPage() {
       </div>
 
       {/* Active Holdings Table Card */}
-      <div className="getquin-card p-5">
-        <div className="flex items-center justify-between pb-3 mb-2 border-b border-[#F1F5F9] dark:border-slate-800">
+      <div className="getquin-card rounded-card border border-border bg-surface p-5 shadow-card">
+        <div className="flex items-center justify-between pb-3 mb-2 border-b border-border">
           <div className="flex items-center gap-3">
-            <h3 className="text-sm font-bold text-[#0F172A] dark:text-white">Active Holdings</h3>
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-semibold">
+            <h3 className="text-body font-semibold text-foreground">Active Holdings</h3>
+            <div className="flex items-center gap-1 bg-surface-2 p-0.5 rounded-control text-xs font-semibold">
               <button
                 type="button"
                 onClick={() => setViewMode("all_time")}

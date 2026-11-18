@@ -83,7 +83,7 @@ export function AllocationChart({
               const len = total > 0 ? (s.value / total) * C : 0;
               const el = (
                 <circle
-                  key={s.label}
+                  key={`compact-slice-${s.label}-${i}`}
                   cx="90"
                   cy="90"
                   r={R}
@@ -149,7 +149,7 @@ export function AllocationChart({
             const len = total > 0 ? (s.value / total) * C : 0;
             const el = (
               <circle
-                key={s.label}
+                key={`slice-${s.label}-${i}`}
                 cx="90"
                 cy="90"
                 r={R}
@@ -188,9 +188,9 @@ export function AllocationChart({
 
       {showLegend && (
         <div className="w-full mt-2 grid grid-cols-2 gap-2 text-xs">
-          {slices.slice(0, 6).map((item) => (
+          {slices.slice(0, 6).map((item, i) => (
             <div
-              key={item.label}
+              key={`legend-${item.label}-${i}`}
               className="flex items-center justify-between py-1 px-2 rounded-lg hover:bg-surface-2"
             >
               <div className="flex items-center gap-1.5 truncate">

@@ -1,18 +1,18 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/api";
-import { 
-  TrendingUp, TrendingDown, Wallet, PiggyBank, Plus, 
-  Calendar, Layers, Filter, Search, Edit, Trash2, Split,
-  ArrowRight, ShieldCheck, Tag, Sparkles
-} from "lucide-react";
-import { formatCurrency, formatCleanMoney, convertCurrency } from "@/lib/format";
-import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateUtils";
+import { money } from "@/lib/utils";
+import { getMasterCurrency } from "@/lib/format";
+import { PageHeader } from "@/components/PageHeader";
+import { MetricCard } from "@/components/MetricCard";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/tabs";
 import { SankeyChart, SankeyDataResponse } from "@/components/SankeyChart";
-import { CashflowModal, CashflowTransactionItem } from "@/components/CashflowModal";
-import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
-import { TransactionLedger, UnifiedRowItem } from "@/components/TransactionLedger";
+import { CashflowModal } from "@/components/CashflowModal";
+import { Plus, ArrowRight } from "lucide-react";
 
 interface CashflowSummary {
   total_income: number;
@@ -20,79 +20,77 @@ interface CashflowSummary {
   total_invested: number;
   net_savings: number;
   savings_rate_pct: number;
-  breakdown_by_label: { [key: string]: number };
-  top_expense_categories: { category: string; amount: number; pct: number }[];
+  breakdown_by_label?: Record<string, number>;
+  top_expense_categories?: { category: string; amount: number; pct: number }[];
 }
 
+type TimeframeOption = "week" | "month" | "ytd" | "all";
 
-export default function CashflowPage() {
+export default function CashflowOverviewPage() {
   const [summary, setSummary] = useState<CashflowSummary | null>(null);
   const [sankeyData, setSankeyData] = useState<SankeyDataResponse | null>(null);
-  const [cashflowTxs, setCashflowTxs] = useState<CashflowTransactionItem[]>([]);
-  const [tradeTxs, setTradeTxs] = useState<TransactionItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
   const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
-
-  // Filters
-  const [sankeyDepth, setSankeyDepth] = useState<number>(2);
-  const [selectedTimeline, setSelectedTimeline] = useState<TimelineKey>("THIS_MONTH");
-  const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>("ALL");
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<CashflowTransactionItem | null>(null);
-
-  const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
-  const [editingTradeTx, setEditingTradeTx] = useState<TransactionItem | null>(null);
-
-  const { startDate, endDate } = useMemo(() => {
-    return getTimelineDateRange(selectedTimeline);
-  }, [selectedTimeline]);
+  const [timeframe, setTimeframe] = useState<TimeframeOption>("month");
+  const [loading, setLoading] = useState(true);
+  const [isRecordModalOpen, setIsRecordModalOpen] = useState(false);
 
   useEffect(() => {
-    document.title = "Cashflow · greenline";
-  }, []);
+    document.title = "Income & Spend · greenline";
+    loadData();
+  }, [timeframe]);
 
-  useEffect(() => {
-    loadAllData();
-  }, [sankeyDepth, selectedTimeline]);
+  const getDateRange = (tf: TimeframeOption) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const today = `${year}-${month}-${day}`;
 
-  const loadAllData = async () => {
+    if (tf === "week") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      return { start: d.toISOString().split("T")[0], end: today };
+    }
+    if (tf === "month") {
+      return { start: `${year}-${month}-01`, end: today };
+    }
+    if (tf === "ytd") {
+      return { start: `${year}-01-01`, end: today };
+    }
+    return { start: null, end: null };
+  };
+
+  const loadData = async () => {
     try {
+      setLoading(true);
       let activeCurrency = "EUR";
       try {
         const settingsRes = await apiFetch<{ master_currency: string }>("/settings");
-        if (settingsRes && settingsRes.master_currency) {
+        if (settingsRes?.master_currency) {
           activeCurrency = settingsRes.master_currency.trim().toUpperCase();
-          setMasterCurrency(activeCurrency);
         }
       } catch {
-        activeCurrency = (typeof window !== "undefined" && localStorage.getItem("greenline_master_currency")) || "EUR";
-        setMasterCurrency(activeCurrency);
+        activeCurrency = getMasterCurrency();
       }
+      setMasterCurrency(activeCurrency);
 
+      const { start, end } = getDateRange(timeframe);
       const queryParams = new URLSearchParams();
-      if (startDate) queryParams.append("start_date", startDate);
-      if (endDate) queryParams.append("end_date", endDate);
+      if (start) queryParams.append("start_date", start);
+      if (end) queryParams.append("end_date", end);
       queryParams.append("include_investments", "true");
       queryParams.append("master_currency", activeCurrency);
 
       const qs = queryParams.toString() ? `?${queryParams.toString()}` : "";
-      const sankeyQs = `?depth=${sankeyDepth}&include_investments=true&master_currency=${activeCurrency}${startDate ? `&start_date=${startDate}` : ""}${endDate ? `&end_date=${endDate}` : ""}`;
+      const sankeyQs = `?depth=2&include_investments=true&master_currency=${activeCurrency}${start ? `&start_date=${start}` : ""}${end ? `&end_date=${end}` : ""}`;
 
-      const [sumRes, sankeyRes, cfRes, tradeRes] = await Promise.all([
+      const [sumRes, sankeyRes] = await Promise.all([
         apiFetch<CashflowSummary>(`/cashflow/summary${qs}`),
-        apiFetch<SankeyDataResponse>(`/cashflow/sankey${sankeyQs}`),
-        apiFetch<CashflowTransactionItem[]>(`/cashflow`),
-        apiFetch<TransactionItem[]>("/transactions"),
+        apiFetch<SankeyDataResponse>(`/cashflow/sankey${sankeyQs}`).catch(() => null),
       ]);
 
       setSummary(sumRes);
       setSankeyData(sankeyRes);
-      setCashflowTxs(cfRes || []);
-      setTradeTxs(tradeRes || []);
     } catch (err) {
       console.error("Failed to load cashflow data:", err);
     } finally {
@@ -100,508 +98,126 @@ export default function CashflowPage() {
     }
   };
 
-  const handleOpenAddModal = () => {
-    setEditingTransaction(null);
-    setIsModalOpen(true);
-  };
+  const totalInflow = summary?.total_income ?? 0;
+  const totalSpends = summary?.total_expenses ?? 0;
+  const netSavings = summary?.net_savings ?? 0;
+  const savingsRate = summary?.savings_rate_pct ?? (totalInflow > 0 ? Math.round(((totalInflow - totalSpends) / totalInflow) * 100) : 0);
 
-  const handleDeleteTransaction = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this cashflow record?")) return;
-    try {
-      await apiFetch(`/cashflow/${id}`, { method: "DELETE" });
-      loadAllData();
-    } catch (e: any) {
-      alert(e.message || "Failed to delete transaction");
-    }
-  };
-
-  const handleDeleteTrade = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this trade transaction?")) return;
-    try {
-      await apiFetch(`/transactions/${id}`, { method: "DELETE" });
-      loadAllData();
-    } catch (err: any) {
-      alert(err.message || "Failed to delete transaction");
-    }
-  };
-
-  // Convert both cashflow and trade records into unified rows
-  const unifiedRows = useMemo<UnifiedRowItem[]>(() => {
-    const rows: UnifiedRowItem[] = [];
-
-    // 1. Day-to-Day Cashflow
-    cashflowTxs.forEach((cf) => {
-      const isTransfer = cf.transaction_kind === "TRANSFER" || cf.items.some((i) => i.category_type === "TRANSFER");
-      const isIncome = !isTransfer && (cf.transaction_kind === "INCOME" || cf.items.some((i) => i.category_type === "INCOME"));
-
-      rows.push({
-        key: `cf-${cf.cashflow_id}`,
-        source: "cashflow",
-        rawCashflow: cf,
-        date: cf.transaction_date,
-        title: cf.title,
-        notes: cf.notes,
-        payments: cf.payments.map((p) => ({
-          account_id: p.account_id,
-          account_name: p.account_name || "Account",
-          account_currency: p.account_currency || cf.currency || "EUR",
-          amount: p.amount,
-        })),
-        items: cf.items.map((i) => ({
-          category_name: i.category_name || "Uncategorized",
-          category_type: i.category_type,
-          description: i.description,
-          effective_label: i.effective_label || i.label || "DISCRETIONARY",
-          amount: i.amount,
-        })),
-        isTransfer,
-        isIncome,
-        totalAmount: cf.total_amount,
-        currency: cf.currency || "EUR",
-      });
-    });
-
-    // 2. Investment Trades
-    tradeTxs.forEach((t) => {
-      const ttype = (t.transaction_type || "").toLowerCase();
-      const isBuy = ttype === "buy";
-      const isSell = ttype === "sell";
-      const isDiv = ttype === "dividend";
-      const isDeposit = ttype === "deposit";
-      const isWithdrawal = ttype === "withdrawal";
-
-      const isIncome = isSell || isDiv || isDeposit;
-      const isTransfer = isDeposit || isWithdrawal;
-
-      const holdingName = t.account_name || "Demat Account";
-      const fundingName = t.funding_account_name || holdingName;
-
-      const grossAmt = (t.quantity && t.price_per_unit) ? (t.quantity * t.price_per_unit) : t.total_amount;
-      const fees = t.fees || 0;
-      const taxes = t.taxes || 0;
-
-      let netTotal = grossAmt;
-      if (isBuy) {
-        netTotal = grossAmt + fees + taxes;
-      } else if (isSell) {
-        netTotal = Math.max(0, grossAmt - fees - taxes);
-      } else if (isDiv) {
-        netTotal = Math.max(0, grossAmt - taxes);
-      }
-
-      const signedPaymentAmt = isIncome ? netTotal : -netTotal;
-
-      const paymentsList = [];
-      if (isBuy && t.quantity) {
-        paymentsList.push({
-          account_id: t.account_id,
-          account_name: `${holdingName} (Holding)`,
-          account_currency: t.account_currency || "USD",
-          amount: 0,
-          holding_delta: `+${t.quantity} ${t.asset_symbol || "shares"}`
-        });
-        paymentsList.push({
-          account_id: t.funding_account_id || t.account_id,
-          account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
-          account_currency: t.funding_account_currency || t.account_currency || "USD",
-          amount: -netTotal,
-        });
-      } else if (isSell && t.quantity) {
-        paymentsList.push({
-          account_id: t.account_id,
-          account_name: `${holdingName} (Holding)`,
-          account_currency: t.account_currency || "USD",
-          amount: 0,
-          holding_delta: `-${t.quantity} ${t.asset_symbol || "shares"}`
-        });
-        paymentsList.push({
-          account_id: t.funding_account_id || t.account_id,
-          account_name: fundingName !== holdingName ? fundingName : `${holdingName} (Cash)`,
-          account_currency: t.funding_account_currency || t.account_currency || "USD",
-          amount: netTotal,
-        });
-      } else if (isDiv) {
-        paymentsList.push({
-          account_id: t.funding_account_id || t.account_id,
-          account_name: fundingName,
-          account_currency: t.funding_account_currency || t.account_currency || "USD",
-          amount: netTotal,
-        });
-      } else {
-        paymentsList.push({
-          account_id: t.account_id,
-          account_name: holdingName,
-          account_currency: t.account_currency || "USD",
-          amount: signedPaymentAmt,
-        });
-      }
-
-      const itemsList = [];
-      if (isBuy) {
-        itemsList.push({
-          category_name: "Stock & ETF Purchases",
-          category_type: "EXPENSE",
-          description: `Bought ${t.quantity} ${t.asset_symbol || "shares"} @ ${t.price_per_unit ? formatCurrency(t.price_per_unit, t.account_currency || "USD") : ""}`,
-          effective_label: "INVESTMENT",
-          amount: grossAmt,
-        });
-      } else if (isSell) {
-        itemsList.push({
-          category_name: "Stock Sales & Realized Gains",
-          category_type: "INCOME",
-          description: `Sold ${t.quantity} ${t.asset_symbol || "shares"} @ ${t.price_per_unit ? formatCurrency(t.price_per_unit, t.account_currency || "USD") : ""}`,
-          effective_label: "INVESTMENT",
-          amount: grossAmt,
-        });
-      } else if (isDiv) {
-        itemsList.push({
-          category_name: "Dividends Received",
-          category_type: "INCOME",
-          description: `Dividend from ${t.asset_symbol || t.asset_name || "Asset"}`,
-          effective_label: "INVESTMENT",
-          amount: grossAmt,
-        });
-      } else if (isDeposit || isWithdrawal) {
-        itemsList.push({
-          category_name: "Brokerage Cash Transfer",
-          category_type: "TRANSFER",
-          description: `${ttype.toUpperCase()} ${formatCurrency(t.total_amount, t.account_currency || "USD")}`,
-          effective_label: "INVESTMENT",
-          amount: t.total_amount,
-        });
-      }
-
-      if (fees > 0) {
-        itemsList.push({
-          category_name: "Investment Fees & Charges",
-          category_type: "EXPENSE",
-          description: "Brokerage & Platform Charges",
-          effective_label: "ESSENTIAL",
-          amount: fees,
-        });
-      }
-      if (taxes > 0) {
-        itemsList.push({
-          category_name: "Taxes & Duties",
-          category_type: "EXPENSE",
-          description: isDiv ? "Tax Withheld at Source (TDS)" : "Securities Transaction Tax & Duties",
-          effective_label: "ESSENTIAL",
-          amount: taxes,
-        });
-      }
-
-      rows.push({
-        key: `trade-${t.transaction_id}`,
-        source: "investment",
-        rawTrade: t,
-        date: t.transaction_date,
-        title: t.asset_name || t.asset_symbol || `${ttype.toUpperCase()} Transaction`,
-        notes: t.notes,
-        payments: paymentsList,
-        items: itemsList,
-        isTransfer,
-        isIncome,
-        totalAmount: netTotal,
-        currency: t.account_currency || "USD",
-      });
-    });
-
-    return rows.sort((a, b) => b.date.localeCompare(a.date));
-  }, [cashflowTxs, tradeTxs]);
-
-  // Filtered transactions for the ledger (strictly last 30 days)
-  const filteredTransactions = useMemo(() => {
-    const today = new Date();
-    const past30 = new Date(today);
-    past30.setDate(today.getDate() - 30);
-    const date30DaysAgoStr = past30.toISOString().split("T")[0];
-
-    return unifiedRows.filter((tx) => {
-      // Limit to last 30 days
-      if (tx.date < date30DaysAgoStr) return false;
-
-      // Label filter
-      if (selectedLabelFilter !== "ALL") {
-        const matchesLabel = tx.items.some(
-          (i) => (i.effective_label || "DISCRETIONARY") === selectedLabelFilter
-        );
-        if (!matchesLabel) return false;
-      }
-
-      // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesTitle = tx.title.toLowerCase().includes(q);
-        const matchesNotes = (tx.notes || "").toLowerCase().includes(q);
-        const matchesAccount = tx.payments.some((p) => p.account_name?.toLowerCase().includes(q));
-        const matchesCategory = tx.items.some(
-          (i) => i.category_name?.toLowerCase().includes(q) || (i.description && i.description.toLowerCase().includes(q))
-        );
-        if (!matchesTitle && !matchesNotes && !matchesAccount && !matchesCategory) return false;
-      }
-
-      return true;
-    });
-  }, [unifiedRows, selectedLabelFilter, searchQuery]);
-
-  const labelTotals = summary?.breakdown_by_label || {};
+  const breakdown = summary?.breakdown_by_label || {};
+  const essentialSpend = breakdown["ESSENTIAL"] ?? 0;
+  const discretionarySpend = breakdown["DISCRETIONARY"] ?? 0;
+  const luxurySpend = breakdown["LUXURY"] ?? 0;
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-6 font-sans">
-      {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9]">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">
-            Income & Spends
-          </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-0.5">
-            Cashflow engine, multi-currency ledger, and interactive Sankey diagram
-          </p>
-        </div>
-
-        {/* Global Controls */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Timeline Filter Pills */}
-          <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold flex-wrap">
-            {TIMELINE_OPTIONS.map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => setSelectedTimeline(opt.key)}
-                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                  selectedTimeline === opt.key
-                    ? "bg-[#0F172A] text-white shadow-xs"
-                    : "text-slate-600 hover:text-black"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+    <>
+      <PageHeader
+        title="Income & spend"
+        description="Where money came from and where it went this period."
+        actions={
+          <div className="flex items-center gap-3">
+            <Segmented
+              size="sm"
+              value={timeframe}
+              onChange={(v) => setTimeframe(v as TimeframeOption)}
+              options={[
+                { value: "week", label: "Week" },
+                { value: "month", label: "Month" },
+                { value: "ytd", label: "YTD" },
+                { value: "all", label: "All" },
+              ]}
+            />
+            <Button size="sm" onClick={() => setIsRecordModalOpen(true)}>
+              <Plus className="size-4" />
+              <span>Record</span>
+            </Button>
           </div>
+        }
+      />
 
-          <button
-            onClick={handleOpenAddModal}
-            className="btn-pill-black text-xs cursor-pointer shadow-xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Record Spend / Income</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* 1. SIDE-BY-SIDE: 4 KPI CARDS (20%) + SANKEY (80%)        */}
-      {/* ======================================================== */}
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-5 items-start">
-        {/* Left 1 Col (~20% width): 4 Stacked KPI Cards */}
-        <div className="xl:col-span-1 space-y-3.5 flex flex-col">
-          {/* Card 1: Total Inflow */}
-          <div className="getquin-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Total Inflow</span>
-              <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xl font-bold text-[#0F172A] tabular-nums">
-                {formatCleanMoney(summary?.total_income || 0, masterCurrency)}
-              </div>
-              <p className="text-[10px] font-semibold text-emerald-600 mt-0.5">
-                Salary, Consulting & Dividends
-              </p>
-            </div>
-          </div>
-
-          {/* Card 2: Total Expenses */}
-          <div className="getquin-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Total Spends</span>
-              <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg">
-                <TrendingDown className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xl font-bold text-[#0F172A] tabular-nums">
-                {formatCleanMoney(summary?.total_expenses || 0, masterCurrency)}
-              </div>
-              <p className="text-[10px] font-semibold text-rose-600 mt-0.5">
-                Outflows & Lifestyle Spends
-              </p>
-            </div>
-          </div>
-
-          {/* Card 3: Net Retained Cash */}
-          <div className="getquin-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Net Retained Cash</span>
-              <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-                <Wallet className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2.5">
-              <div className="text-xl font-bold text-[#0F172A] tabular-nums">
-                {formatCleanMoney(summary?.net_savings || 0, masterCurrency)}
-              </div>
-              <p className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                Savings Rate: <span className="font-bold text-[#0F172A]">{summary?.savings_rate_pct || 0}%</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Card 4: Classification Split */}
-          <div className="getquin-card p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Classification Split</span>
-              <div className="p-1.5 bg-purple-50 text-purple-600 rounded-lg">
-                <PiggyBank className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-2 space-y-1 text-[11px] font-semibold">
-              <div className="flex items-center justify-between">
-                <span className="text-emerald-700">Essential (Need):</span>
-                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["ESSENTIAL"] || 0, masterCurrency)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-amber-700">Discretionary:</span>
-                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["DISCRETIONARY"] || 0, masterCurrency)}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-pink-700">Luxury:</span>
-                <span className="font-bold text-[#0F172A]">{formatCurrency(labelTotals["LUXURY"] || 0, masterCurrency)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right 4 Cols (~80% width): Sankey Flow Diagram Card */}
-        <div className="xl:col-span-4 getquin-card p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <span>Cashflow Sankey Flow Diagram</span>
-              </h2>
-              <p className="text-[11px] font-medium text-slate-400">
-                Visualizing money flow from income & past savings into classification buckets and category nodes
-              </p>
-            </div>
-
-            {/* Depth Selector (Level 1 to 5) */}
-            <div className="flex items-center gap-1 bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold">
-              <span className="text-[10px] text-slate-400 font-bold px-2 uppercase tracking-wider flex items-center gap-1">
-                <Layers className="w-3 h-3" /> Depth:
-              </span>
-              {[1, 2, 3, 4, 5].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setSankeyDepth(d)}
-                  className={`w-6 h-6 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
-                    sankeyDepth === d
-                      ? "bg-[#0F172A] text-white shadow-xs"
-                      : "text-slate-600 hover:text-black"
-                  }`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Render Sankey Visualizer */}
-          <div className="w-full bg-slate-50/50 rounded-xl border border-slate-100 p-2 min-h-[420px] flex items-center justify-center">
-            {loading && !sankeyData ? (
-              <div className="text-xs font-bold text-slate-400 animate-pulse">
-                Generating flow ribbons...
-              </div>
-            ) : (
-              <SankeyChart data={sankeyData} currency={masterCurrency} />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* 2. TRANSACTIONS LEDGER TABLE                             */}
-      {/* ======================================================== */}
-      <div className="getquin-card p-5 space-y-4">
-        {/* Table Header Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div>
-            <h2 className="text-sm font-bold text-[#0F172A]">
-              Income & Spend Transactions ({filteredTransactions.length})
-            </h2>
-            <p className="text-[11px] font-medium text-slate-400">
-              Historical ledger with split payment methods and multi-category itemization
-            </p>
-          </div>
-
-          {/* Search & Label Filters */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Search Input */}
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search merchant, account, category..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-[#F3F4F6] text-xs font-semibold text-slate-800 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none w-52"
-              />
-            </div>
-
-            {/* Label Filter Pills */}
-            <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold">
-              {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
-                <button
-                  key={lbl}
-                  onClick={() => setSelectedLabelFilter(lbl)}
-                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                    selectedLabelFilter === lbl
-                      ? "bg-[#0F172A] text-white shadow-xs"
-                      : "text-slate-600 hover:text-black"
-                  }`}
-                >
-                  {lbl === "ALL" ? "All Labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Ledger Table */}
-        <TransactionLedger
-          transactions={filteredTransactions}
-          loading={loading}
-          masterCurrency={masterCurrency}
-          showRunningBalance={false}
-          onEditCashflow={(tx) => {
-            setEditingTransaction(tx);
-            setIsModalOpen(true);
-          }}
-          onDeleteCashflow={handleDeleteTransaction}
-          onEditTrade={(tx) => {
-            setEditingTradeTx(tx);
-            setIsTradeModalOpen(true);
-          }}
-          onDeleteTrade={handleDeleteTrade}
+      {/* 4 Financial Pulse Metric Cards */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <MetricCard
+          label="Total inflow"
+          value={totalInflow}
+          currency={masterCurrency}
+          tone="gain"
+          hint="Salary, consulting, dividends"
         />
+        <MetricCard
+          label="Total spends"
+          value={totalSpends}
+          currency={masterCurrency}
+          tone="loss"
+          hint="Outflows & lifestyle"
+        />
+        <MetricCard
+          label="Net retained"
+          value={netSavings}
+          currency={masterCurrency}
+          tone={netSavings >= 0 ? "gain" : "loss"}
+          hint={`Savings rate ${savingsRate}%`}
+        />
+        <Card className="p-4">
+          <div className="text-micro uppercase tracking-wider text-subtle font-medium">Classification</div>
+          <dl className="mt-2 space-y-1.5 text-label font-medium">
+            <div className="flex items-center justify-between">
+              <dt className="text-gain">Essential</dt>
+              <dd className="font-semibold text-foreground">{money(essentialSpend, masterCurrency)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-warn">Discretionary</dt>
+              <dd className="font-semibold text-foreground">{money(discretionarySpend, masterCurrency)}</dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-muted">Luxury</dt>
+              <dd className="font-semibold text-foreground">{money(luxurySpend, masterCurrency)}</dd>
+            </div>
+          </dl>
+        </Card>
       </div>
 
-      {/* Cashflow Transaction Entry & Edit Modal */}
-      <CashflowModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={loadAllData}
-        initialData={editingTransaction}
-      />
+      {/* Cashflow Diagram: Sankey Flow Chart */}
+      <Card className="mt-6">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
+          <div>
+            <CardTitle>Cashflow diagram</CardTitle>
+            <CardDescription>Income into essentials, discretionary spend and savings</CardDescription>
+          </div>
+          <Link
+            href="/cashflow/transactions"
+            className="flex items-center gap-1.5 text-label font-medium text-primary hover:underline"
+          >
+            <span>View all transactions</span>
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </CardHeader>
+        <CardContent>
+          {sankeyData && sankeyData.nodes && sankeyData.nodes.length > 0 ? (
+            <SankeyChart
+              data={sankeyData}
+              loading={loading}
+              currency={masterCurrency}
+            />
+          ) : (
+            <div className="py-16 text-center text-label text-muted">
+              {loading ? "Calculating cashflow movements..." : "No cash movements recorded for this period."}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Trade Transaction Entry & Edit Modal */}
-      <TransactionModal
-        isOpen={isTradeModalOpen}
-        onClose={() => setIsTradeModalOpen(false)}
-        onSuccess={loadAllData}
-        initialData={editingTradeTx}
-      />
-    </div>
+      {/* Cashflow Record Modal */}
+      {isRecordModalOpen && (
+        <CashflowModal
+          isOpen={isRecordModalOpen}
+          initialData={null}
+          onClose={() => setIsRecordModalOpen(false)}
+          onSuccess={() => {
+            setIsRecordModalOpen(false);
+            loadData();
+          }}
+        />
+      )}
+    </>
   );
 }

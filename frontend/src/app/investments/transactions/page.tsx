@@ -4,11 +4,13 @@ import React, { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatMoney } from "@/lib/format";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
-
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { 
-  Plus, Search, ArrowRight, ArrowLeft, MoreVertical, 
-  Edit, Trash2, Info, ArrowUpRight, ArrowDownRight, RefreshCw, Sparkles
+  Plus, Search, Pencil, Trash2, ArrowUpRight, ArrowDownLeft, RefreshCw 
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Transaction {
   transaction_id: number;
@@ -31,18 +33,8 @@ interface Transaction {
   notes: string | null;
 }
 
-interface PortfolioSummary {
-  total_net_worth: number;
-  total_invested: number;
-  total_current_value: number;
-  total_realized_pnl: number;
-  total_unrealized_pnl: number;
-  portfolio_xirr: number | null;
-}
-
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -51,31 +43,17 @@ export default function TransactionsPage() {
   const [filterType, setFilterType] = useState<string>("all");
 
   useEffect(() => {
-    document.title = "Transactions · greenline";
+    document.title = "Trades · greenline";
     loadTransactions();
   }, []);
 
   const loadTransactions = async () => {
     try {
       setLoading(true);
-      const [txRes, sumRes] = await Promise.allSettled([
-        apiFetch<Transaction[]>("/transactions?limit=500"),
-        apiFetch<PortfolioSummary>("/portfolio/summary"),
-      ]);
-
-      if (txRes.status === "fulfilled") {
-        setTransactions(txRes.value || []);
-      } else {
-        console.error("Failed to load transactions:", txRes.reason);
-      }
-
-      if (sumRes.status === "fulfilled") {
-        setSummary(sumRes.value);
-      } else {
-        console.error("Failed to load portfolio summary:", sumRes.reason);
-      }
+      const data = await apiFetch<Transaction[]>("/transactions?limit=500");
+      setTransactions(data || []);
     } catch (e) {
-      console.error("Failed to load transaction page data:", e);
+      console.error("Failed to load transactions:", e);
     } finally {
       setLoading(false);
     }
@@ -137,294 +115,178 @@ export default function TransactionsPage() {
     return dateStr;
   };
 
-  const totalPnL = (summary?.total_unrealized_pnl || 0) + (summary?.total_realized_pnl || 0);
-
   return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* LEFT COLUMN: Month-Grouped Transactions Ledger (~68% width) */}
-        <div className="lg:col-span-8 space-y-5">
-          <div className="getquin-card p-5">
-            {/* Header: Title & Add Transaction */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-[#0F172A]">Transactions</h2>
-                <span className="text-[11px] font-bold text-slate-400">
-                  ({transactions.length} total)
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={loadTransactions}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="Reload Transactions"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-blue-600" : ""}`} />
-                </button>
-
-
-                <button
-                  onClick={() => {
-                    setEditingTransaction(null);
-                    setIsModalOpen(true);
-                  }}
-                  className="btn-pill-black text-[11px]"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add transaction</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Search & Filter Bar */}
-            <div className="py-3 flex items-center gap-3 border-b border-[#F1F5F9]">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder="Search asset, symbol, account, or notes..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[#F3F4F6] text-xs font-semibold text-slate-800 placeholder-slate-400 pl-9 pr-4 py-2 rounded-lg border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none transition-all"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <select
-                  value={filterType}
-                  onChange={(e) => setFilterType(e.target.value)}
-                  className="bg-[#F3F4F6] text-xs font-bold text-slate-700 px-3 py-2 rounded-lg border border-transparent focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All Types</option>
-                  <option value="buy">Buys</option>
-                  <option value="sell">Sells</option>
-                  <option value="dividend">Dividends</option>
-                  <option value="deposit">Deposits</option>
-                  <option value="withdrawal">Withdrawals</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Month-Grouped Transaction List */}
-            <div className="divide-y divide-slate-100">
-              {Object.keys(groupedTransactions).length > 0 ? (
-                Object.entries(groupedTransactions).map(([monthYear, txList]) => (
-                  <div key={monthYear} className="py-3.5">
-                    {/* Month Year Header */}
-                    <div className="text-xs font-bold text-slate-400 mb-2">
-                      {monthYear}
-                    </div>
-
-                    {/* Transaction Rows */}
-                    <div className="space-y-1">
-                      {txList.map((tx) => {
-                        const isBuy = tx.transaction_type.toLowerCase() === "buy";
-                        const isSell = tx.transaction_type.toLowerCase() === "sell";
-                        const isDeposit = tx.transaction_type.toLowerCase() === "deposit";
-                        const isDividend = tx.transaction_type.toLowerCase() === "dividend";
-                        const curr = tx.account_currency || "USD";
-
-                        const initials = tx.asset_symbol
-                          ? tx.asset_symbol.replace(/[^a-zA-Z]/g, "").slice(0, 3).toUpperCase()
-                          : (tx.transaction_type.slice(0, 3).toUpperCase());
-
-                        return (
-                          <div
-                            key={tx.transaction_id}
-                            className="flex items-center justify-between py-2.5 px-2 rounded-xl hover:bg-slate-50 transition-colors group"
-                          >
-                            {/* Left: Date + Arrow + Avatar + Asset Description */}
-                            <div className="flex items-center gap-3 min-w-0">
-                              {/* Date with Direction Arrow */}
-                              <div className="w-12 text-[11px] font-bold text-slate-700 flex items-center gap-1 tabular-nums shrink-0">
-                                <span>{formatDayDate(tx.transaction_date)}</span>
-                                {isBuy || isDeposit ? (
-                                  <ArrowRight className="w-3 h-3 text-slate-400" />
-                                ) : (
-                                  <ArrowLeft className="w-3 h-3 text-slate-400" />
-                                )}
-                              </div>
-
-                              {/* Ticker Avatar Badge */}
-                              <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-[10px] flex items-center justify-center border border-slate-200/80 shrink-0">
-                                {initials}
-                              </div>
-
-                              {/* Asset Title & Transaction Subtitle */}
-                              <div className="truncate">
-                                <div className="font-bold text-[#0F172A] text-xs truncate">
-                                  {tx.asset_name || tx.asset_symbol || tx.account_name || "Cash Entry"}
-                                </div>
-                                <div className="text-[11px] font-medium text-slate-400 mt-0.5 truncate">
-                                  {isBuy && `Bought x${formatQty(tx.quantity || 0)} at ${formatMoney(tx.price_per_unit, curr)}`}
-                                  {isSell && `Sold x${formatQty(tx.quantity || 0)} at ${formatMoney(tx.price_per_unit, curr)}`}
-                                  {isDividend && `Dividend received`}
-                                  {isDeposit && `Deposit into ${tx.account_name || "account"}`}
-                                  {tx.transaction_type.toLowerCase() === "withdrawal" && `Withdrawal from ${tx.account_name || "account"}`}
-                                  {tx.transaction_type.toLowerCase() === "split" && `Stock Split`}
-                                  {tx.transaction_type.toLowerCase() === "bonus" && `Bonus Shares`}
-                                  {tx.notes && <span className="ml-2 text-slate-500 italic">- {tx.notes}</span>}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Right: Total Amount & Action Menu */}
-                            <div className="flex items-center gap-3 shrink-0 tabular-nums">
-                              <div className="text-right">
-                                <div className="font-extrabold text-xs text-[#0F172A]">
-                                  {formatMoney(tx.total_amount, curr)}
-                                </div>
-                                <div className="text-[10px] font-semibold text-slate-400">
-                                  {tx.funding_account_name && tx.funding_account_name !== tx.account_name
-                                    ? `${tx.account_name} • via ${tx.funding_account_name}`
-                                    : (tx.funding_account_name || tx.account_name || "Account")}
-                                </div>
-                              </div>
-
-                              {tx.transaction_id >= 0 && (
-                              <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100">
-                                <button
-                                  onClick={() => handleEdit(tx)}
-                                  className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-200/60 transition-colors"
-                                  title="Edit"
-                                >
-                                  <Edit className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(tx.transaction_id)}
-                                  className="p-1 text-rose-400 hover:text-rose-600 rounded hover:bg-rose-50 transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center text-slate-400 font-medium text-xs">
-                  {loading ? (
-                    "Loading transactions..."
-                  ) : (
-                    <div>
-                      <p className="mb-3">No transactions found.</p>
-                      <button
-                        onClick={() => {
-                          setEditingTransaction(null);
-                          setIsModalOpen(true);
-                        }}
-                        className="btn-pill-black text-xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add your first transaction</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+    <>
+      <PageHeader
+        title="Trades"
+        description="Every buy, sell, dividend and split."
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadTransactions}
+              className="p-2 text-muted hover:text-foreground hover:bg-surface-2 rounded-control transition-colors"
+              title="Reload Transactions"
+            >
+              <RefreshCw className={cn("size-4", loading && "animate-spin text-primary")} />
+            </button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingTransaction(null);
+                setIsModalOpen(true);
+              }}
+            >
+              <Plus className="size-4" />
+              <span>Add transaction</span>
+            </Button>
           </div>
-        </div>
-
-        {/* RIGHT COLUMN: Performance & Capital Summary Widget (~32% width) */}
-        <div className="lg:col-span-4 space-y-5">
-          <div className="getquin-card p-5">
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-[#0F172A]">Performance</h3>
-                <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                  PRO
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-4 pt-3 text-xs">
-              {/* Capital */}
-              <div>
-                <h4 className="font-bold text-[#0F172A] text-xs mb-2">Capital</h4>
-                <div className="flex items-center justify-between py-1 text-slate-600">
-                  <span className="flex items-center gap-1">
-                    Invested capital <Info className="w-3 h-3 text-slate-400" />
-                  </span>
-                  <span className="font-bold text-[#0F172A] tabular-nums">
-                    ${formatNum(summary?.total_invested || 0, 2)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Performance breakdown */}
-              <div className="pt-2 border-t border-slate-100">
-                <h4 className="font-bold text-[#0F172A] text-xs mb-2">Performance breakdown</h4>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between py-0.5 text-slate-600">
-                    <span className="flex items-center gap-1">
-                      Price gain <Info className="w-3 h-3 text-slate-400" />
-                    </span>
-                    <div className="flex items-center gap-2 tabular-nums">
-                      <span className={`font-bold ${summary && summary.total_unrealized_pnl >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                        {summary && summary.total_unrealized_pnl >= 0 ? "↗" : "↘"} {summary && summary.total_invested > 0 ? ((summary.total_unrealized_pnl / summary.total_invested) * 100).toFixed(2) : "0.00"}%
-                      </span>
-                      <span className="font-bold text-slate-800">
-                        {formatMoney(summary?.total_unrealized_pnl || 0, "USD", 2, true)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between py-0.5 text-slate-600">
-                    <span className="flex items-center gap-1">
-                      Realized gain <Info className="w-3 h-3 text-slate-400" />
-                    </span>
-                    <div className="flex items-center gap-2 tabular-nums">
-                      <span className={`font-bold ${summary && summary.total_realized_pnl >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                        {summary && summary.total_realized_pnl >= 0 ? "↗" : "↘"} {summary && summary.total_invested > 0 ? ((summary.total_realized_pnl / summary.total_invested) * 100).toFixed(2) : "0.00"}%
-                      </span>
-                      <span className="font-bold text-slate-800">
-                        {formatMoney(summary?.total_realized_pnl || 0, "USD", 2, true)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Total return & Rates */}
-              <div className="pt-3 border-t border-slate-100 space-y-2">
-                <div className="flex items-center justify-between py-1 font-bold text-slate-800">
-                  <span>Total return</span>
-                  <span className={`font-extrabold tabular-nums ${totalPnL >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-                    {totalPnL >= 0 ? "↗" : "↘"} {formatMoney(totalPnL, "USD", 2, true)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between py-1 text-slate-600">
-                  <span className="flex items-center gap-1">
-                    Internal rate of return (IRR) <Info className="w-3 h-3 text-slate-400" />
-                  </span>
-                  <span className="font-extrabold text-[#16A34A] tabular-nums">
-                    {summary?.portfolio_xirr != null ? `↗ ${(summary.portfolio_xirr * 100).toFixed(2)}%` : "0.00%"}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-      <TransactionModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSuccess={loadTransactions}
-        initialData={editingTransaction}
+        }
       />
 
+      <Card className="rounded-card border border-border bg-surface shadow-card">
+        <CardContent className="space-y-6 p-6">
+          {/* Search & Filter Bar */}
+          <div className="flex flex-wrap gap-3">
+            <div className="relative min-w-64 flex-1">
+              <Search className="size-3.5 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search asset, symbol, account or notes"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-surface-2 text-foreground placeholder:text-muted text-label rounded-control pl-8.5 pr-4 py-2 border border-border focus:border-border-strong focus:outline-none transition-all"
+              />
+            </div>
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="w-44 bg-surface-2 text-foreground text-label font-medium rounded-control px-3 py-2 border border-border focus:border-border-strong focus:outline-none cursor-pointer"
+            >
+              <option value="all">All types</option>
+              <option value="buy">Buys</option>
+              <option value="sell">Sells</option>
+              <option value="dividend">Dividends</option>
+              <option value="deposit">Deposits</option>
+              <option value="withdrawal">Withdrawals</option>
+              <option value="split">Splits</option>
+            </select>
+          </div>
 
+          {/* Grouped Month Streams */}
+          {Object.keys(groupedTransactions).length > 0 ? (
+            Object.entries(groupedTransactions).map(([monthYear, txList]) => (
+              <section key={monthYear} className="space-y-2">
+                <h3 className="text-micro uppercase tracking-wider text-subtle font-semibold mb-1">
+                  {monthYear}
+                </h3>
+                <ul className="divide-y divide-border border-t border-border">
+                  {txList.map((tx) => {
+                    const isBuy = tx.transaction_type.toLowerCase() === "buy";
+                    const isSell = tx.transaction_type.toLowerCase() === "sell";
+                    const isDividend = tx.transaction_type.toLowerCase() === "dividend";
+                    const curr = tx.account_currency || "USD";
 
-    </div>
+                    return (
+                      <li
+                        key={tx.transaction_id}
+                        className="group flex items-center gap-4 py-3 hover:bg-surface-2/40 px-2 rounded-control transition-colors"
+                      >
+                        <span className="w-12 text-label text-muted font-medium tabular-nums shrink-0">
+                          {formatDayDate(tx.transaction_date)}
+                        </span>
+
+                        <span
+                          className={cn(
+                            "grid size-8 place-items-center rounded-full shrink-0",
+                            isBuy
+                              ? "bg-info-soft text-info"
+                              : "bg-gain-soft text-gain"
+                          )}
+                          aria-label={tx.transaction_type}
+                        >
+                          {isBuy ? (
+                            <ArrowUpRight className="size-4" />
+                          ) : (
+                            <ArrowDownLeft className="size-4" />
+                          )}
+                        </span>
+
+                        <div className="min-w-0 flex-1 leading-tight">
+                          <div className="font-semibold text-foreground text-body truncate">
+                            {tx.asset_name || tx.asset_symbol || tx.account_name || "Cash Movement"}
+                          </div>
+                          <div className="text-label text-muted tabular-nums truncate mt-0.5">
+                            {isBuy && `Bought x${formatQty(tx.quantity || 0)} at ${formatMoney(tx.price_per_unit, curr)}`}
+                            {isSell && `Sold x${formatQty(tx.quantity || 0)} at ${formatMoney(tx.price_per_unit, curr)}`}
+                            {isDividend && `Dividend distribution`}
+                            {tx.transaction_type.toLowerCase() === "deposit" && `Deposit`}
+                            {tx.transaction_type.toLowerCase() === "withdrawal" && `Withdrawal`}
+                            {tx.transaction_type.toLowerCase() === "split" && `Stock Split`}
+                            {tx.notes && <span className="ml-1 opacity-75">· {tx.notes}</span>}
+                          </div>
+                        </div>
+
+                        <div className="text-right leading-tight tabular-nums shrink-0">
+                          <div className="font-semibold text-foreground text-body">
+                            {formatMoney(tx.total_amount, curr)}
+                          </div>
+                          <div className="text-micro text-muted mt-0.5">
+                            {tx.funding_account_name && tx.funding_account_name !== tx.account_name
+                              ? `${tx.account_name} · ${tx.funding_account_name}`
+                              : (tx.funding_account_name || tx.account_name || "Account")}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleEdit(tx)}
+                            className="p-1.5 text-muted hover:text-foreground hover:bg-surface-2 rounded-control transition-colors"
+                            title="Edit"
+                            aria-label="Edit"
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(tx.transaction_id)}
+                            className="p-1.5 text-loss/70 hover:text-loss hover:bg-loss-soft rounded-control transition-colors"
+                            title="Delete"
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))
+          ) : (
+            <div className="py-16 text-center text-label text-muted">
+              {loading ? "Loading trades..." : "No trades found matching your search."}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Trade Edit/Add Modal */}
+      {isModalOpen && (
+        <TransactionModal
+          isOpen={isModalOpen}
+          initialData={editingTransaction}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingTransaction(null);
+          }}
+          onSuccess={() => {
+            setIsModalOpen(false);
+            setEditingTransaction(null);
+            loadTransactions();
+          }}
+        />
+      )}
+    </>
   );
 }

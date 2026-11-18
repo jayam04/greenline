@@ -34,7 +34,11 @@ interface NetWorthChartProps {
   onRangeChange?: (range: string) => void;
 }
 
-function parseDateParts(str: string) {
+function parseDateParts(str?: string) {
+  if (!str || typeof str !== "string") {
+    const today = new Date();
+    return { year: today.getFullYear(), month: today.getMonth(), day: today.getDate() };
+  }
   const parts = str.split("-");
   return {
     year: parseInt(parts[0], 10),
@@ -113,21 +117,24 @@ export function NetWorthChart({
       };
     });
   } else {
-    const snapshots = [...(data as SnapshotData[])].sort((a, b) =>
-      a.snapshot_date.localeCompare(b.snapshot_date)
-    );
+    const snapshots = [...(data as (SnapshotData | any)[])].sort((a, b) => {
+      const dateA = a.snapshot_date || a.date || "";
+      const dateB = b.snapshot_date || b.date || "";
+      return dateA.localeCompare(dateB);
+    });
     normalized = snapshots.map((s) => {
-      let label = s.snapshot_date;
+      const dateStr = s.snapshot_date || s.date || formatDateISO(new Date());
+      let label = dateStr;
       try {
-        const { year, month, day } = parseDateParts(s.snapshot_date);
+        const { year, month, day } = parseDateParts(dateStr);
         const d = new Date(year, month, day);
         label = d.toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" });
       } catch {
         // fallback
       }
       return {
-        val: s.net_worth / 1000,
-        rawDate: s.snapshot_date,
+        val: (s.net_worth ?? s.netWorth ?? 0) / 1000,
+        rawDate: dateStr,
         label,
       };
     });

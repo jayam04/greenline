@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 import { 
   ArrowLeftRight, Plus, Search, Trash2, Edit, 
   ShoppingBag, Briefcase, Layers, RefreshCw, Wallet 
@@ -36,6 +38,7 @@ export default function CashflowTransactionsPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>("ALL");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("ALL");
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
 
   // Modals
@@ -410,18 +413,41 @@ export default function CashflowTransactionsPage() {
   }, [selectedAccountIds, accounts, unifiedRows]);
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-8 space-y-6">
+    <div className="space-y-6">
+      <PageHeader
+        title="Transactions"
+        description="Every cash movement with a running balance."
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setIsPrintModalOpen(true)}>
+              <Printer className="size-4" />
+              <span>Print</span>
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingCashflowTx(null);
+                setIsCashflowModalOpen(true);
+              }}
+            >
+              <Plus className="size-4" />
+              <span>Cashflow</span>
+            </Button>
+          </div>
+        }
+      />
+
       {/* Main Card with Table */}
-      <div className="getquin-card p-5 space-y-4">
+      <div className="getquin-card rounded-card border border-border bg-surface p-5 space-y-4 shadow-card">
         
         {/* Table Header Bar with Mode Selector & Filters */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-border">
           <div className="flex items-center gap-3">
             <div>
-              <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
+              <h2 className="text-body font-semibold text-foreground">
                 Income & Spend Transactions ({filteredRows.length})
               </h2>
-              <p className="text-[11px] font-medium text-slate-400">
+              <p className="text-label text-muted">
                 Historical statement ledger with continuous running net cash balance
               </p>
             </div>
@@ -483,47 +509,28 @@ export default function CashflowTransactionsPage() {
               />
             </div>
 
-            {/* Account Multi-Select Popover */}
-            <Popover>
-              <PopoverTrigger className="flex items-center justify-between bg-secondary hover:bg-secondary/80 text-xs font-bold text-secondary-foreground border border-border px-3 py-1.5 rounded-lg w-40">
-                  <span className="truncate">
-                    {selectedAccountIds.length === 0 
-                      ? "All Accounts" 
-                      : selectedAccountIds.length === 1
-                      ? accounts.find(a => a.account_id === selectedAccountIds[0])?.account_name
-                      : `${selectedAccountIds.length} Accounts`}
-                  </span>
-                  <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-0" align="end">
-                <Command>
-                  <CommandInput placeholder="Search accounts..." />
-                  <CommandList>
-                    <CommandEmpty>No account found.</CommandEmpty>
-                    <CommandGroup>
-                      {accounts.map((a) => (
-                        <CommandItem
-                          key={a.account_id}
-                          onSelect={() => {
-                            setSelectedAccountIds(prev => 
-                              prev.includes(a.account_id) 
-                                ? prev.filter(id => id !== a.account_id)
-                                : [...prev, a.account_id]
-                            )
-                          }}
-                        >
-                          <Checkbox 
-                            checked={selectedAccountIds.includes(a.account_id)}
-                            className="mr-2"
-                          />
-                          {a.account_name} ({a.currency})
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+            {/* Account Selector Filter */}
+            <select
+              aria-label="account-filter"
+              value={selectedAccountId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedAccountId(val);
+                if (val === "ALL") {
+                  setSelectedAccountIds([]);
+                } else {
+                  setSelectedAccountIds([Number(val)]);
+                }
+              }}
+              className="bg-surface-2 text-foreground font-medium rounded-control px-2.5 py-1 text-label border border-border focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All accounts</option>
+              {accounts.map((a) => (
+                <option key={a.account_id} value={a.account_id}>
+                  {a.account_name} ({a.currency})
+                </option>
+              ))}
+            </select>
 
             {/* Label Filter Select */}
             <Select value={selectedLabelFilter} onValueChange={(v) => setSelectedLabelFilter(v || "ALL")}>

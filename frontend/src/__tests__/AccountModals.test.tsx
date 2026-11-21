@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { AccountModal, AssetModal } from '@/app/accounts/page';
+import { AccountModal, AssetModal } from '@/components/AccountModals';
 
 describe('AccountModal Component', () => {
   it('renders account form fields and dismisses on Escape key', () => {

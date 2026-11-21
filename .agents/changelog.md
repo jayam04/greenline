@@ -32,6 +32,85 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 12:57:00 UTC] fix(layout): fix excessive main body left padding and desktop content displacement
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T12:57:00Z",
+  "type": "fix",
+  "scope": "layout",
+  "summary": "fix excessive main body left padding and desktop content displacement",
+  "affected_files": [
+    "frontend/src/components/ClientLayout.tsx",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/styles/common.ts",
+    "frontend/src/__tests__/ClientLayout.test.tsx",
+    "frontend/src/__tests__/SidebarThemeStylex.test.tsx"
+  ],
+  "rationale": "On desktop viewports, the main body was pushed far to the right with excessive left padding. This occurred because the mobile top header in Sidebar had inline display:flex style from sidebarStyles.mobileHeader which overrode Tailwind's lg:hidden class in CSS specificity. Inside the flex container of ClientLayout, the unhidden mobile header occupied 141px of horizontal space on the left in addition to lg:pl-64 (256px), displacing the main content by over 400px. The inline flex display was removed in favor of responsive Tailwind classes (flex lg:!hidden items-center justify-between), and ClientLayout was updated to min-h-screen flex flex-col lg:flex-row.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(layout)`
+- **Summary**: Fix excessive left padding and content right displacement across all pages on desktop.
+- **Rationale**: User reported that after redesigning, most of the main body had too much left padding, moving main content to the right.
+- **Key Changes**:
+  - `frontend/src/styles/common.ts`: Removed `display: 'flex'`, `alignItems`, and `justifyContent` from `sidebarStyles.mobileHeader` to prevent inline styles from overriding responsive stylesheet media queries.
+  - `frontend/src/components/Sidebar.tsx`: Updated mobile header element with `className="flex lg:!hidden items-center justify-between"` so it is cleanly hidden on desktop (display: none !important) and only visible on mobile.
+  - `frontend/src/components/ClientLayout.tsx`: Configured root container as `min-h-screen flex flex-col lg:flex-row` to stack mobile header above main content on mobile, and place sidebar and main content side-by-side without horizontal phantom elements on desktop.
+  - `frontend/src/__tests__/ClientLayout.test.tsx`: Added unit test asserting responsive container classes, desktop padding offset (`lg:pl-64`), and routes exclusion (login, print).
+  - `frontend/src/__tests__/SidebarThemeStylex.test.tsx`: Added unit test ensuring `sidebarStyles.mobileHeader` does not force inline `display: flex`.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run`
+  - Output: 36 test files passed (189 / 189 tests passed), 0 TypeScript errors, 0 ESLint errors.
+
+### [2026-11-18 19:50:00 UTC] refactor(sidebar): modernize navigation sidebar with theme-reactive stylex common styles
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T19:50:00Z",
+  "type": "refactor",
+  "scope": "sidebar",
+  "summary": "modernize navigation sidebar with theme-reactive stylex common styles and extract account modals",
+  "affected_files": [
+    "frontend/src/lib/stylex.ts",
+    "frontend/src/styles/common.ts",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/components/AccountModals.tsx",
+    "frontend/src/app/accounts/page.tsx",
+    "frontend/src/__tests__/SidebarThemeStylex.test.tsx",
+    "frontend/src/__tests__/AccountModals.test.tsx",
+    "frontend/package.json"
+  ],
+  "rationale": "Upgrade navigation sidebar to dynamically react to and match active theme palettes using StyleX common styles and CSS variables rather than hardcoded Tailwind hex colors, and extract AccountModal/AssetModal out of Next.js App Router page.tsx to comply with Next route export constraints.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `refactor(sidebar)`
+- **Summary**: Modernize navigation sidebar with theme-reactive StyleX common styles, integrate semantic CSS variables, and decouple account modals.
+- **Rationale**: The navigation sidebar previously hardcoded static Tailwind colors that failed to adapt when switching between light, dark, and custom themes (indigo, lime, paper, graphite, amber). Implementing StyleX common styles mapped to `--sidebar*` CSS variables allows seamless palette and theme synchronization. Additionally, extracting `AccountModal` and `AssetModal` into `components/AccountModals.tsx` resolves Next.js App Router route export validation.
+- **Key Changes**:
+  - `frontend/src/lib/stylex.ts`: Created lightweight StyleX runtime API adapter (`create`, `props`, `attrs`, `keyframes`) fully compatible with Next.js Turbopack and Vitest.
+  - `frontend/src/styles/common.ts`: Defined reusable common and sidebar styles referencing semantic CSS variables (`--sidebar`, `--sidebar-border`, `--sidebar-primary`, etc.).
+  - `frontend/src/components/Sidebar.tsx`: Migrated sidebar container, brand badge, nav links, active indicators, and user footer to StyleX common styles.
+  - `frontend/src/components/AccountModals.tsx`: Extracted `AccountModal` and `AssetModal` into dedicated component file.
+  - `frontend/src/app/accounts/page.tsx`: Cleaned up page component exports to satisfy Next.js App Router conventions.
+  - `frontend/src/__tests__/SidebarThemeStylex.test.tsx`: Added comprehensive unit tests validating StyleX exports, common styles, and theme-reactive sidebar rendering.
+  - `frontend/src/__tests__/AccountModals.test.tsx`: Updated import paths for extracted modals.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run && npx tsc --noEmit && npm run lint`
+  - Output: 35/35 test files passed (185/185 unit tests), 0 TypeScript errors, 0 ESLint errors. Captured and validated fresh screenshots across light and dark themes using `.agents/skills/page-screenshots`.
+
 ### [2026-11-18 16:34:12 UTC] feat(agents): add cookie and storage state authentication to page-screenshots skill
 
 <!-- changelog-entry-json

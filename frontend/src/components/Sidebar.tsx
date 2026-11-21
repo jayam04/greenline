@@ -6,6 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth0 } from "@auth0/auth0-react";
 import { removeAuthToken } from "@/lib/api";
 import { useTheme } from "@/components/ThemeProvider";
+import * as stylex from "@/lib/stylex";
+import { sidebarStyles } from "@/styles/common";
 import {
   Home,
   PieChart,
@@ -122,24 +124,24 @@ export function Sidebar() {
   const initials = getInitials(user?.name, user?.email);
 
   const sidebarBody = (onNavigate?: () => void) => (
-    <div className="flex h-full flex-col bg-white dark:bg-[#0E1522] border-r border-[#E5E7EB] dark:border-[#1E293B]">
+    <div {...stylex.props(sidebarStyles.sidebarContainer)}>
       {/* Brand Header */}
-      <div className="px-5 pb-3 pt-4 shrink-0">
+      <div {...stylex.props(sidebarStyles.brandHeader)}>
         <Link
           href="/"
           onClick={onNavigate}
-          className="inline-block rounded-xs bg-[#99EF2E] px-2.5 py-1 text-base font-black tracking-tight text-[#0F172A] lowercase transition-transform active:scale-95"
+          {...stylex.props(sidebarStyles.brandBadge)}
         >
           greenline
         </Link>
       </div>
 
       {/* Navigation Groups */}
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-2" aria-label="Main Navigation">
+      <nav {...stylex.props(sidebarStyles.navContainer)} aria-label="Main Navigation">
         {groups.map((group, groupIndex) => (
-          <div key={groupIndex}>
+          <div key={groupIndex} {...stylex.props(sidebarStyles.groupWrapper)}>
             {group.label && (
-              <div className="px-3 mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              <div {...stylex.props(sidebarStyles.groupHeader)}>
                 {group.label}
               </div>
             )}
@@ -153,16 +155,12 @@ export function Sidebar() {
                     href={item.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                      active
-                        ? "bg-slate-100 dark:bg-slate-800 text-[#0F172A] dark:text-white font-semibold"
-                        : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-[#0F172A] dark:hover:text-white"
-                    }`}
+                    {...stylex.props(sidebarStyles.navItem, active && sidebarStyles.navItemActive)}
                   >
                     <Icon className="w-4 h-4 shrink-0" />
                     <span className="flex-1">{item.label}</span>
                     {item.count !== undefined && (
-                      <span className="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
+                      <span {...stylex.props(sidebarStyles.countBadge)}>
                         {item.count}
                       </span>
                     )}
@@ -175,7 +173,7 @@ export function Sidebar() {
       </nav>
 
       {/* User Profile & Theme Controls */}
-      <div className="border-t border-[#E5E7EB] dark:border-[#1E293B] p-3 shrink-0">
+      <div {...stylex.props(sidebarStyles.userProfileSection)}>
         <div className="flex items-center gap-3 px-1">
           {isAuthenticated && user?.picture ? (
             /* eslint-disable-next-line @next/next/no-img-element */
@@ -185,7 +183,7 @@ export function Sidebar() {
               className="w-8 h-8 rounded-full object-cover border border-slate-300 dark:border-slate-600 shrink-0"
             />
           ) : (
-            <div className="grid w-8 h-8 place-items-center rounded-full bg-[#99EF2E] text-xs font-bold text-[#0F172A] shrink-0">
+            <div {...stylex.props(sidebarStyles.userAvatar)}>
               {initials}
             </div>
           )}
@@ -210,16 +208,15 @@ export function Sidebar() {
 
         {/* Sleeker theme mode toggle & red logout button in same row */}
         <div className="mt-2.5 flex items-center justify-between gap-2 px-1">
-          <div className="inline-flex rounded-full bg-slate-100 dark:bg-slate-800/80 p-0.5" role="group" aria-label="Theme mode">
+          <div {...stylex.props(sidebarStyles.themeToggleWrapper)} role="group" aria-label="Theme mode">
             <button
               aria-label="Light mode"
               title="Light mode"
               onClick={() => setTheme("light")}
-              className={`rounded-full p-1.5 transition-colors ${
-                mounted && theme === "light"
-                  ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
-                  : "text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
-              }`}
+              {...stylex.props(
+                sidebarStyles.themeToggleButton,
+                mounted && theme === "light" && sidebarStyles.themeToggleButtonActive
+              )}
             >
               <Sun className="w-3.5 h-3.5" />
             </button>
@@ -227,11 +224,10 @@ export function Sidebar() {
               aria-label="Dark mode"
               title="Dark mode"
               onClick={() => setTheme("dark")}
-              className={`rounded-full p-1.5 transition-colors ${
-                mounted && theme === "dark"
-                  ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
-                  : "text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
-              }`}
+              {...stylex.props(
+                sidebarStyles.themeToggleButton,
+                mounted && theme === "dark" && sidebarStyles.themeToggleButtonActive
+              )}
             >
               <Moon className="w-3.5 h-3.5" />
             </button>
@@ -239,11 +235,10 @@ export function Sidebar() {
               aria-label="System mode"
               title="System mode"
               onClick={() => setTheme("system")}
-              className={`rounded-full p-1.5 transition-colors ${
-                mounted && theme === "system"
-                  ? "bg-white dark:bg-slate-700 text-[#0F172A] dark:text-white shadow-xs"
-                  : "text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-100"
-              }`}
+              {...stylex.props(
+                sidebarStyles.themeToggleButton,
+                mounted && theme === "system" && sidebarStyles.themeToggleButtonActive
+              )}
             >
               <Laptop className="w-3.5 h-3.5" />
             </button>
@@ -253,7 +248,8 @@ export function Sidebar() {
             onClick={handleLogout}
             aria-label="Log out"
             title="Log out"
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors shrink-0"
+            className="text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+            {...stylex.props(sidebarStyles.logoutButton)}
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>Log out</span>
@@ -266,8 +262,8 @@ export function Sidebar() {
   return (
     <>
       {/* Mobile Top Header */}
-      <div className="lg:hidden sticky top-0 z-50 bg-white dark:bg-[#0E1522] border-b border-[#E5E7EB] dark:border-[#1E293B] flex items-center justify-between px-4 h-14">
-        <Link href="/" className="inline-block rounded-xs bg-[#99EF2E] px-2.5 py-1 text-base font-black tracking-tight text-[#0F172A] lowercase">
+      <div className="flex lg:!hidden items-center justify-between" {...stylex.props(sidebarStyles.mobileHeader)}>
+        <Link href="/" {...stylex.props(sidebarStyles.brandBadge)}>
           greenline
         </Link>
         <button

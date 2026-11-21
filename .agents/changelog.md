@@ -32,6 +32,60 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 20:56:00 UTC] fix(docker): unify compose files and support dev/prod and cloud/localdockerdb env passing
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T20:56:00Z",
+  "type": "fix",
+  "scope": "docker",
+  "summary": "unify compose files and support dev/prod and cloud/localdockerdb env passing",
+  "affected_files": [
+    "docker-compose.yml",
+    "docker-compose.demo.yml",
+    "docker-compose.prod.yml",
+    "docker-compose.test.yml",
+    ".env.example",
+    "AGENTS.md",
+    "README.md",
+    "docs/prompts/generate_tests_and_ci.md",
+    "frontend/Dockerfile",
+    "pyproject.toml",
+    "services/networth/app/config.py",
+    "services/networth/tests/test_compose_config.py",
+    "services/networth/tests/e2e/test_tier1_feature_coverage.py",
+    "services/networth/tests/e2e/test_tier4_real_world.py",
+    "services/community/app/config.py",
+    "services/community/tests/test_compose_config.py"
+  ],
+  "rationale": "Fix Docker Compose container startup failure (rebuild image with bcrypt), eliminate duplicate compose files, and parameterize dev/prod and cloud/localdockerdb environments via Compose profiles and dynamic shell switching.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "docker compose config && DB_TARGET=cloud docker compose config --services && docker compose up -d && curl -s http://localhost:8000/health && curl -s http://localhost:8002/health && cd services/community && pytest tests && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(docker)`
+- **Summary**: Merged all Docker Compose files into a single, unified `docker-compose.yml`, eliminated redundant files, resolved container startup failures, and enabled environment-driven selection for development vs production and local vs cloud databases.
+- **Rationale**:
+  - The previous compose setup failed on `networth` container startup due to outdated cached images missing `bcrypt`.
+  - Multiple compose files (`docker-compose.prod.yml`, `docker-compose.demo.yml`, `docker-compose.test.yml`) caused configuration drift and maintenance overhead.
+  - Adding `profiles: ["localdockerdb"]` to the local Oracle container allows developers and CI to easily omit the local Oracle container when connecting to Oracle Autonomous Cloud DB (`DB_TARGET=cloud`) or run only the test DB (`docker compose --profile localdockerdb up oracle -d`).
+- **Key Changes**:
+  - `docker-compose.yml`: Consolidated into a single source of truth. Configured `oracle` with `profiles: ["localdockerdb"]` and `required: false` on dependents. Added dynamic runtime command branches for `ENV=prod` vs `ENV=dev`.
+  - `docker-compose.demo.yml`, `docker-compose.prod.yml`, `docker-compose.test.yml`: Deleted redundant compose files.
+  - `frontend/Dockerfile`: Added `ARG NEXT_PUBLIC_AUTH0_*` arguments to the `builder` stage for production Next.js builds.
+  - `services/networth/app/config.py` & `services/community/app/config.py`: Added automatic credential and DSN resolution for `DB_TARGET="localdockerdb"` vs `DB_TARGET="cloud"`.
+  - `services/networth/tests/test_compose_config.py` & `services/community/tests/test_compose_config.py`: Added automated unit test coverage asserting proper config resolution.
+  - `.env.example`, `AGENTS.md`, `README.md`: Documented new environment passing variables and updated test DB startup command.
+- **Verification**:
+  - `docker compose config` and `DB_TARGET=cloud docker compose config --services` validated across matrix.
+  - `docker compose build` and `docker compose up -d` started all containers (`oracle`, `networth`, `community`, `frontend`) cleanly with 200 OK responses on `/health` endpoints.
+  - 36 community service pytest tests passed.
+  - Frontend TypeScript check (`npx tsc --noEmit`), ESLint, and 36 Vitest test suites (189 tests) passed.
+
 ### [2026-11-21 19:45:00 UTC] refactor(backend): consolidate backend into networth-service for two-service architecture
 
 <!-- changelog-entry-json

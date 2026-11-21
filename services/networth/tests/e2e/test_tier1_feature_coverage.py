@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from app.main import app
 import app.mcp.server as mcp_server
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4] if Path(__file__).resolve().parents[3].name == "services" else Path(__file__).resolve().parents[3]
 
 
 # ==============================================================================
@@ -48,11 +48,15 @@ def test_ui_no_active_links_to_import():
         assert not link_pattern.search(content), f"Found link to /import in {path}"
         assert not push_pattern.search(content), f"Found router.push('/import') in {path}"
 
-    # Verify portfolio JSON backup import route remains preserved in accounts page
+    # Verify portfolio JSON backup import route remains preserved in settings or accounts page
+    settings_page = src_dir / "app" / "settings" / "page.tsx"
     accounts_page = src_dir / "app" / "accounts" / "page.tsx"
-    if accounts_page.exists():
-        accounts_content = accounts_page.read_text(encoding="utf-8")
-        assert "/api/v1/backup/import" in accounts_content, "Portfolio JSON backup import must be preserved"
+    found_import = False
+    for p in (settings_page, accounts_page):
+        if p.exists() and "/backup/import" in p.read_text(encoding="utf-8"):
+            found_import = True
+            break
+    assert found_import, "Portfolio JSON backup import must be preserved"
 
 
 # ==============================================================================

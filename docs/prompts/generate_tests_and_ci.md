@@ -112,6 +112,6 @@ Configure a GitHub Actions workflow with the following jobs:
 
 1. Write clean, self-contained test files with clear assertions and descriptive docstrings.
 2. Do not use hardcoded sleep intervals; use async waits and deterministic polling.
-3. Ensure all tests run with isolated Oracle Free test database (`docker-compose.test.yml`) so production database files are untouched.
+3. Ensure all tests run with isolated Oracle Free test database (`docker compose --profile localdockerdb up oracle -d`) so production database files are untouched.
 4. Verify all tests pass locally before completing the task.
 ```

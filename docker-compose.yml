@@ -2,10 +2,12 @@ services:
   oracle:
     image: gvenzl/oracle-free:slim-faststart
     container_name: greenline-oracle
+    profiles:
+      - localdockerdb
     environment:
-      ORACLE_PASSWORD: test_password
-      APP_USER: greenline_test
-      APP_USER_PASSWORD: test_password
+      ORACLE_PASSWORD: ${ORACLE_LOCAL_PASSWORD:-test_password}
+      APP_USER: ${ORACLE_LOCAL_USER:-greenline_test}
+      APP_USER_PASSWORD: ${ORACLE_LOCAL_PASSWORD:-test_password}
     ports:
       - "1521:1521"
     volumes:
@@ -21,20 +23,34 @@ services:
     build:
       context: ./services/networth
       dockerfile: Dockerfile
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: >
+      sh -c 'if [ "$$ENV" = "prod" ]; then
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $${UVICORN_WORKERS:-4}
+      else
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      fi'
     ports:
-      - "8000:8000"
+      - "${NETWORTH_PORT:-8000}:8000"
     volumes:
       - ./data:/data
       - ./services/networth/app:/app/app
       - ./services/networth/tests:/app/tests
     environment:
-      DATABASE_URL: ${DATABASE_URL_NETWORTH:-oracle+oracledb://greenline_test:test_password@oracle:1521/?service_name=FREEPDB1}
-      DATABASE_URL_NETWORTH: ${DATABASE_URL_NETWORTH:-oracle+oracledb://greenline_test:test_password@oracle:1521/?service_name=FREEPDB1}
+      ENV: ${ENV:-dev}
+      DB_TARGET: ${DB_TARGET:-localdockerdb}
+      IS_DOCKER: "true"
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL_NETWORTH: ${DATABASE_URL_NETWORTH:-}
       ORACLE_USER: ${ORACLE_NETWORTH_USER:-${ORACLE_USER:-}}
       ORACLE_PASSWORD: ${ORACLE_NETWORTH_PASSWORD:-${ORACLE_PASSWORD:-}}
       ORACLE_DSN: ${ORACLE_DSN:-}
       ORACLE_SCHEMA: ${ORACLE_SCHEMA:-ADMIN}
+      ORACLE_LOCAL_USER: ${ORACLE_LOCAL_USER:-greenline_test}
+      ORACLE_LOCAL_PASSWORD: ${ORACLE_LOCAL_PASSWORD:-test_password}
+      ORACLE_LOCAL_DSN: ${ORACLE_LOCAL_DSN:-oracle:1521/FREEPDB1}
+      ORACLE_CLOUD_USER: ${ORACLE_CLOUD_USER:-${ORACLE_USER:-}}
+      ORACLE_CLOUD_PASSWORD: ${ORACLE_CLOUD_PASSWORD:-${ORACLE_PASSWORD:-}}
+      ORACLE_CLOUD_DSN: ${ORACLE_CLOUD_DSN:-${ORACLE_DSN:-}}
       SECRET_KEY: ${SECRET_KEY:-super-secret-investment-tracker-key-change-in-prod-2026}
       DEFAULT_ADMIN_USER: ${DEFAULT_ADMIN_USER:-admin}
       DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-admin123}
@@ -46,6 +62,7 @@ services:
     depends_on:
       oracle:
         condition: service_healthy
+        required: false
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -54,19 +71,31 @@ services:
     build:
       context: ./services/community
       dockerfile: Dockerfile
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    command: >
+      sh -c 'if [ "$$ENV" = "prod" ]; then
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8002 --workers $${UVICORN_WORKERS:-4}
+      else
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+      fi'
     ports:
-      - "8002:8002"
+      - "${COMMUNITY_PORT:-8002}:8002"
     volumes:
       - ./services/community/app:/app/app
       - ./services/community/tests:/app/tests
     environment:
-      DATABASE_URL: ${DATABASE_URL_COMMUNITY:-oracle+oracledb://@}
-      DATABASE_URL_COMMUNITY: ${DATABASE_URL_COMMUNITY:-oracle+oracledb://@}
+      ENV: ${ENV:-dev}
+      DB_TARGET: ${DB_TARGET:-localdockerdb}
+      IS_DOCKER: "true"
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_URL_COMMUNITY: ${DATABASE_URL_COMMUNITY:-}
       ORACLE_COMMUNITY_USER: ${ORACLE_COMMUNITY_USER:-GREENLINE_COMMUNITY}
       COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:-SecureCommunity2026#DbPass}
       ORACLE_DSN: ${ORACLE_DSN:-}
       ORACLE_SCHEMA: ${ORACLE_SCHEMA:-ADMIN}
+      ORACLE_LOCAL_USER: ${ORACLE_LOCAL_USER:-greenline_test}
+      ORACLE_LOCAL_PASSWORD: ${ORACLE_LOCAL_PASSWORD:-test_password}
+      ORACLE_LOCAL_DSN: ${ORACLE_LOCAL_DSN:-oracle:1521/FREEPDB1}
+      ORACLE_CLOUD_DSN: ${ORACLE_CLOUD_DSN:-${ORACLE_DSN:-}}
       AUTH0_DOMAIN: ${AUTH0_DOMAIN:-jayam04.eu.auth0.com}
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
       AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
@@ -76,30 +105,42 @@ services:
     depends_on:
       oracle:
         condition: service_healthy
+        required: false
     restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: dev
-    command: npm run dev -- -H 0.0.0.0 -p 3000
+      target: ${FRONTEND_TARGET:-dev}
+      args:
+        NEXT_PUBLIC_AUTH0_DOMAIN: ${NEXT_PUBLIC_AUTH0_DOMAIN:-jayam04.eu.auth0.com}
+        NEXT_PUBLIC_AUTH0_CLIENT_ID: ${NEXT_PUBLIC_AUTH0_CLIENT_ID:-wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby}
+        NEXT_PUBLIC_AUTH0_AUDIENCE: ${NEXT_PUBLIC_AUTH0_AUDIENCE:-http://localhost:8000}
+        NEXT_PUBLIC_AUTH0_ENABLED: ${NEXT_PUBLIC_AUTH0_ENABLED:-true}
+    command: >
+      sh -c 'if [ "$$ENV" = "prod" ]; then
+        exec npm start -- -p 3000
+      else
+        exec npm run dev -- -H 0.0.0.0 -p 3000
+      fi'
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
     environment:
-      - NEXT_PUBLIC_API_URL=
-      - INTERNAL_API_URL=http://localhost:3000
+      - ENV=${ENV:-dev}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-}
+      - INTERNAL_API_URL=${INTERNAL_API_URL:-http://localhost:3000}
       - NETWORTH_URL=${NETWORTH_URL:-http://networth:8000}
       - COMMUNITY_URL=${COMMUNITY_URL:-http://community:8002/api/v1/community}
       - NEXT_PUBLIC_AUTH0_DOMAIN=${NEXT_PUBLIC_AUTH0_DOMAIN:-jayam04.eu.auth0.com}
       - NEXT_PUBLIC_AUTH0_CLIENT_ID=${NEXT_PUBLIC_AUTH0_CLIENT_ID:-wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby}
       - NEXT_PUBLIC_AUTH0_AUDIENCE=${NEXT_PUBLIC_AUTH0_AUDIENCE:-http://localhost:8000}
       - NEXT_PUBLIC_AUTH0_ENABLED=${NEXT_PUBLIC_AUTH0_ENABLED:-true}
-      - NODE_ENV=development
+      - NODE_ENV=${NODE_ENV:-development}
       - WATCHPACK_POLLING=true
     depends_on:
       networth:

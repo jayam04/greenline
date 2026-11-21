@@ -21,5 +21,6 @@ testpaths = [
     "services/networth/tests",
 ]
 pythonpath = [
-    "services/networth"
+    "services/networth",
+    "services/networth/tests"
 ]

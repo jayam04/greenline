@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from httpx import AsyncClient
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4] if Path(__file__).resolve().parents[3].name == "services" else Path(__file__).resolve().parents[3]
 
 
 # ==============================================================================

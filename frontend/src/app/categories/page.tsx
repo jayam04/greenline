@@ -10,6 +10,8 @@ import {
 import { formatCurrency } from "@/lib/format";
 import { TimelineKey, TIMELINE_OPTIONS, getTimelineDateRange } from "@/lib/dateUtils";
 import { CategoryModal, FlatCategory } from "@/components/CategoryModal";
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 
 interface CategoryTreeItem {
   category_id: number;
@@ -197,7 +199,7 @@ export default function CategoriesPage() {
 
     return (
       <React.Fragment key={node.category_id}>
-        <tr className="hover:bg-slate-50/80 transition-colors border-b border-slate-100 group">
+        <tr className="hover:bg-surface-2/40 transition-colors border-b border-border group">
           {/* Column 1: Category Name with Tree Indentation */}
           <td className="py-2.5 pl-1 pr-3">
             <div 
@@ -208,7 +210,7 @@ export default function CategoriesPage() {
                 <button
                   type="button"
                   onClick={() => toggleExpand(node.category_id)}
-                  className="p-1 text-slate-400 hover:text-slate-700 rounded cursor-pointer"
+                  className="p-1 text-muted hover:text-foreground rounded cursor-pointer"
                 >
                   {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
@@ -217,14 +219,14 @@ export default function CategoriesPage() {
               )}
 
               {hasChildren ? (
-                isExpanded ? <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" /> : <Folder className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                isExpanded ? <FolderOpen className="w-3.5 h-3.5 text-primary shrink-0" /> : <Folder className="w-3.5 h-3.5 text-muted shrink-0" />
               ) : (
-                <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <Tag className="w-3.5 h-3.5 text-muted shrink-0" />
               )}
 
               <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={`Classification: ${effLabel}`} />
 
-              <span className={`text-xs font-bold text-[#0F172A] ${node.level === 1 ? "text-[13px]" : ""}`}>
+              <span className={`text-label font-semibold text-foreground ${node.level === 1 ? "text-body" : ""}`}>
                 {node.name}
               </span>
 
@@ -337,70 +339,63 @@ export default function CategoriesPage() {
   };
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-6 font-sans">
+    <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F1F5F9]">
-        <div>
-          <h1 className="text-xl font-bold text-[#0F172A] tracking-tight">
-            Category Hierarchy & Comparative Spends
-          </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-0.5">
-            Organize up to 5 levels of taxonomy with dynamic timeline comparative analysis
-          </p>
-        </div>
+      <PageHeader
+        title="Categories"
+        description="Up to five levels of taxonomy with comparative spend."
+        actions={
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Search Input */}
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 text-muted absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search category name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="bg-surface-2 text-label font-medium text-foreground placeholder:text-muted pl-8.5 pr-3 py-1.5 rounded-control border border-border focus:border-border-strong focus:outline-none w-52"
+              />
+            </div>
 
-        {/* Header Action Controls */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          {/* Search Input */}
-          <div className="relative flex items-center">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Search category name..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-[#F3F4F6] text-xs font-semibold text-slate-800 placeholder-slate-400 pl-8 pr-3 py-1.5 rounded-lg border border-transparent focus:border-slate-300 focus:bg-white focus:outline-none w-52"
-            />
-          </div>
+            {/* Expand / Collapse Controls */}
+            <div className="flex items-center bg-surface-2 p-1 rounded-control text-label font-medium">
+              <button
+                onClick={handleExpandAll}
+                className="px-2.5 py-1 text-muted hover:text-foreground rounded-control transition-all cursor-pointer"
+              >
+                Expand All
+              </button>
+              <button
+                onClick={handleCollapseAll}
+                className="px-2.5 py-1 text-muted hover:text-foreground rounded-control transition-all cursor-pointer"
+              >
+                Collapse All
+              </button>
+            </div>
 
-          {/* Expand / Collapse Controls */}
-          <div className="flex items-center bg-[#F1F5F9] p-1 rounded-xl text-xs font-bold">
-            <button
-              onClick={handleExpandAll}
-              className="px-2.5 py-1 text-slate-600 hover:text-black rounded-lg transition-all cursor-pointer"
+            {/* Add New Category Button */}
+            <Button
+              size="sm"
+              onClick={() => handleOpenAdd()}
             >
-              Expand All
-            </button>
-            <button
-              onClick={handleCollapseAll}
-              className="px-2.5 py-1 text-slate-600 hover:text-black rounded-lg transition-all cursor-pointer"
-            >
-              Collapse All
-            </button>
+              <Plus className="size-4" />
+              <span>Add category</span>
+            </Button>
           </div>
-
-          {/* Add New Category Button */}
-          <button
-            onClick={() => handleOpenAdd()}
-            className="btn-pill-black text-xs cursor-pointer shadow-xs"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add Category</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* ======================================================== */}
       {/* FULL-WIDTH TABULAR CATEGORY TREE                         */}
       {/* ======================================================== */}
-      <div className="getquin-card p-5 space-y-4 w-full">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+      <div className="rounded-card border border-border bg-surface p-5 space-y-4 w-full shadow-card">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border">
           <div>
-            <h2 className="text-sm font-bold text-[#0F172A] flex items-center gap-2">
-              <Layers className="w-4 h-4 text-blue-600" />
-              <span>Category Taxonomy & Spend Aggregates ({flatCategories.length} Categories)</span>
+            <h2 className="text-body font-semibold text-foreground flex items-center gap-2">
+              <span>Category taxonomy ({flatCategories.length} categories)</span>
             </h2>
-            <p className="text-[11px] font-medium text-slate-400">
+            <p className="text-label text-muted">
               Totals include direct transactions plus all child subcategories
             </p>
           </div>

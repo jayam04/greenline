@@ -3,8 +3,6 @@ import Script from "next/script";
 import localFont from "next/font/local";
 import { Inter, Figtree } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
-import { Breadcrumb } from "@/components/Breadcrumb";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { FontProvider } from "@/components/FontProvider";
 import { ClientLayout } from "@/components/ClientLayout";
@@ -17,8 +15,7 @@ const rx100 = localFont({
   display: "swap",
 });
 
-const figtreeHeading = Figtree({subsets:['latin'],variable:'--font-heading'});
-
+const figtreeHeading = Figtree({ subsets: ["latin"], variable: "--font-heading" });
 
 const generalSans = localFont({
   src: [
@@ -61,8 +58,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn(generalSans.variable, inter.variable, figtreeHeading.variable, rx100.variable, splineSans.variable)} suppressHydrationWarning>
+    <html
+      lang="en"
+      data-font="spline"
+      data-theme="indigo"
+      className={cn(generalSans.variable, inter.variable, figtreeHeading.variable, rx100.variable, splineSans.variable)}
+      suppressHydrationWarning
+    >
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://api.fontshare.com" />
+        <link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Spline+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
         <Script
           id="theme-script"
           strategy="beforeInteractive"
@@ -70,7 +77,7 @@ export default function RootLayout({
             __html: `
               (function() {
                 try {
-                  var savedTheme = localStorage.getItem('greenline_theme') || 'system';
+                  var savedTheme = localStorage.getItem('greenline_theme') || localStorage.getItem('gl-theme') || 'system';
                   var isDark = savedTheme === 'dark' || (savedTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
                   if (isDark) {
                     document.documentElement.classList.add('dark');
@@ -80,17 +87,25 @@ export default function RootLayout({
                     document.documentElement.classList.add('light');
                   }
 
-                  var savedFont = localStorage.getItem('greenline_font') || 'general-sans';
+                  var savedPalette = localStorage.getItem('gl-palette') || 'indigo';
+                  document.documentElement.setAttribute('data-theme', savedPalette);
+
+                  var savedTexture = localStorage.getItem('gl-texture');
+                  if (savedTexture === 'off') {
+                    document.documentElement.setAttribute('data-texture', 'off');
+                  }
+
+                  var savedFont = localStorage.getItem('greenline_font') || localStorage.getItem('gl-font') || 'spline';
                   document.documentElement.setAttribute('data-font', savedFont);
                   document.documentElement.classList.remove('font-inter', 'font-general-sans', 'font-rx100', 'font-spline-sans', 'font-spine-sans');
                   if (savedFont === 'inter') {
                     document.documentElement.classList.add('font-inter');
-                  } else if (savedFont === 'rx100') {
+                  } else if (savedFont === 'rx100' || savedFont === 'mono') {
                     document.documentElement.classList.add('font-rx100');
-                  } else if (savedFont === 'spline-sans' || savedFont === 'spine-sans') {
-                    document.documentElement.classList.add('font-spline-sans');
-                  } else {
+                  } else if (savedFont === 'general-sans' || savedFont === 'general') {
                     document.documentElement.classList.add('font-general-sans');
+                  } else {
+                    document.documentElement.classList.add('font-spline-sans');
                   }
                 } catch (e) {}
               })();

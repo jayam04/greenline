@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "@/lib/api";
+import { PageHeader } from "@/components/PageHeader";
+import { Button } from "@/components/ui/button";
 import { 
   ArrowLeftRight, Plus, Search, Trash2, Edit, 
   ShoppingBag, Briefcase, Layers, RefreshCw, Wallet 
@@ -36,6 +38,7 @@ export default function CashflowTransactionsPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLabelFilter, setSelectedLabelFilter] = useState<string>("ALL");
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("ALL");
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
 
   // Modals
@@ -410,134 +413,118 @@ export default function CashflowTransactionsPage() {
   }, [selectedAccountIds, accounts, unifiedRows]);
 
   return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-8 space-y-6">
-      {/* Main Card with Table */}
-      <div className="getquin-card p-5 space-y-4">
-        
-        {/* Table Header Bar with Mode Selector & Filters */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-[#0F172A] dark:text-white">
-                Income & Spend Transactions ({filteredRows.length})
-              </h2>
-              <p className="text-[11px] font-medium text-slate-400">
-                Historical statement ledger with continuous running net cash balance
-              </p>
-            </div>
-
-            {selectedAccountInfo && (
-              <div 
-                data-testid="selected-account-balance"
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200/60 dark:border-blue-800/60 rounded-xl text-xs"
-              >
-                <Wallet className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                <span className="font-semibold text-slate-600 dark:text-slate-300">{selectedAccountInfo.name}:</span>
-                <span className={`font-bold tabular-nums ${selectedAccountInfo.balance >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
-                  {formatCurrency(selectedAccountInfo.balance, selectedAccountInfo.currency)}
-                </span>
-              </div>
-            )}
-          </div>
-
+    <div className="space-y-6">
+      <PageHeader
+        title="Transactions"
+        description="Every cash movement with a running balance."
+        actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <button
+            <Button variant="outline" size="sm" onClick={() => setIsPrintModalOpen(true)}>
+              <Printer className="size-4" />
+              <span>Print</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 setEditingTradeTx(null);
                 setIsTradeModalOpen(true);
               }}
-              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <Briefcase className="w-3.5 h-3.5 text-blue-500" />
-              <span>+ Trade / SIP</span>
-            </button>
-
-            <button
+              <Briefcase className="size-4" />
+              <span>Trade / SIP</span>
+            </Button>
+            <Button
+              size="sm"
               onClick={() => {
                 setEditingCashflowTx(null);
                 setIsCashflowModalOpen(true);
               }}
-              className="px-3 py-1.5 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-[#0F172A] rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer mr-2"
             >
-              <Plus className="w-3.5 h-3.5 text-emerald-400" />
-              <span>+ Cashflow</span>
-            </button>
-            
-            <button
-              onClick={() => setIsPrintModalOpen(true)}
-              className="px-3 py-1.5 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer mr-2"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print</span>
-            </button>
+              <Plus className="size-4" />
+              <span>Cashflow</span>
+            </Button>
+          </div>
+        }
+      />
+
+      {/* Main Card with Table */}
+      <div className="getquin-card rounded-card border border-border bg-surface p-5 space-y-4 shadow-card">
+        
+        {/* Table Header Bar with Filters & Account Balance */}
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 pb-3 border-b border-border">
+          <div>
+            <h2 className="text-body font-semibold text-foreground">
+              Income & Spend Transactions ({filteredRows.length})
+            </h2>
+            <p className="text-label text-muted">
+              Historical statement ledger with continuous running net cash balance
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Account Balance in place of removed buttons */}
+            {selectedAccountInfo && (
+              <div 
+                data-testid="selected-account-balance"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-control border border-border bg-surface text-label"
+              >
+                <Wallet className="size-3.5 text-primary" />
+                <span className="font-medium text-muted">{selectedAccountInfo.name}:</span>
+                <span className={`font-bold tabular-nums ${selectedAccountInfo.balance >= 0 ? "text-gain" : "text-loss"}`}>
+                  {formatCurrency(selectedAccountInfo.balance, selectedAccountInfo.currency)}
+                </span>
+              </div>
+            )}
 
             {/* Search Input */}
             <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
+              <Search className="size-3.5 text-muted absolute left-3 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search merchant, account..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-secondary text-xs font-semibold text-foreground placeholder:text-muted-foreground pl-8 pr-3 py-1.5 rounded-lg border border-input focus:border-ring focus:bg-background focus:outline-none w-48"
+                className="h-9 w-52 rounded-control border border-border bg-surface pl-8 pr-3 text-label font-medium text-foreground placeholder:text-muted focus:border-border-strong focus:outline-none transition-colors"
               />
             </div>
 
-            {/* Account Multi-Select Popover */}
-            <Popover>
-              <PopoverTrigger className="flex items-center justify-between bg-secondary hover:bg-secondary/80 text-xs font-bold text-secondary-foreground border border-border px-3 py-1.5 rounded-lg w-40">
-                  <span className="truncate">
-                    {selectedAccountIds.length === 0 
-                      ? "All Accounts" 
-                      : selectedAccountIds.length === 1
-                      ? accounts.find(a => a.account_id === selectedAccountIds[0])?.account_name
-                      : `${selectedAccountIds.length} Accounts`}
-                  </span>
-                  <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
-              </PopoverTrigger>
-              <PopoverContent className="w-56 p-0" align="end">
-                <Command>
-                  <CommandInput placeholder="Search accounts..." />
-                  <CommandList>
-                    <CommandEmpty>No account found.</CommandEmpty>
-                    <CommandGroup>
-                      {accounts.map((a) => (
-                        <CommandItem
-                          key={a.account_id}
-                          onSelect={() => {
-                            setSelectedAccountIds(prev => 
-                              prev.includes(a.account_id) 
-                                ? prev.filter(id => id !== a.account_id)
-                                : [...prev, a.account_id]
-                            )
-                          }}
-                        >
-                          <Checkbox 
-                            checked={selectedAccountIds.includes(a.account_id)}
-                            className="mr-2"
-                          />
-                          {a.account_name} ({a.currency})
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
+            {/* Account Selector Filter */}
+            <select
+              aria-label="account-filter"
+              value={selectedAccountId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedAccountId(val);
+                if (val === "ALL") {
+                  setSelectedAccountIds([]);
+                } else {
+                  setSelectedAccountIds([Number(val)]);
+                }
+              }}
+              className="h-9 rounded-control border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:border-border-strong focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All accounts</option>
+              {accounts.map((a) => (
+                <option key={a.account_id} value={a.account_id}>
+                  {a.account_name} ({a.currency})
+                </option>
+              ))}
+            </select>
 
             {/* Label Filter Select */}
-            <Select value={selectedLabelFilter} onValueChange={(v) => setSelectedLabelFilter(v || "ALL")}>
-              <SelectTrigger className="w-[140px] h-8 text-xs font-bold bg-secondary text-secondary-foreground border border-border">
-                <SelectValue placeholder="All Labels" />
-              </SelectTrigger>
-              <SelectContent>
-                {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
-                  <SelectItem key={lbl} value={lbl} className="text-xs font-bold">
-                    {lbl === "ALL" ? "All Labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              aria-label="label-filter"
+              value={selectedLabelFilter}
+              onChange={(e) => setSelectedLabelFilter(e.target.value)}
+              className="h-9 rounded-control border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:border-border-strong focus:outline-none cursor-pointer"
+            >
+              {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (
+                <option key={lbl} value={lbl}>
+                  {lbl === "ALL" ? "All labels" : lbl.charAt(0) + lbl.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

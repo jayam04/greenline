@@ -1,59 +1,89 @@
-import React from "react";
-import { LucideIcon } from "lucide-react";
+import * as React from "react";
+import { TrendBadge } from "@/components/ui/badge";
+import { cn, money } from "@/lib/utils";
 
-interface MetricCardProps {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  icon: LucideIcon;
-  trend?: "up" | "down" | "neutral";
-  trendValue?: string;
+/** KPI card. Label (eyebrow) -> value -> delta + timeframe. One pattern for every number summary. */
+export function MetricCard({
+  label,
+  value,
+  display,
+  currency = "EUR",
+  delta,
+  tone,
+  hint,
+  className,
+}: {
+  label: string;
+  value?: number;
+  /** Pre-formatted value (e.g. "27.4%"). Overrides money formatting. */
+  display?: string;
+  currency?: string;
+  delta?: number;
+  tone?: "gain" | "loss";
+  hint?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("rounded-card border border-border bg-surface p-4 shadow-card", className)}>
+      <div className="eyebrow">{label}</div>
+      <div className={cn("mt-1.5 text-heading font-semibold tnum", tone === "gain" && "text-gain", tone === "loss" && "text-loss")}>
+        {display ?? (value !== undefined ? money(value, currency) : "—")}
+      </div>
+      {(delta !== undefined || hint) && (
+        <div className="mt-2 flex items-center gap-2">
+          {delta !== undefined && <TrendBadge value={delta} />}
+          {hint && <span className="text-micro text-muted">{hint}</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
-export function MetricCard({
-  title,
+/** Hero card for the primary balance. */
+export function HeroCard({
+  label,
   value,
-  subtitle,
-  icon: Icon,
-  trend,
-  trendValue,
-}: MetricCardProps) {
-  const getTrendBadge = () => {
-    if (!trendValue) return null;
-    if (trend === "up") {
-      return (
-        <span className="px-2 py-0.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-          +{trendValue}
-        </span>
-      );
-    }
-    if (trend === "down") {
-      return (
-        <span className="px-2 py-0.5 text-xs font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-full">
-          {trendValue}
-        </span>
-      );
-    }
-    return (
-      <span className="px-2 py-0.5 text-xs font-medium text-slate-400 bg-slate-800 rounded-full">
-        {trendValue}
-      </span>
-    );
-  };
+  delta,
+  deltaAmount,
+  currency = "EUR",
+  deltaLabel = "YTD baseline",
+  children,
+}: {
+  label: string;
+  value: number;
+  delta?: number;
+  deltaAmount?: number;
+  currency?: string;
+  deltaLabel?: string;
+  children?: React.ReactNode;
+}) {
+  const parts = Math.abs(value).toFixed(2).split(".");
+  const whole = parts[0];
+  const cents = parts[1];
+  const isNeg = value < 0;
+  const sym = currency === "USD" ? "$" : currency === "INR" ? "₹" : currency === "GBP" ? "£" : "€";
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-sm hover:border-slate-700/80 transition-all">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-slate-400">{title}</span>
-        <div className="p-2 bg-slate-800 text-slate-300 rounded-lg">
-          <Icon className="w-5 h-5" />
+    <div>
+      <div className="eyebrow">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1 tnum">
+        <span className="text-display font-semibold tracking-tight">
+          {isNeg ? "−" : ""}{sym}{Number(whole).toLocaleString("en-IE")}
+        </span>
+        <span className="text-title text-subtle">.{cents}</span>
+      </div>
+      {(delta !== undefined || deltaAmount !== undefined) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {delta !== undefined && <TrendBadge value={delta} />}
+          {deltaAmount !== undefined && (
+            <span className={cn("text-label tnum", deltaAmount >= 0 ? "text-gain" : "text-loss")}>
+              {deltaAmount >= 0 ? "+" : "−"}{money(Math.abs(deltaAmount), currency)}
+            </span>
+          )}
+          <span className="text-label text-muted">{deltaLabel || "YTD baseline"}</span>
         </div>
-      </div>
-      <div className="mt-3 flex items-baseline justify-between gap-2">
-        <span className="text-2xl font-bold tracking-tight text-white">{value}</span>
-        {getTrendBadge()}
-      </div>
-      {subtitle && <p className="mt-1 text-xs text-slate-400">{subtitle}</p>}
+      )}
+      {children}
     </div>
   );
 }

@@ -22,16 +22,16 @@ describe('FontProvider', () => {
     document.documentElement.removeAttribute('data-font');
   });
 
-  it('defaults to general-sans when no font is stored in localStorage', () => {
+  it('defaults to spline-sans when no font is stored in localStorage', () => {
     render(
       <FontProvider>
         <TestComponent />
       </FontProvider>
     );
 
-    expect(screen.getByTestId('current-font').textContent).toBe('general-sans');
-    expect(document.documentElement.getAttribute('data-font')).toBe('general-sans');
-    expect(document.documentElement.classList.contains('font-general-sans')).toBe(true);
+    expect(screen.getByTestId('current-font').textContent).toBe('spline-sans');
+    expect(document.documentElement.getAttribute('data-font')).toBe('spline-sans');
+    expect(document.documentElement.classList.contains('font-spline-sans')).toBe(true);
     expect(document.documentElement.classList.contains('font-inter')).toBe(false);
   });
 

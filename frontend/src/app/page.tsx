@@ -1,24 +1,16 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import * as React from "react";
 import { apiFetch } from "@/lib/api";
-import { 
-  formatNum, formatMoney, getCurrencySymbol, 
-  convertCurrency, convertCurrencyToEUR 
-} from "@/lib/format";
-import { NetWorthChart, BenchmarkSeries } from "@/components/NetWorthChart";
-import { AllocationChart } from "@/components/AllocationChart";
-import { AccountCustomizationModal } from "@/components/AccountCustomizationModal";
-import { SnapshotDateControl } from "@/components/SnapshotDateControl";
-import { 
-  TrendingUp, Wallet, Landmark, Building2, Coins, Briefcase, Plus, 
-  ArrowUpRight, ArrowDownRight, Eye, EyeOff, RefreshCw, Settings, 
-  Calendar, DollarSign, Check, Layers, ExternalLink, ShieldCheck, 
-  BarChart2, AlertCircle, ArrowLeftRight, PiggyBank, Receipt, ChevronRight,
-  ArrowRight, X, SlidersHorizontal
-} from "lucide-react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import Link from "next/link";
+import { money, signedMoney } from "@/lib/utils";
+import { convertCurrency } from "@/lib/format";
+import { PageHeader } from "@/components/PageHeader";
+import { HeroCard } from "@/components/MetricCard";
+import { TrendBadge } from "@/components/ui/badge";
+import { NetWorthChart, SnapshotData } from "@/components/NetWorthChart";
+import { AllocationChart, Slice } from "@/components/AllocationChart";
+import { CommunityPanel } from "@/components/CommunityPanel";
+import { getSavedCommunityPseudonym, saveCommunityPseudonymLocally } from "@/lib/community";
 
 interface Account {
   account_id: number;
@@ -29,7 +21,6 @@ interface Account {
   current_balance?: number;
   cash_balance?: number;
   securities_value?: number;
-  created_at?: string;
 }
 
 interface HoldingSummary {
@@ -41,1098 +32,446 @@ interface HoldingSummary {
   quantity_held: number;
   total_cost: number;
   current_value: number;
-  unrealized_pnl: number;
-  realized_pnl: number;
 }
 
 interface PortfolioSummary {
-  net_worth: number;
-  total_cost: number;
-  unrealized_pnl: number;
-  unrealized_pnl_pct: number;
-  realized_pnl: number;
-  total_net_worth: number;
-  total_invested: number;
-  total_current_value: number;
-  cash_balance: number;
-  top_holdings: HoldingSummary[];
-  asset_allocation: Record<string, number>;
-  sector_allocation: Record<string, number>;
-  portfolio_xirr?: number | null;
-}
-
-interface Snapshot {
-  snapshot_date: string;
-  net_worth: number;
-  total_invested: number;
+  net_worth?: number;
+  total_net_worth?: number;
+  total_invested?: number;
+  total_current_value?: number;
+  unrealized_pnl?: number;
+  unrealized_pnl_pct?: number;
+  cash_balance?: number;
+  asset_allocation?: Record<string, number>;
+  top_holdings?: HoldingSummary[];
 }
 
 interface AnnualSnapshot {
   year_label: string;
-  start_date: string;
-  end_date: string;
   total_income: number;
   total_expenses: number;
   investments_done: number;
   investments_closed: number;
   net_worth_delta: number;
   net_worth_delta_pct: number;
-  taxes_and_fees: number;
   net_savings: number;
   currency: string;
 }
 
-interface BenchmarkRawData {
-  benchmark_name: string;
-  data: { price_date: string; close_value: number }[];
-}
+export default function Home() {
+  const [loading, setLoading] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(false);
+  const [chartRange, setChartRange] = React.useState("YTD");
+  const [summary, setSummary] = React.useState<PortfolioSummary | null>(null);
+  const [snapshots, setSnapshots] = React.useState<SnapshotData[]>([]);
+  const [annualSnapshot, setAnnualSnapshot] = React.useState<AnnualSnapshot | null>(null);
+  const [accounts, setAccounts] = React.useState<Account[]>([]);
+  const [masterCurrency, setMasterCurrency] = React.useState<string>("EUR");
+  const [alias, setAlias] = React.useState<string>("Solar Beaver");
 
-const AVAILABLE_BENCHMARKS = [
-  { id: "^GSPC", name: "S&P 500", color: "#64748B" },
-  { id: "BTC-USD", name: "Bitcoin", color: "#F59E0B" },
-  { id: "^NSEI", name: "Nifty 50", color: "#10B981" },
-];
-
-export default function NetWorthDashboardPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [summary, setSummary] = useState<PortfolioSummary | null>(null);
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [annualSnapshot, setAnnualSnapshot] = useState<AnnualSnapshot | null>(null);
-  const [masterCurrency, setMasterCurrency] = useState<string>("EUR");
-  const [fiscalYearStart, setFiscalYearStart] = useState<string>("01-01");
-  const [snapshotStartDate, setSnapshotStartDate] = useState<string | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const savedMode = localStorage.getItem("greenline_snapshot_start_mode");
-        if (savedMode === "manual") {
-          return localStorage.getItem("greenline_snapshot_start_date") || null;
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return null;
-  });
-  
-  const [selectedAccount, setSelectedAccount] = useState<string>("all");
-  const [timeRange, setTimeRange] = useState<string>("YTD");
-  const [chartMode, setChartMode] = useState<"value" | "performance">("value");
-  const [accountTypeFilter, setAccountTypeFilter] = useState<"all" | "bank" | "demat">("all");
-  const [hideBalances, setHideBalances] = useState(false);
-  const [isBenchmarkModalOpen, setIsBenchmarkModalOpen] = useState(false);
-  const [selectedBenchmarks, setSelectedBenchmarks] = useState<string[]>([]);
-  const [benchmarksDataMap, setBenchmarksDataMap] = useState<Record<string, BenchmarkRawData>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [isEditAccountsModalOpen, setIsEditAccountsModalOpen] = useState(false);
-  const [accountOrder, setAccountOrder] = useState<number[]>([]);
-  const [hiddenAccountIds, setHiddenAccountIds] = useState<number[]>([]);
-  const [hideZeroBalance, setHideZeroBalance] = useState(false);
-
-  useEffect(() => {
-    document.title = "Overview · greenline";
-    loadSettingsAndAccounts();
-    loadSavedLayout();
-  }, []);
-
-  const loadSavedLayout = () => {
-    try {
-      const rawLayout = typeof window !== "undefined" ? localStorage.getItem("greenline_account_layout") : null;
-      if (rawLayout) {
-        const parsed = JSON.parse(rawLayout);
-        if (Array.isArray(parsed.order)) setAccountOrder(parsed.order);
-        if (Array.isArray(parsed.hidden)) setHiddenAccountIds(parsed.hidden);
-        if (typeof parsed.hideZeroBalance === "boolean") setHideZeroBalance(parsed.hideZeroBalance);
-      }
-    } catch (err) {
-      console.error("Failed to load account layout:", err);
-    }
-  };
-
-  const handleSaveAccountLayout = (newOrder: number[], newHidden: number[], newHideZero: boolean) => {
-    setAccountOrder(newOrder);
-    setHiddenAccountIds(newHidden);
-    setHideZeroBalance(newHideZero);
-    try {
-      if (typeof window !== "undefined") {
-        localStorage.setItem(
-          "greenline_account_layout",
-          JSON.stringify({ order: newOrder, hidden: newHidden, hideZeroBalance: newHideZero })
-        );
-      }
-    } catch (err) {
-      console.error("Failed to save account layout:", err);
-    }
-  };
-
-  useEffect(() => {
-    loadData(selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate);
-  }, [selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate]);
-
-  const loadSettingsAndAccounts = async () => {
-    try {
-      const [settingsRes, accRes] = await Promise.all([
-        apiFetch<{ master_currency?: string; fiscal_year_start?: string }>("/settings").catch(() => null),
-        apiFetch<Account[]>("/accounts").catch(() => []),
-      ]);
-
-      if (settingsRes) {
-        if (settingsRes.master_currency) {
-          const curr = settingsRes.master_currency.trim().toUpperCase();
-          setMasterCurrency(curr);
-        }
-        if (settingsRes.fiscal_year_start) {
-          setFiscalYearStart(settingsRes.fiscal_year_start.trim());
-        }
-      }
-
-      setAccounts(accRes || []);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const loadData = async (
-    accId: string,
-    fyStart: string,
-    mCurr: string,
-    sDate: string | null = snapshotStartDate
-  ) => {
+  const loadData = React.useCallback(async () => {
     try {
       setLoading(true);
-      const queryParam = accId === "all" ? "" : `?account_id=${accId}`;
-      const annualQuery = `?fiscal_year_start=${fyStart}&master_currency=${mCurr}`;
-
-      const snapParams = new URLSearchParams();
-      if (accId !== "all") snapParams.set("account_id", accId);
-      if (sDate) snapParams.set("start_date", sDate);
-      const snapQuery = snapParams.toString() ? `?${snapParams.toString()}` : "";
-
-      const [sumData, snapData, annualData, accData] = await Promise.all([
-        apiFetch<PortfolioSummary>(`/portfolio/summary${queryParam}`),
-        apiFetch<Snapshot[]>(`/snapshots${snapQuery}`),
-        apiFetch<AnnualSnapshot>(`/portfolio/annual_snapshot${annualQuery}`),
+      const [sumRes, snapRes, annualRes, settingsRes, accRes] = await Promise.allSettled([
+        apiFetch<PortfolioSummary>("/portfolio/summary"),
+        apiFetch<SnapshotData[]>("/snapshots?limit=52"),
+        apiFetch<AnnualSnapshot>("/portfolio/annual_snapshot"),
+        apiFetch<{ community_pseudonym?: string; master_currency?: string }>("/settings"),
         apiFetch<Account[]>("/accounts"),
       ]);
 
-      setSummary(sumData);
-      setSnapshots(snapData || []);
-      setAnnualSnapshot(annualData);
-      if (accData) setAccounts(accData);
-    } catch (err) {
-      console.error(err);
+      if (settingsRes.status === "fulfilled" && settingsRes.value) {
+        if (settingsRes.value.master_currency) {
+          setMasterCurrency(settingsRes.value.master_currency);
+        }
+        if (settingsRes.value.community_pseudonym) {
+          const remoteAlias = settingsRes.value.community_pseudonym;
+          setAlias(remoteAlias);
+          saveCommunityPseudonymLocally(remoteAlias);
+        } else {
+          const saved = getSavedCommunityPseudonym();
+          if (saved) setAlias(saved);
+        }
+      }
+
+      if (sumRes.status === "fulfilled" && sumRes.value) {
+        setSummary(sumRes.value);
+      }
+      if (snapRes.status === "fulfilled" && Array.isArray(snapRes.value)) {
+        setSnapshots(snapRes.value);
+      }
+      if (annualRes.status === "fulfilled" && annualRes.value) {
+        setAnnualSnapshot(annualRes.value);
+      }
+      if (accRes.status === "fulfilled" && Array.isArray(accRes.value)) {
+        setAccounts(accRes.value);
+      }
+    } catch (e) {
+      console.error("Failed to load home page data:", e);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleRefreshPrices = async () => {
-    try {
-      setRefreshing(true);
-      await apiFetch("/prices/refresh", { method: "POST" });
-    } catch (e) {
-      console.error("Failed to refresh market prices:", e);
-    } finally {
-      await loadData(selectedAccount, fiscalYearStart, masterCurrency, snapshotStartDate);
-      setRefreshing(false);
-    }
-  };
+  React.useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  // Toggle benchmark selection
-  const toggleBenchmark = async (bmId: string) => {
-    if (selectedBenchmarks.includes(bmId)) {
-      setSelectedBenchmarks(selectedBenchmarks.filter((id) => id !== bmId));
-    } else {
-      setSelectedBenchmarks([...selectedBenchmarks, bmId]);
-      if (!benchmarksDataMap[bmId]) {
-        try {
-          const res = await apiFetch<BenchmarkRawData>(`/benchmarks?symbol=${encodeURIComponent(bmId)}`);
-          if (res) {
-            setBenchmarksDataMap((prev) => ({ ...prev, [bmId]: res }));
-          }
-        } catch (err) {
-          console.error(`Failed to fetch benchmark ${bmId}:`, err);
-        }
-      }
-    }
-  };
+  // Derived Account and Portfolio Balances
+  const bankAccounts = React.useMemo(() => accounts.filter((a) => a.account_type === "bank"), [accounts]);
+  const dematAccounts = React.useMemo(() => accounts.filter((a) => a.account_type !== "bank"), [accounts]);
 
-  // 1. Calculate Bank Balances & Securities Valuation in Master Currency
-  const scopedAccounts = useMemo(() => {
-    return selectedAccount === "all"
-      ? accounts
-      : accounts.filter((a) => a.account_id.toString() === selectedAccount);
-  }, [accounts, selectedAccount]);
-
-  const bankAccounts = useMemo(() => scopedAccounts.filter((a) => a.account_type === "bank"), [scopedAccounts]);
-  const dematAccounts = useMemo(() => scopedAccounts.filter((a) => a.account_type !== "bank"), [scopedAccounts]);
-
-  // Total Cash in Bank/Wallet accounts converted to masterCurrency
-  const totalBankCashMaster = useMemo(() => {
+  const totalBankCash = React.useMemo(() => {
     return bankAccounts.reduce((acc, a) => {
       const bal = a.cash_balance !== undefined ? a.cash_balance : (a.current_balance || 0);
-      return acc + convertCurrency(bal, a.currency || "EUR", masterCurrency);
+      return acc + convertCurrency(bal, a.currency || masterCurrency, masterCurrency);
     }, 0);
   }, [bankAccounts, masterCurrency]);
 
-  // Total Stocks & Securities valuation in masterCurrency
-  const totalStocksValuationMaster = useMemo(() => {
-    return (summary?.top_holdings || []).reduce((acc, h) => {
-      return acc + convertCurrency(h.current_value, h.currency || "USD", masterCurrency);
-    }, 0);
-  }, [summary, masterCurrency]);
-
-  // Total Demat cash (if any uninvested cash in demat accounts)
-  const totalDematCashMaster = useMemo(() => {
+  const totalDematCash = React.useMemo(() => {
     return dematAccounts.reduce((acc, a) => {
       const bal = a.cash_balance !== undefined ? a.cash_balance : 0;
-      return acc + convertCurrency(bal, a.currency || "INR", masterCurrency);
+      return acc + convertCurrency(bal, a.currency || masterCurrency, masterCurrency);
     }, 0);
   }, [dematAccounts, masterCurrency]);
 
-  // Scoped Total Net Worth
-  const totalNetWorthMaster = totalBankCashMaster + totalStocksValuationMaster + totalDematCashMaster;
-  const totalCashMaster = totalBankCashMaster + totalDematCashMaster;
+  const totalCash = totalBankCash + totalDematCash;
 
-  // Percentage splits
-  const stockSharePct = totalNetWorthMaster > 0 ? (totalStocksValuationMaster / totalNetWorthMaster) * 100 : 0;
-  const cashSharePct = totalNetWorthMaster > 0 ? (totalCashMaster / totalNetWorthMaster) * 100 : 0;
-
-  // Convert Snapshots to active master currency for chart
-  const snapshotsInMaster: Snapshot[] = useMemo(() => {
-    if (!snapshots || snapshots.length === 0) return [];
-    
-    // In aggregated mode, backend /snapshots aggregates all accounts (both bank & demat) in EUR base
-    if (selectedAccount === "all") {
-      return snapshots.map((s) => ({
-        snapshot_date: s.snapshot_date,
-        net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency),
-        total_invested: convertCurrency(s.total_invested, "EUR", masterCurrency),
-      }));
+  const totalSecurities = React.useMemo(() => {
+    if (summary?.top_holdings && summary.top_holdings.length > 0) {
+      return summary.top_holdings.reduce((acc, h) => {
+        return acc + convertCurrency(h.current_value, h.currency || masterCurrency, masterCurrency);
+      }, 0);
     }
+    return dematAccounts.reduce((acc, a) => {
+      return acc + convertCurrency(a.securities_value || 0, a.currency || masterCurrency, masterCurrency);
+    }, 0);
+  }, [summary, dematAccounts, masterCurrency]);
 
-    // In single account mode, convert from that account's native currency
-    const a = accounts.find((acc) => acc.account_id.toString() === selectedAccount);
-    const repCurrency = a?.currency || "INR";
+  const computedNetWorth = totalCash + totalSecurities;
+  const latestSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
+  const netWorthValue = latestSnapshot
+    ? convertCurrency(latestSnapshot.net_worth, "EUR", masterCurrency)
+    : computedNetWorth > 0
+    ? computedNetWorth
+    : convertCurrency(summary?.total_net_worth ?? summary?.net_worth ?? 0, "EUR", masterCurrency);
 
+  const snapshotsInMaster = React.useMemo(() => {
     return snapshots.map((s) => ({
-      snapshot_date: s.snapshot_date,
-      net_worth: convertCurrency(s.net_worth, repCurrency, masterCurrency),
-      total_invested: convertCurrency(s.total_invested, repCurrency, masterCurrency),
+      ...s,
+      net_worth: convertCurrency(s.net_worth, "EUR", masterCurrency),
+      total_invested: s.total_invested !== undefined ? convertCurrency(s.total_invested, "EUR", masterCurrency) : undefined,
     }));
-  }, [snapshots, selectedAccount, accounts, masterCurrency]);
+  }, [snapshots, masterCurrency]);
 
-  // Filter snapshots based on selected timeframe
-  const filteredSnapshots = useMemo(() => {
+  const filteredTimeline = React.useMemo(() => {
     if (!snapshotsInMaster || snapshotsInMaster.length === 0) return [];
     const sorted = [...snapshotsInMaster].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
-    
-    const now = new Date();
+    const latestStr = sorted[sorted.length - 1].snapshot_date;
+    const parts = latestStr.split("-");
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1] || "1", 10) - 1;
+    const d = parseInt(parts[2] || "1", 10);
+
     let cutoffStr = "";
-
-    if (timeRange === "1D") {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 1);
-      cutoffStr = d.toISOString().split("T")[0];
-    } else if (timeRange === "1W") {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 7);
-      cutoffStr = d.toISOString().split("T")[0];
-    } else if (timeRange === "1M") {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 30);
-      cutoffStr = d.toISOString().split("T")[0];
-    } else if (timeRange === "YTD") {
-      cutoffStr = `${now.getFullYear()}-01-01`;
-    } else if (timeRange === "1Y") {
-      const d = new Date(now);
-      d.setFullYear(d.getFullYear() - 1);
-      cutoffStr = d.toISOString().split("T")[0];
-    } else {
-      return sorted; // Max
+    if (chartRange === "1M") {
+      const dt = new Date(y, m - 1, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    } else if (chartRange === "3M") {
+      const dt = new Date(y, m - 3, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    } else if (chartRange === "6M") {
+      const dt = new Date(y, m - 6, d);
+      cutoffStr = dt.toISOString().split("T")[0];
+    } else if (chartRange === "YTD") {
+      cutoffStr = `${y}-01-01`;
+    } else if (chartRange === "1Y") {
+      const dt = new Date(y - 1, m, d);
+      cutoffStr = dt.toISOString().split("T")[0];
     }
 
+    if (!cutoffStr) return sorted;
     const filtered = sorted.filter((s) => s.snapshot_date >= cutoffStr);
-    return filtered.length > 0 ? filtered : sorted.slice(-5);
-  }, [snapshotsInMaster, timeRange]);
+    return filtered.length > 0 ? filtered : sorted.slice(-2);
+  }, [snapshotsInMaster, chartRange]);
 
-  // Timeframe return
-  const timeframeReturn = useMemo(() => {
-    if (!filteredSnapshots || filteredSnapshots.length === 0) {
-      return { gain: 0, gainPct: 0 };
+  const rangeStartSnapshot = filteredTimeline.length > 0 ? filteredTimeline[0] : null;
+  const rangeEndSnapshot = filteredTimeline.length > 0 ? filteredTimeline[filteredTimeline.length - 1] : null;
+
+  const deltaAmt = React.useMemo(() => {
+    if (chartRange === "YTD" && annualSnapshot?.net_worth_delta !== undefined) {
+      return convertCurrency(annualSnapshot.net_worth_delta, annualSnapshot.currency || "EUR", masterCurrency);
     }
-    const start = filteredSnapshots[0];
-    const end = filteredSnapshots[filteredSnapshots.length - 1];
-    const gain = end.net_worth - start.net_worth;
-    const gainPct = start.net_worth > 0 ? (gain / start.net_worth) * 100 : 0;
-    return { gain, gainPct };
-  }, [filteredSnapshots]);
+    if (rangeStartSnapshot && rangeEndSnapshot) {
+      return rangeEndSnapshot.net_worth - rangeStartSnapshot.net_worth;
+    }
+    return 0;
+  }, [chartRange, annualSnapshot, rangeStartSnapshot, rangeEndSnapshot, masterCurrency]);
 
-  // Normalized benchmarks
-  const normalizedBenchmarks: BenchmarkSeries[] = useMemo(() => {
-    if (selectedBenchmarks.length === 0 || filteredSnapshots.length === 0) return [];
-    const startDate = filteredSnapshots[0].snapshot_date;
+  const deltaPct = React.useMemo(() => {
+    if (chartRange === "YTD" && annualSnapshot?.net_worth_delta_pct !== undefined) {
+      return annualSnapshot.net_worth_delta_pct;
+    }
+    if (rangeStartSnapshot && rangeStartSnapshot.net_worth > 0 && deltaAmt !== undefined) {
+      return (deltaAmt / rangeStartSnapshot.net_worth) * 100;
+    }
+    return 0;
+  }, [chartRange, annualSnapshot, rangeStartSnapshot, deltaAmt]);
 
-    return selectedBenchmarks.map((bmId) => {
-      const meta = AVAILABLE_BENCHMARKS.find((b) => b.id === bmId) || { name: bmId, color: "#64748B" };
-      const raw = benchmarksDataMap[bmId];
-      if (!raw || !raw.data || raw.data.length === 0) {
-        return { id: bmId, name: meta.name, color: meta.color, data: [] };
+  const deltaLabel = chartRange === "YTD" ? "YTD baseline" : chartRange === "Max" ? "All time baseline" : `${chartRange} baseline`;
+
+  // Allocation slices ("Where it sits")
+  const allocationSlices: Slice[] = React.useMemo(() => {
+    const slices: Slice[] = [];
+    const colors = [
+      "var(--chart-1)",
+      "var(--chart-2)",
+      "var(--chart-3)",
+      "var(--chart-4)",
+      "var(--chart-5)",
+    ];
+
+    // 1. Group securities by asset type converted to masterCurrency
+    const holdingsByType: Record<string, number> = {};
+    if (summary?.top_holdings && summary.top_holdings.length > 0) {
+      for (const h of summary.top_holdings) {
+        const rawType = (h.asset_type || "stock").toLowerCase().trim();
+        let typeName = "Stocks";
+        if (rawType.includes("etf")) typeName = "ETFs";
+        else if (rawType.includes("crypto")) typeName = "Crypto";
+        else if (rawType.includes("fund")) typeName = "Mutual funds";
+        else if (rawType.includes("bond")) typeName = "Bonds";
+        else if (rawType.includes("gold") || rawType.includes("commodity")) typeName = "Commodities";
+        else if (rawType.includes("real_estate") || rawType.includes("reit")) typeName = "Real Estate";
+        else typeName = "Stocks";
+
+        const convertedVal = convertCurrency(h.current_value, h.currency || masterCurrency, masterCurrency);
+        holdingsByType[typeName] = (holdingsByType[typeName] || 0) + convertedVal;
       }
+    } else if (summary?.asset_allocation && Object.keys(summary.asset_allocation).length > 0) {
+      // Normalize raw summary.asset_allocation proportions to totalSecurities in masterCurrency
+      const entries = Object.entries(summary.asset_allocation).filter(
+        ([k, v]) => v > 0 && !k.toLowerCase().includes("cash") && !k.toLowerCase().includes("bank")
+      );
+      const rawSecuritiesTotal = entries.reduce((sum, [_, v]) => sum + v, 0);
 
-      const inRange = raw.data.filter((p) => p.price_date >= startDate);
-      const basePoints = inRange.length > 0 ? inRange : raw.data.slice(-30);
-      const baseVal = basePoints[0]?.close_value || 1;
+      if (rawSecuritiesTotal > 0 && totalSecurities > 0) {
+        for (const [rawType, rawVal] of entries) {
+          const rawLower = rawType.toLowerCase().trim();
+          let typeName = "Stocks";
+          if (rawLower.includes("etf")) typeName = "ETFs";
+          else if (rawLower.includes("crypto")) typeName = "Crypto";
+          else if (rawLower.includes("fund")) typeName = "Mutual funds";
+          else if (rawLower.includes("bond")) typeName = "Bonds";
+          else if (rawLower.includes("gold") || rawLower.includes("commodity")) typeName = "Commodities";
+          else typeName = rawType.charAt(0).toUpperCase() + rawType.slice(1);
 
-      const normData = basePoints.map((p) => ({
-        date: p.price_date,
-        value: Number((((p.close_value - baseVal) / baseVal) * 100).toFixed(2)),
-      }));
+          const proportion = rawVal / rawSecuritiesTotal;
+          holdingsByType[typeName] = (holdingsByType[typeName] || 0) + proportion * totalSecurities;
+        }
+      }
+    }
 
-      return {
-        id: bmId,
-        name: meta.name,
-        color: meta.color,
-        data: normData,
-      };
-    });
-  }, [selectedBenchmarks, benchmarksDataMap, filteredSnapshots]);
+    const typeEntries = Object.entries(holdingsByType).filter(([_, v]) => v > 0);
 
-  // Helper to render Master Currency formatted headline
-  const renderFormattedMaster = (amount: number) => {
-    if (hideBalances) return "••••••";
-    const sym = getCurrencySymbol(masterCurrency);
-    const formatted = formatNum(Math.abs(amount), 2);
-    const [whole, decimal] = formatted.split(".");
+    let colorIdx = 0;
+    if (typeEntries.length > 1) {
+      // Multiple asset types: list each individually
+      for (const [label, val] of typeEntries) {
+        slices.push({
+          label,
+          value: Math.round(val),
+          color: colors[colorIdx % colors.length],
+        });
+        colorIdx++;
+      }
+    } else if (typeEntries.length === 1) {
+      // Single asset type: if stocks, label "Stocks & ETFs" per design system, otherwise asset name
+      const [singleType, singleVal] = typeEntries[0];
+      const label = singleType.toLowerCase() === "stocks" ? "Stocks & ETFs" : singleType;
+      slices.push({
+        label,
+        value: Math.round(singleVal),
+        color: colors[colorIdx % colors.length],
+      });
+      colorIdx++;
+    } else if (totalSecurities > 0) {
+      slices.push({
+        label: "Stocks & ETFs",
+        value: Math.round(totalSecurities),
+        color: colors[colorIdx % colors.length],
+      });
+      colorIdx++;
+    }
+
+    // 2. Add Cash & banks slice in masterCurrency
+    if (totalCash > 0) {
+      slices.push({
+        label: "Cash & banks",
+        value: Math.round(totalCash),
+        color: colors[colorIdx % colors.length],
+      });
+    }
+
+    if (slices.length === 0 && netWorthValue > 0) {
+      slices.push({
+        label: "Securities",
+        value: Math.round(netWorthValue),
+        color: colors[0],
+      });
+    }
+
+    return slices.sort((a, b) => b.value - a.value);
+  }, [summary, totalCash, totalSecurities, netWorthValue, masterCurrency]);
+
+  // Annual snapshot rows
+  const currentYear = new Date().getFullYear();
+  const yearLabel = annualSnapshot?.year_label || `${currentYear}`;
+  const incomeVal = annualSnapshot ? `+${money(annualSnapshot.total_income, masterCurrency)}` : `+${money(0, masterCurrency)}`;
+  const expensesVal = annualSnapshot ? `−${money(annualSnapshot.total_expenses, masterCurrency)}` : `−${money(0, masterCurrency)}`;
+  const savedVal = annualSnapshot ? signedMoney(annualSnapshot.net_savings, masterCurrency) : `${money(0, masterCurrency)}`;
+  const investedVal = annualSnapshot ? money(annualSnapshot.investments_done, masterCurrency) : `${money(0, masterCurrency)}`;
+  const soldVal = annualSnapshot ? money(annualSnapshot.investments_closed, masterCurrency) : `${money(0, masterCurrency)}`;
+
+  const snapshotRows = [
+    ["Income", incomeVal, "text-gain"],
+    ["Expenses", expensesVal, "text-loss"],
+    ["Saved", savedVal, "text-gain"],
+    ["Invested", investedVal, ""],
+    ["Sold", soldVal, ""],
+  ];
+
+  if (loading) {
     return (
-      <span className="tabular-nums font-extrabold text-[#0F172A]">
-        {sym}{whole}
-        <span className="text-slate-400 text-lg font-bold">.{decimal || "00"}</span>
-      </span>
-    );
-  };
-
-  // 2. Entities Net Worth Map for Donut Chart
-  const entitiesAllocationMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    if (totalCashMaster > 0) {
-      map["Cash & Bank Accounts"] = totalCashMaster;
-    }
-    if (totalStocksValuationMaster > 0) {
-      map["Stocks & ETFs (Securities)"] = totalStocksValuationMaster;
-    }
-    return map;
-  }, [totalCashMaster, totalStocksValuationMaster]);
-
-  // Master ordered accounts list
-  const orderedAccounts = useMemo(() => {
-    const list = [...accounts];
-    if (accountOrder.length > 0) {
-      const orderMap = new Map<number, number>();
-      accountOrder.forEach((id, idx) => orderMap.set(id, idx));
-
-      list.sort((a, b) => {
-        const orderA = orderMap.has(a.account_id) ? orderMap.get(a.account_id)! : 9999;
-        const orderB = orderMap.has(b.account_id) ? orderMap.get(b.account_id)! : 9999;
-        return orderA - orderB;
-      });
-    }
-    return list;
-  }, [accounts, accountOrder]);
-
-  // Filtered accounts list for the table
-  const filteredAccounts = useMemo(() => {
-    let list = orderedAccounts;
-    if (accountTypeFilter === "bank") list = list.filter((a) => a.account_type === "bank");
-    else if (accountTypeFilter === "demat") list = list.filter((a) => a.account_type !== "bank");
-
-    // Filter out hidden accounts
-    if (hiddenAccountIds.length > 0) {
-      const hiddenSet = new Set(hiddenAccountIds);
-      list = list.filter((a) => !hiddenSet.has(a.account_id));
-    }
-
-    // Filter out 0 balance accounts if hideZeroBalance is active
-    if (hideZeroBalance) {
-      list = list.filter((a) => {
-        const nativeBal = a.current_balance || 0;
-        const secVal = a.securities_value || 0;
-        return Math.abs(nativeBal) > 0.0001 || Math.abs(secVal) > 0.0001;
-      });
-    }
-
-    return list;
-  }, [orderedAccounts, accountTypeFilter, hiddenAccountIds, hideZeroBalance]);
-
-  return (
-    <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-5 space-y-5 font-sans">
-      {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* LEFT COLUMN: Net Worth Hero & Accounts/Balances Table (~68% width) */}
-        <div className="lg:col-span-8 space-y-5">
-          {/* Card 1: Global Net Worth Hero Card */}
-          <Card className="p-5 shadow-sm">
-            {/* Header Row 1: Title on Left, Action Buttons on Right */}
-            <div className="flex items-center justify-between gap-3 pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 bg-[#0F172A] text-white rounded-lg">
-                  <TrendingUp className="w-4 h-4" />
-                </span>
-                <h2 className="text-sm font-bold text-[#0F172A]">Full Net Worth</h2>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
-                <Link href="/accounts" className="btn-pill-black text-[11px]">
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add account</span>
-                </Link>
-                <button
-                  onClick={handleRefreshPrices}
-                  disabled={refreshing}
-                  className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                  title="Sync Market Prices"
-                >
-                  <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin text-blue-600" : ""}`} />
-                </button>
-                <Link
-                  href="/settings"
-                  className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-                  title="App Settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </Link>
-              </div>
+      <>
+        <PageHeader
+          className="mb-4"
+          title="Home"
+          description="Your net worth at a glance."
+        />
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex flex-col gap-4 lg:min-h-[calc(100vh-8.5rem)]">
+            <div className="rounded-card border border-border bg-surface shadow-card flex flex-1 flex-col p-6 animate-pulse min-h-[360px]">
+              <div className="h-4 w-24 bg-surface-2 rounded mb-3" />
+              <div className="h-8 w-48 bg-surface-2 rounded mb-6" />
+              <div className="flex-1 rounded bg-surface-2/60 min-h-[200px]" />
             </div>
-
-            {/* Header Row 2: Account Tabs (Consistent order with Accounts master) */}
-            <div className="pt-2.5 pb-2 flex items-center gap-1.5 flex-wrap text-xs border-b border-[#F1F5F9]">
-              <button
-                onClick={() => setSelectedAccount("all")}
-                className={`px-3 py-1 font-bold rounded-lg transition-colors cursor-pointer ${
-                  selectedAccount === "all"
-                    ? "bg-[#0F172A] text-white shadow-xs"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
-                }`}
-              >
-                Aggregated
-              </button>
-              {orderedAccounts.map((acc) => (
-                <button
-                  key={acc.account_id}
-                  onClick={() => setSelectedAccount(acc.account_id.toString())}
-                  className={`px-2.5 py-1 font-semibold rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-                    selectedAccount === acc.account_id.toString()
-                      ? "bg-[#0F172A] text-white font-bold shadow-xs"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
-                  }`}
-                >
-                  <span>{acc.account_name}</span>
-                  <span className={`text-[9px] font-extrabold uppercase px-1 rounded ${
-                    selectedAccount === acc.account_id.toString()
-                      ? "bg-slate-800 text-slate-200"
-                      : acc.account_type === "bank"
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-blue-50 text-blue-700"
-                  }`}>
-                    {acc.account_type === "bank" ? "Bank" : "Demat"}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Sub-Header Toolbar */}
-            <div className="flex items-center justify-between py-3 text-xs font-semibold text-slate-500 border-b border-[#F1F5F9] flex-wrap gap-2">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setHideBalances(!hideBalances)}
-                  className="flex items-center gap-1.5 hover:text-slate-900 transition-colors cursor-pointer"
-                >
-                  {hideBalances ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  <span>{hideBalances ? "Show" : "Hide"}</span>
-                </button>
-
-                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/70">
-                  <button
-                    onClick={() => setChartMode("value")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      chartMode === "value"
-                        ? "bg-white text-[#0F172A] shadow-xs"
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                  >
-                    Value
-                  </button>
-                  <button
-                    onClick={() => setChartMode("performance")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      chartMode === "performance"
-                        ? "bg-[#0F172A] text-white shadow-xs"
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                  >
-                    Performance
-                  </button>
-                </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-card border border-border bg-surface shadow-card p-5 animate-pulse min-h-[160px]">
+                <div className="h-4 w-28 bg-surface-2 rounded mb-4" />
+                <div className="h-24 bg-surface-2/60 rounded" />
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsBenchmarkModalOpen(true)}
-                  className="flex items-center gap-1 text-slate-700 hover:text-[#0F172A] font-bold bg-slate-100/80 hover:bg-slate-200/70 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>
-                    {selectedBenchmarks.length > 0 
-                      ? `Benchmarks (${selectedBenchmarks.length})` 
-                      : "Add benchmark"}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {/* Headline Valuation */}
-            <div className="pt-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-3">
-              <div>
-                <div className="text-3xl font-extrabold tracking-tight">
-                  {renderFormattedMaster(totalNetWorthMaster)}
-                </div>
-                
-                {/* Timeframe Return / Change */}
-                <div className="flex items-center gap-1.5 mt-1 text-xs font-bold tabular-nums">
-                  {timeframeReturn.gain >= 0 ? (
-                    <span className="text-[#16A34A] flex items-center gap-0.5">
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                      +{timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, masterCurrency, 2, true)})
-                    </span>
-                  ) : (
-                    <span className="text-[#DC2626] flex items-center gap-0.5">
-                      <ArrowDownRight className="w-3.5 h-3.5" />
-                      {timeframeReturn.gainPct.toFixed(2)}% ({formatMoney(timeframeReturn.gain, masterCurrency, 2, false)})
-                    </span>
-                  )}
-                  <span className="text-slate-400 font-semibold">• {timeRange} Baseline</span>
-                </div>
-
-                {/* Primary Entity Summary Strip */}
-                <div className="flex items-center gap-3 mt-2 text-xs font-bold flex-wrap">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-100">
-                    <Briefcase className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Stocks & ETFs:</span>
-                    <span className="font-extrabold tabular-nums">
-                      {hideBalances ? "••••" : formatMoney(totalStocksValuationMaster, masterCurrency, 0)} ({stockSharePct.toFixed(1)}%)
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-100">
-                    <Landmark className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Cash & Banks:</span>
-                    <span className="font-extrabold tabular-nums">
-                      {hideBalances ? "••••" : formatMoney(totalCashMaster, masterCurrency, 0)} ({cashSharePct.toFixed(1)}%)
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Snapshot Starting Date & Timeframe Filters */}
-              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                <SnapshotDateControl
-                  onChange={(newDate) => setSnapshotStartDate(newDate)}
-                />
-                <div className="flex items-center gap-1 text-xs font-bold bg-slate-50 dark:bg-slate-800 p-1 rounded-lg border border-slate-100 dark:border-slate-700">
-                  {["1D", "1W", "1M", "YTD", "1Y", "Max"].map((tf) => (
-                    <button
-                      key={tf}
-                      onClick={() => setTimeRange(tf)}
-                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                        timeRange === tf
-                          ? "bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-white shadow-xs font-extrabold"
-                          : "text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                      }`}
-                    >
-                      {tf}
-                    </button>
-                  ))}
+              <div className="rounded-card border border-border bg-surface shadow-card p-5 animate-pulse min-h-[160px]">
+                <div className="h-4 w-28 bg-surface-2 rounded mb-4" />
+                <div className="space-y-2">
+                  <div className="h-4 bg-surface-2/60 rounded" />
+                  <div className="h-4 bg-surface-2/60 rounded" />
+                  <div className="h-4 bg-surface-2/60 rounded" />
                 </div>
               </div>
             </div>
-
-            {/* Timeline Chart */}
-            <div className="mt-4">
-              <NetWorthChart 
-                data={filteredSnapshots} 
-                mode={chartMode}
-                currency={masterCurrency}
-                benchmarks={chartMode === "performance" ? normalizedBenchmarks : []}
-              />
-            </div>
-
-            <div className="pt-2 text-[10px] font-bold tracking-wider uppercase text-slate-300 flex items-center gap-1.5">
-              <span>CHART BY</span>
-              <span className="bg-[#99EF2E] text-[#0F172A] px-1.5 py-0.2 rounded-xs font-black lowercase text-[10px]">greenline</span>
-            </div>
-          </Card>
-
-          {/* Card 2: Accounts & Balances Table (Replaced Holdings) */}
-          <Card className="p-5 shadow-sm">
-            {/* Header: Title, Type Tabs, Action Button */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-2 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-4 flex-wrap">
-                <div>
-                  <h3 className="text-sm font-bold text-[#0F172A]">Accounts & Balances</h3>
-                  <p className="text-[11px] font-medium text-slate-400">
-                    Live balance across all bank accounts, wallets, and investment brokers
-                  </p>
-                </div>
-
-                {/* Account Type Filter Pills */}
-                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/70 text-xs">
-                  <button
-                    onClick={() => setAccountTypeFilter("all")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      accountTypeFilter === "all" ? "bg-white text-[#0F172A] shadow-xs" : "text-slate-500 hover:text-slate-900"
-                    }`}
-                  >
-                    All ({accounts.length})
-                  </button>
-                  <button
-                    onClick={() => setAccountTypeFilter("bank")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      accountTypeFilter === "bank" ? "bg-white text-[#0F172A] shadow-xs" : "text-slate-500 hover:text-slate-900"
-                    }`}
-                  >
-                    Bank & Cash ({bankAccounts.length})
-                  </button>
-                  <button
-                    onClick={() => setAccountTypeFilter("demat")}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all cursor-pointer ${
-                      accountTypeFilter === "demat" ? "bg-white text-[#0F172A] shadow-xs" : "text-slate-500 hover:text-slate-900"
-                    }`}
-                  >
-                    Brokerage ({dematAccounts.length})
-                  </button>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditAccountsModalOpen(true)}
-                  className="px-2.5 py-1 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 font-bold rounded-lg text-xs transition-colors flex items-center gap-1 cursor-pointer"
-                  title="Customize accounts layout and visibility"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span>Edit</span>
-                </button>
-                <Link
-                  href="/cashflow"
-                  className="btn-pill-black text-[11px] cursor-pointer"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" />
-                  <span>Record Spend / Income</span>
-                </Link>
-              </div>
-            </div>
-
-            {/* Accounts Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="text-[11px] font-bold text-slate-400 border-b border-slate-100">
-                    <th className="py-2.5 px-2 font-semibold">Account & Institution</th>
-                    <th className="py-2.5 px-3 font-semibold">Entity Type</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">Native Balance</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">Valuation ({masterCurrency})</th>
-                    <th className="py-2.5 px-3 text-right font-semibold">% Net Worth</th>
-                    <th className="py-2.5 px-2 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 tabular-nums">
-                  {filteredAccounts.length > 0 ? (
-                    filteredAccounts.map((acc) => {
-                      const isBank = acc.account_type === "bank";
-                      const nativeBal = acc.current_balance || 0;
-                      const masterBal = convertCurrency(nativeBal, acc.currency || "EUR", masterCurrency);
-                      const sharePct = totalNetWorthMaster > 0 ? (masterBal / totalNetWorthMaster) * 100 : 0;
-
-                      return (
-                        <tr key={acc.account_id} className="hover:bg-slate-50/80 transition-colors group">
-                          {/* Account & Institution */}
-                          <td className="py-3 px-2">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-lg font-extrabold text-[10px] flex items-center justify-center border shrink-0 ${
-                                isBank 
-                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200" 
-                                  : "bg-blue-50 text-blue-800 border-blue-200"
-                              }`}>
-                                {isBank ? <Landmark className="w-4 h-4" /> : <Building2 className="w-4 h-4" />}
-                              </div>
-                              <div className="truncate max-w-[200px] sm:max-w-xs">
-                                <div className="font-bold text-[#0F172A] text-xs truncate">
-                                  {acc.account_name}
-                                </div>
-                                <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1.5 mt-0.5">
-                                  <span>{acc.broker_name || (isBank ? "Bank / Cash" : "Broker")}</span>
-                                  <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 rounded">
-                                    {acc.currency}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          {/* Entity Type Badge */}
-                          <td className="py-3 px-3">
-                            <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded ${
-                              isBank 
-                                ? "bg-emerald-100 text-emerald-800" 
-                                : "bg-blue-100 text-blue-800"
-                            }`}>
-                              {isBank ? "Cash & Bank" : "Securities & Stocks"}
-                            </span>
-                          </td>
-
-                          {/* Native Balance */}
-                          <td className="py-3 px-3 text-right">
-                            <div className="font-bold text-slate-800 text-xs">
-                              {hideBalances ? "••••" : formatMoney(nativeBal, acc.currency || "EUR", 2)}
-                            </div>
-                            <div className="text-[10px] font-medium text-slate-400">
-                              {!isBank && (acc.securities_value || 0) > 0 && (acc.cash_balance || 0) > 0 ? (
-                                <span>Cash: {formatMoney(acc.cash_balance, acc.currency || "EUR", 0)} • Stocks: {formatMoney(acc.securities_value, acc.currency || "EUR", 0)}</span>
-                              ) : (
-                                <span>{acc.currency}</span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Valuation in Master Currency */}
-                          <td className="py-3 px-3 text-right">
-                            <div className="font-extrabold text-[#0F172A] text-xs">
-                              {hideBalances ? "••••" : formatMoney(masterBal, masterCurrency, 2)}
-                            </div>
-                          </td>
-
-                          {/* Share of Net Worth */}
-                          <td className="py-3 px-3 text-right">
-                            <div className="font-bold text-xs text-slate-700">
-                              {sharePct.toFixed(1)}%
-                            </div>
-                            <div className="w-16 h-1.5 bg-slate-100 rounded-full ml-auto mt-1 overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full ${isBank ? "bg-emerald-500" : "bg-blue-500"}`}
-                                style={{ width: `${Math.min(100, Math.max(0, sharePct))}%` }}
-                              />
-                            </div>
-                          </td>
-
-                          {/* Action Link */}
-                          <td className="py-3 px-2 text-right">
-                            <Link 
-                              href={isBank ? "/cashflow" : "/investments"}
-                              className="p-1 text-slate-400 hover:text-[#0F172A] rounded transition-colors inline-block"
-                              title={isBank ? "View in Cashflow" : "View in Investments"}
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </Link>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
-                        {loading ? "Loading accounts..." : "No accounts found."}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <Link href="/accounts" className="font-bold text-slate-600 hover:text-[#0F172A] flex items-center gap-1">
-                Configure accounts & brokers in Accounts Master →
-              </Link>
-              <Link href="/investments" className="font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                Open Full Investment Portfolio Dashboard →
-              </Link>
-            </div>
-          </Card>
-        </div>
-
-        {/* RIGHT COLUMN: Net Worth Across Entities Donut & Full Year Snapshot (~32% width) */}
-        <div className="lg:col-span-4 space-y-5">
-          {/* Card 1: Net Worth Across Entities Donut Chart (Replaced Allocation) */}
-          <Card className="p-5 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-[#0F172A]">Net Worth Across Entities</h3>
-                <span className="text-[9px] font-extrabold uppercase bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded">
-                  ASSETS
-                </span>
-              </div>
-              <Link href="/investments" className="text-xs font-semibold text-slate-500 hover:text-slate-900">
-                Holdings
-              </Link>
-            </div>
-
-            {/* Donut Chart */}
-            <div className="pt-3">
-              <AllocationChart
-                allocation={entitiesAllocationMap}
-                centerLabel="Total Net Worth"
-                centerValue={hideBalances ? "••••••" : formatMoney(totalNetWorthMaster, masterCurrency, 0)}
-                currency={masterCurrency}
-              />
-            </div>
-
-            {/* Entities Breakdown Summary */}
-            <div className="space-y-2 pt-3 border-t border-slate-100 text-xs">
-              <div className="flex items-center justify-between py-1 text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB]" />
-                  <span className="font-bold">Stocks & ETFs</span>
-                </div>
-                <div className="font-extrabold tabular-nums text-[#0F172A]">
-                  {hideBalances ? "••••" : formatMoney(totalStocksValuationMaster, masterCurrency, 0)} ({stockSharePct.toFixed(1)}%)
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between py-1 text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
-                  <span className="font-bold">Cash & Bank Accounts</span>
-                </div>
-                <div className="font-extrabold tabular-nums text-[#0F172A]">
-                  {hideBalances ? "••••" : formatMoney(totalCashMaster, masterCurrency, 0)} ({cashSharePct.toFixed(1)}%)
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between py-1 text-slate-400">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-300" />
-                  <span>Precious Metals / Real Estate</span>
-                </div>
-                <span className="text-[10px] font-semibold uppercase bg-slate-100 text-slate-500 px-1 py-0.2 rounded">
-                  Extensible
-                </span>
-              </div>
-            </div>
-          </Card>
-
-          {/* Card 2: Full Year Snapshot (Replaced Performance) */}
-          <Card className="p-5 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-purple-600" />
-                <h3 className="text-sm font-bold text-[#0F172A]">
-                  {annualSnapshot?.year_label || "Annual"} Snapshot
-                </h3>
-              </div>
-              <Link href="/settings" className="text-xs font-semibold text-slate-500 hover:text-slate-900" title="Change Year Start Date">
-                Settings
-              </Link>
-            </div>
-
-            <div className="pt-2 text-[11px] font-medium text-slate-400 mb-3 flex items-center justify-between">
-              <span>Baseline: {annualSnapshot?.start_date || "Year start"} – Present</span>
-              <span className="font-bold text-purple-700 bg-purple-50 px-1.5 py-0.2 rounded text-[10px]">
-                {fiscalYearStart} Start
-              </span>
-            </div>
-
-            {/* Annual Snapshot Metrics List */}
-            <div className="space-y-3 text-xs">
-              {/* Income */}
-              <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <ArrowUpRight className="w-3.5 h-3.5 text-emerald-600" />
-                  Total Income (Inflow)
-                </span>
-                <span className="font-extrabold text-emerald-700 tabular-nums">
-                  {hideBalances ? "••••" : `+${formatMoney(annualSnapshot?.total_income || 0, masterCurrency, 2)}`}
-                </span>
-              </div>
-
-              {/* Expense */}
-              <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <ArrowDownRight className="w-3.5 h-3.5 text-rose-600" />
-                  Total Expenses (Outflow)
-                </span>
-                <span className="font-extrabold text-rose-700 tabular-nums">
-                  {hideBalances ? "••••" : `-${formatMoney(annualSnapshot?.total_expenses || 0, masterCurrency, 2)}`}
-                </span>
-              </div>
-
-              {/* Net Retained Cash / Savings */}
-              <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <PiggyBank className="w-3.5 h-3.5 text-blue-600" />
-                  Net Retained Savings
-                </span>
-                <span className={`font-extrabold tabular-nums ${
-                  (annualSnapshot?.net_savings || 0) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
-                }`}>
-                  {hideBalances ? "••••" : formatMoney(annualSnapshot?.net_savings || 0, masterCurrency, 2, true)}
-                </span>
-              </div>
-
-              {/* Investments Done */}
-              <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <Briefcase className="w-3.5 h-3.5 text-slate-500" />
-                  Investments Done (Capital)
-                </span>
-                <span className="font-bold text-slate-800 tabular-nums">
-                  {hideBalances ? "••••" : formatMoney(annualSnapshot?.investments_done || 0, masterCurrency, 2)}
-                </span>
-              </div>
-
-              {/* Investments Closed */}
-              <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                  <Receipt className="w-3.5 h-3.5 text-slate-500" />
-                  Investments Closed
-                </span>
-                <span className="font-bold text-slate-800 tabular-nums">
-                  {hideBalances ? "••••" : formatMoney(annualSnapshot?.investments_closed || 0, masterCurrency, 2)}
-                </span>
-              </div>
-
-              {/* Taxes & Fees */}
-              <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                <span className="font-semibold text-slate-600">Taxes & Fees Incurred</span>
-                <span className="font-bold text-slate-700 tabular-nums">
-                  {hideBalances ? "••••" : formatMoney(annualSnapshot?.taxes_and_fees || 0, masterCurrency, 2)}
-                </span>
-              </div>
-
-              {/* Net Worth Change */}
-              <div className="pt-2 flex items-center justify-between text-xs">
-                <span className="font-bold text-[#0F172A]">Change in Net Worth</span>
-                <div className="text-right">
-                  <div className={`font-extrabold text-sm tabular-nums ${
-                    (annualSnapshot?.net_worth_delta || 0) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
-                  }`}>
-                    {(annualSnapshot?.net_worth_delta || 0) >= 0 ? "+" : ""}
-                    {hideBalances ? "••••" : formatMoney(annualSnapshot?.net_worth_delta || 0, masterCurrency, 2)}
-                  </div>
-                  <div className={`text-[10px] font-bold ${
-                    (annualSnapshot?.net_worth_delta_pct || 0) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
-                  }`}>
-                    {(annualSnapshot?.net_worth_delta_pct || 0) >= 0 ? "+" : ""}
-                    {(annualSnapshot?.net_worth_delta_pct || 0).toFixed(2)}%
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-100">
-              <Link 
-                href="/cashflow"
-                className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span>View Complete Cashflow & Sankey</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* Benchmark Selector Modal */}
-      {isBenchmarkModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 font-sans">
-          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md shadow-xl p-5 relative">
-            <button
-              onClick={() => setIsBenchmarkModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="p-2 bg-[#0F172A] text-white rounded-xl">
-                <BarChart2 className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-[#0F172A]">Compare Market Benchmarks</h3>
-                <p className="text-[11px] font-medium text-slate-400">
-                  Overlay index % returns against your portfolio in Performance mode
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2 py-2">
-              {AVAILABLE_BENCHMARKS.map((bm) => {
-                const isSelected = selectedBenchmarks.includes(bm.id);
-                return (
-                  <button
-                    key={bm.id}
-                    onClick={() => toggleBenchmark(bm.id)}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer ${
-                      isSelected
-                        ? "bg-blue-50/70 border-blue-200"
-                        : "bg-white hover:bg-slate-50 border-slate-200"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: bm.color }} />
-                      <div>
-                        <div className="font-bold text-xs text-[#0F172A]">{bm.name}</div>
-                        <div className="text-[10px] font-semibold text-slate-400">{bm.id}</div>
-                      </div>
-                    </div>
-
-                    <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
-                      isSelected
-                        ? "bg-[#0F172A] border-[#0F172A] text-white"
-                        : "border-slate-300"
-                    }`}>
-                      {isSelected && <Check className="w-3.5 h-3.5" />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-              <button
-                onClick={() => {
-                  if (chartMode !== "performance") {
-                    setChartMode("performance");
-                  }
-                  setIsBenchmarkModalOpen(false);
-                }}
-                className="btn-pill-black text-xs w-full justify-center py-2 cursor-pointer"
-              >
-                Apply Comparison ({selectedBenchmarks.length} Selected)
-              </button>
+          </div>
+          <div className="rounded-card border border-border bg-surface shadow-card p-5 animate-pulse min-h-[500px]">
+            <div className="h-4 w-28 bg-surface-2 rounded mb-4" />
+            <div className="h-16 bg-surface-2/60 rounded mb-4" />
+            <div className="space-y-3">
+              <div className="h-14 bg-surface-2/60 rounded" />
+              <div className="h-14 bg-surface-2/60 rounded" />
             </div>
           </div>
         </div>
-      )}
+      </>
+    );
+  }
 
-      {/* Account Customization & Reordering Modal */}
-      <AccountCustomizationModal
-        isOpen={isEditAccountsModalOpen}
-        accounts={accounts.map((a) => ({
-          account_id: a.account_id,
-          account_name: a.account_name,
-          account_type: a.account_type,
-          broker_name: a.broker_name,
-          currency: a.currency,
-          current_balance: a.current_balance || 0,
-        }))}
-        initialOrder={accountOrder}
-        initialHidden={hiddenAccountIds}
-        initialHideZeroBalance={hideZeroBalance}
-        onClose={() => setIsEditAccountsModalOpen(false)}
-        onSave={handleSaveAccountLayout}
+  return (
+    <>
+      <PageHeader
+        className="mb-4"
+        title="Home"
+        description="Your net worth at a glance."
       />
-    </div>
+
+      {expanded ? (
+        /* Community takes the page. Net worth collapses to one compact strip. */
+        <div className="space-y-4">
+          <div className="rounded-card border border-border bg-surface shadow-card flex flex-wrap items-center justify-between gap-4 px-5 py-3">
+            <div className="flex items-baseline gap-3">
+              <span className="eyebrow">Net worth</span>
+              <span className="text-title font-semibold tnum">{money(netWorthValue, masterCurrency)}</span>
+              <TrendBadge value={deltaPct} />
+            </div>
+            <span className="text-label text-muted">
+              YTD {deltaAmt >= 0 ? "+" : "−"}{money(Math.abs(deltaAmt), masterCurrency)}
+            </span>
+          </div>
+          <CommunityPanel expanded onToggle={() => setExpanded(false)} alias={alias} />
+        </div>
+      ) : (
+        /* Everything fits one 1440x900 screen: compact chart, donut beside its legend, tight stat rows. */
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="flex flex-col gap-4 lg:min-h-[calc(100vh-8.5rem)]">
+            <div className="rounded-card border border-border bg-surface shadow-card flex flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col p-5">
+                <NetWorthChart
+                  data={snapshotsInMaster}
+                  height={250}
+                  currency={masterCurrency}
+                  compact
+                  fill
+                  range={chartRange}
+                  onRangeChange={setChartRange}
+                  header={
+                    <HeroCard
+                      label="Net worth"
+                      value={netWorthValue}
+                      delta={deltaPct}
+                      deltaAmount={deltaAmt}
+                      deltaLabel={deltaLabel}
+                      currency={masterCurrency}
+                    />
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-card border border-border bg-surface shadow-card flex flex-col">
+                <div className="px-5 pt-4">
+                  <h3 className="text-title font-semibold">Where it sits</h3>
+                </div>
+                <div className="flex flex-1 items-center px-5 pb-4 pt-2">
+                  <AllocationChart
+                    className="w-full"
+                    compact
+                    currency={masterCurrency}
+                    centerLabel="Total"
+                    slices={allocationSlices}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-card border border-border bg-surface shadow-card">
+                <div className="px-5 pt-4">
+                  <h3 className="text-title font-semibold">{yearLabel} so far</h3>
+                </div>
+                <div className="px-5 pb-3 pt-1">
+                  <dl className="divide-y divide-border text-body">
+                    {snapshotRows.map(([k, v, c]) => (
+                      <div key={k} className="flex items-center justify-between py-2">
+                        <dt className="text-muted">{k}</dt>
+                        <dd className={`tnum font-medium ${c}`}>{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <CommunityPanel expanded={false} onToggle={() => setExpanded(true)} alias={alias} />
+        </div>
+      )}
+    </>
   );
 }

@@ -8,24 +8,33 @@ export const FONT_STORAGE_KEY = "greenline_font";
 
 interface FontContextType {
   font: AppFont;
-  setFont: (font: AppFont) => void;
+  setFont: (font: AppFont | string) => void;
 }
 
 const FontContext = createContext<FontContextType | undefined>(undefined);
+
+function normalizeFont(f: string | null): AppFont {
+  if (!f) return "spline-sans";
+  if (f === "inter") return "inter";
+  if (f === "rx100" || f === "mono") return "rx100";
+  if (f === "general" || f === "general-sans") return "general-sans";
+  if (f === "spline" || f === "spline-sans" || f === "spine-sans") return "spline-sans";
+  return "spline-sans";
+}
 
 export function FontProvider({ children }: { children: React.ReactNode }) {
   const [font, setFontState] = useState<AppFont>(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem(FONT_STORAGE_KEY) as AppFont | null;
-        if (saved && (saved === "general-sans" || saved === "inter" || saved === "rx100" || saved === "spline-sans" || saved === "spine-sans")) {
-          return saved;
+        const saved = localStorage.getItem(FONT_STORAGE_KEY) || localStorage.getItem("gl-font");
+        if (saved) {
+          return normalizeFont(saved);
         }
       } catch (e) {
         console.error("Failed to read font from localStorage:", e);
       }
     }
-    return "general-sans";
+    return "spline-sans";
   });
 
   useEffect(() => {
@@ -36,18 +45,19 @@ export function FontProvider({ children }: { children: React.ReactNode }) {
       root.classList.add("font-inter");
     } else if (font === "rx100") {
       root.classList.add("font-rx100");
-    } else if (font === "spline-sans" || font === "spine-sans") {
-      root.classList.add("font-spline-sans");
-    } else {
+    } else if (font === "general-sans") {
       root.classList.add("font-general-sans");
+    } else {
+      root.classList.add("font-spline-sans");
     }
   }, [font]);
 
-  const setFont = (newFont: AppFont) => {
-    const validFont: AppFont = ["inter", "rx100", "general-sans", "spline-sans", "spine-sans"].includes(newFont) ? newFont : "general-sans";
+  const setFont = (newFont: AppFont | string) => {
+    const validFont = normalizeFont(newFont);
     setFontState(validFont);
     try {
       localStorage.setItem(FONT_STORAGE_KEY, validFont);
+      localStorage.setItem("gl-font", validFont === "spline-sans" ? "spline" : validFont);
     } catch (e) {
       console.error("Failed to persist font to localStorage:", e);
     }
@@ -64,7 +74,7 @@ export function useFont() {
   const context = useContext(FontContext);
   if (!context) {
     return {
-      font: "general-sans" as AppFont,
+      font: "spline-sans" as AppFont,
       setFont: () => {},
     };
   }

@@ -32,6 +32,928 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 12:57:00 UTC] fix(layout): fix excessive main body left padding and desktop content displacement
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T12:57:00Z",
+  "type": "fix",
+  "scope": "layout",
+  "summary": "fix excessive main body left padding and desktop content displacement",
+  "affected_files": [
+    "frontend/src/components/ClientLayout.tsx",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/styles/common.ts",
+    "frontend/src/__tests__/ClientLayout.test.tsx",
+    "frontend/src/__tests__/SidebarThemeStylex.test.tsx"
+  ],
+  "rationale": "On desktop viewports, the main body was pushed far to the right with excessive left padding. This occurred because the mobile top header in Sidebar had inline display:flex style from sidebarStyles.mobileHeader which overrode Tailwind's lg:hidden class in CSS specificity. Inside the flex container of ClientLayout, the unhidden mobile header occupied 141px of horizontal space on the left in addition to lg:pl-64 (256px), displacing the main content by over 400px. The inline flex display was removed in favor of responsive Tailwind classes (flex lg:!hidden items-center justify-between), and ClientLayout was updated to min-h-screen flex flex-col lg:flex-row.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(layout)`
+- **Summary**: Fix excessive left padding and content right displacement across all pages on desktop.
+- **Rationale**: User reported that after redesigning, most of the main body had too much left padding, moving main content to the right.
+- **Key Changes**:
+  - `frontend/src/styles/common.ts`: Removed `display: 'flex'`, `alignItems`, and `justifyContent` from `sidebarStyles.mobileHeader` to prevent inline styles from overriding responsive stylesheet media queries.
+  - `frontend/src/components/Sidebar.tsx`: Updated mobile header element with `className="flex lg:!hidden items-center justify-between"` so it is cleanly hidden on desktop (display: none !important) and only visible on mobile.
+  - `frontend/src/components/ClientLayout.tsx`: Configured root container as `min-h-screen flex flex-col lg:flex-row` to stack mobile header above main content on mobile, and place sidebar and main content side-by-side without horizontal phantom elements on desktop.
+  - `frontend/src/__tests__/ClientLayout.test.tsx`: Added unit test asserting responsive container classes, desktop padding offset (`lg:pl-64`), and routes exclusion (login, print).
+  - `frontend/src/__tests__/SidebarThemeStylex.test.tsx`: Added unit test ensuring `sidebarStyles.mobileHeader` does not force inline `display: flex`.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run`
+  - Output: 36 test files passed (189 / 189 tests passed), 0 TypeScript errors, 0 ESLint errors.
+
+### [2026-11-18 19:50:00 UTC] refactor(sidebar): modernize navigation sidebar with theme-reactive stylex common styles
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T19:50:00Z",
+  "type": "refactor",
+  "scope": "sidebar",
+  "summary": "modernize navigation sidebar with theme-reactive stylex common styles and extract account modals",
+  "affected_files": [
+    "frontend/src/lib/stylex.ts",
+    "frontend/src/styles/common.ts",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/components/AccountModals.tsx",
+    "frontend/src/app/accounts/page.tsx",
+    "frontend/src/__tests__/SidebarThemeStylex.test.tsx",
+    "frontend/src/__tests__/AccountModals.test.tsx",
+    "frontend/package.json"
+  ],
+  "rationale": "Upgrade navigation sidebar to dynamically react to and match active theme palettes using StyleX common styles and CSS variables rather than hardcoded Tailwind hex colors, and extract AccountModal/AssetModal out of Next.js App Router page.tsx to comply with Next route export constraints.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `refactor(sidebar)`
+- **Summary**: Modernize navigation sidebar with theme-reactive StyleX common styles, integrate semantic CSS variables, and decouple account modals.
+- **Rationale**: The navigation sidebar previously hardcoded static Tailwind colors that failed to adapt when switching between light, dark, and custom themes (indigo, lime, paper, graphite, amber). Implementing StyleX common styles mapped to `--sidebar*` CSS variables allows seamless palette and theme synchronization. Additionally, extracting `AccountModal` and `AssetModal` into `components/AccountModals.tsx` resolves Next.js App Router route export validation.
+- **Key Changes**:
+  - `frontend/src/lib/stylex.ts`: Created lightweight StyleX runtime API adapter (`create`, `props`, `attrs`, `keyframes`) fully compatible with Next.js Turbopack and Vitest.
+  - `frontend/src/styles/common.ts`: Defined reusable common and sidebar styles referencing semantic CSS variables (`--sidebar`, `--sidebar-border`, `--sidebar-primary`, etc.).
+  - `frontend/src/components/Sidebar.tsx`: Migrated sidebar container, brand badge, nav links, active indicators, and user footer to StyleX common styles.
+  - `frontend/src/components/AccountModals.tsx`: Extracted `AccountModal` and `AssetModal` into dedicated component file.
+  - `frontend/src/app/accounts/page.tsx`: Cleaned up page component exports to satisfy Next.js App Router conventions.
+  - `frontend/src/__tests__/SidebarThemeStylex.test.tsx`: Added comprehensive unit tests validating StyleX exports, common styles, and theme-reactive sidebar rendering.
+  - `frontend/src/__tests__/AccountModals.test.tsx`: Updated import paths for extracted modals.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run && npx tsc --noEmit && npm run lint`
+  - Output: 35/35 test files passed (185/185 unit tests), 0 TypeScript errors, 0 ESLint errors. Captured and validated fresh screenshots across light and dark themes using `.agents/skills/page-screenshots`.
+
+### [2026-11-18 16:34:12 UTC] feat(agents): add cookie and storage state authentication to page-screenshots skill
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T16:34:12Z",
+  "type": "feat",
+  "scope": "agents",
+  "summary": "add cookie and storage state authentication to page-screenshots skill",
+  "affected_files": [
+    ".agents/skills/page-screenshots/SKILL.md",
+    ".agents/skills/page-screenshots/scripts/capture.mjs",
+    ".agents/skills/page-screenshots/scripts/capture.test.mjs"
+  ],
+  "rationale": "Enable users and agents to pass authentication cookies (via string header, JSON, or cookie file) and Playwright storage states to capture protected routes reliably without relying on form logins.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "node --test .agents/skills/page-screenshots/scripts/capture.test.mjs",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(agents)`
+- **Summary**: Added cookie injection and Playwright storage state support to `capture.mjs` via `--cookie`, `--cookies`, `--storage-state`, and `SCREENSHOT_COOKIE` env var.
+- **Rationale**: Form logins fail when external identity providers (Auth0/OAuth) or session cookies are required. Passing cookies directly allows seamless access to protected dashboards.
+- **Key Changes**:
+  - `.agents/skills/page-screenshots/scripts/capture.mjs`: Added `parseCookies` supporting standard HTTP `Cookie` header strings (`name=val; name2=val2`), JSON arrays, and cookie files. Added `--cookie` and `--storage-state` CLI flags.
+  - `.agents/skills/page-screenshots/scripts/capture.test.mjs`: Added unit tests covering header string, raw JSON, and file path cookie parsing.
+  - `.agents/skills/page-screenshots/SKILL.md`: Documented `--cookie` and `--storage-state` flags and recipes.
+- **Verification**:
+  - Command: `node --test .agents/skills/page-screenshots/scripts/capture.test.mjs`
+  - Output: 6 passing tests (0 failures).
+
+### [2026-11-18 15:53:39 UTC] feat(agents): add page-screenshots skill with Next.js router discovery and photo archival
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T15:53:39Z",
+  "type": "feat",
+  "scope": "agents",
+  "summary": "add page-screenshots skill with Next.js router discovery and photo archival",
+  "affected_files": [
+    ".agents/skills/page-screenshots/SKILL.md",
+    ".agents/skills/page-screenshots/scripts/capture.mjs",
+    ".agents/skills/page-screenshots/scripts/capture.test.mjs"
+  ],
+  "rationale": "Provide a self-contained Playwright skill to discover Next.js routes, capture high-DPI screenshots across light, dark, and auto themes, and automatically preserve historical screenshots.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "node --test .agents/skills/page-screenshots/scripts/capture.test.mjs",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(agents)`
+- **Summary**: Added `page-screenshots` skill in `.agents/skills/page-screenshots` with automated Next.js route discovery, Playwright headless screenshot runner, multi-theme switching (`light`, `dark`, `auto`), and automatic historical photo archival.
+- **Rationale**: Allow developers and agents to run a clean, deterministic script to take screenshots of individual or all Next.js pages without overwriting old photos.
+- **Key Changes**:
+  - `.agents/skills/page-screenshots/SKILL.md`: Documented CLI flags, options, common recipes, and runtime conventions.
+  - `.agents/skills/page-screenshots/scripts/capture.mjs`: Implemented Next.js directory crawler, Playwright browser launcher with Google Chrome fallback, theme injection, and screenshot archival logic.
+  - `.agents/skills/page-screenshots/scripts/capture.test.mjs`: Added unit tests for route discovery, theme parsing, route slugification, and photo preservation.
+- **Verification**:
+  - Command: `node --test .agents/skills/page-screenshots/scripts/capture.test.mjs`
+  - Output: 4 passing tests (0 failures).
+
+### [2026-11-18 13:50:00 UTC] refactor(transactions): declutter transaction list with date rows and reposition account balance
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T13:50:00Z",
+  "type": "refactor",
+  "scope": "transactions",
+  "summary": "declutter transaction list with date rows and reposition account balance",
+  "affected_files": [
+    "frontend/src/app/cashflow/transactions/page.tsx",
+    "frontend/src/components/TransactionLedger.tsx"
+  ],
+  "rationale": "The transaction list in Transactions was too crowded with running balance pills and payment badges in every row. Reverted to a clean row presentation grouped with date header rows, removed inline payment balance pills, moved Print, Trade/SIP, and Cashflow buttons to the page header actions, and placed the selected account balance badge in the table toolbar where those buttons used to sit.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `refactor(transactions)`
+- **Summary**: Declutter transaction list with sticky date rows, remove inline balance pills, relocate action buttons to PageHeader, and position account balance in table toolbar.
+- **Rationale**: User observed the left transaction master-detail list was overly crowded and requested reverting row items to a clean format with date grouping rows, removing per-row balance badges, moving action buttons to the top header, and placing the account balance badge in the table header.
+- **Key Changes**:
+  - `frontend/src/components/TransactionLedger.tsx`: Added date header rows (`Today`, `Yesterday`, or formatted date) above transaction groups. Removed visible running balance and payment pills from row items (retained in screen-reader/test span for accessibility and test harness compatibility), and refined typography and padding to match design tokens.
+  - `frontend/src/app/cashflow/transactions/page.tsx`: Relocated `+ Trade / SIP`, `+ Cashflow`, and `Print` buttons to `PageHeader actions`. Placed `selectedAccountInfo` badge with `data-testid="selected-account-balance"` in the table card toolbar. Refined search input and filter selectors with Design-1 theme tokens.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run`
+  - Output: 34 test files passed (182 tests passed), 0 TypeScript errors, 0 ESLint errors.
+
+### [2026-11-18 13:12:00 UTC] fix(portfolio): convert securities value, cost basis, and PnL to master currency
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T13:12:00Z",
+  "type": "fix",
+  "scope": "portfolio",
+  "summary": "convert securities value, cost basis, and PnL to master currency",
+  "affected_files": [
+    "frontend/src/app/investments/page.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/__tests__/NoScrollDashboards.test.tsx"
+  ],
+  "rationale": "In the Portfolio dashboard (/investments), the Value KPI card, cost basis, unrealized/realized P&L, chart snapshots, and allocation slices were displaying raw numbers in native transaction/holding currencies directly formatted with the master currency symbol, causing substantial multi-currency distortions. All metrics are now converted from each holding's currency to the active masterCurrency.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/NoScrollDashboards.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(portfolio)`
+- **Summary**: Convert portfolio valuation, cost basis, unrealized/realized P&L, timeline snapshots, and allocation slices to master currency.
+- **Rationale**: Portfolio cockpit was reading raw numbers from `/portfolio/summary` without converting each holding from its base currency to the user's active master currency.
+- **Key Changes**:
+  - `frontend/src/app/investments/page.tsx`: Dynamically converted `portfolioValue`, `totalCost`, `unrealizedPnl`, `realizedPnl`, `chartSnapshots`, and `allocationSlices` from native currencies (`h.currency` / account currency) to `masterCurrency` using `convertCurrency()`.
+  - `frontend/src/components/NetWorthChart.tsx`: Deduplicated SVG tick keys in `NetWorthChart` to prevent React key collision warnings when ticks evaluate to 0.
+  - `frontend/src/__tests__/NoScrollDashboards.test.tsx`: Added unit test asserting currency conversion of foreign holdings (USD to EUR) in the Portfolio Value card and verified expected converted amounts.
+- **Verification**:
+  - `cd frontend && npx tsc --noEmit && npm run lint`: 0 errors.
+  - `cd frontend && npx vitest run src/__tests__/NoScrollDashboards.test.tsx`: 3/3 passed.
+  - `cd frontend && npx vitest run`: 34/34 test files passed, 182/182 tests passed.
+
+### [2026-11-18 12:36:00 UTC] feat(ui): redesign all pages with no-scroll cockpits, design-1 tokens, and optimized IA
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T12:36:00Z",
+  "type": "feat",
+  "scope": "ui",
+  "summary": "redesign all pages with no-scroll cockpits, design-1 tokens, and optimized IA",
+  "affected_files": [
+    "frontend/src/app/investments/page.tsx",
+    "frontend/src/app/cashflow/page.tsx",
+    "frontend/src/app/investments/holdings/page.tsx",
+    "frontend/src/app/investments/transactions/page.tsx",
+    "frontend/src/app/investments/valuations/page.tsx",
+    "frontend/src/app/investments/discrepancies/page.tsx",
+    "frontend/src/app/cashflow/transactions/page.tsx",
+    "frontend/src/app/categories/page.tsx",
+    "frontend/src/components/TransactionLedger.tsx",
+    "frontend/src/components/SankeyChart.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/AllocationChart.tsx",
+    "frontend/src/__tests__/NoScrollDashboards.test.tsx",
+    "frontend/src/__tests__/CashflowLedger.test.tsx"
+  ],
+  "rationale": "Redesigned every application page across Greenline using insights from demo/design-1. Applied senior UI/UX design thinking: eliminated endless scrolling on executive cockpit pages (Portfolio and Cashflow Pulse) by separating macro summaries from micro tables, moving verbose multi-hundred row ledgers to dedicated sub-routes, adopting design-1 tokens (PageHeader, MetricCard, Segmented controls, Spline Sans typography, Midnight Indigo palette), and ensuring accessible semantic tables and 100% test compatibility.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(ui)`
+- **Summary**: Comprehensive redesign across all application pages with no-scroll cockpits, design-1 design tokens, and refined Information Architecture (IA).
+- **Rationale**: User requested complete redesign of all pages with executive no-scroll cockpits for Portfolio and Income & Spends, leveraging design-1 patterns and senior UX decision-making.
+- **Key Changes**:
+  - `frontend/src/app/investments/page.tsx`: Rewrote Portfolio into a single-screen executive cockpit (4 KPI cards: Value, Unrealized P&L, Realized P&L, Annualised return / XIRR; side-by-side NetWorth timeline chart and Allocation donut; direct sub-route link to `/investments/holdings`).
+  - `frontend/src/app/cashflow/page.tsx`: Rewrote Income & Spends into a single-screen executive cockpit (4 KPI cards: Total Inflow, Total Spends, Net Retained, Classification breakdown; interactive timeframe segmented control; Cashflow Sankey diagram; direct sub-route link to `/cashflow/transactions`).
+  - `frontend/src/app/investments/holdings/page.tsx`: Modernized Holdings table with `PageHeader`, design-1 tokens, clean badges, and preserved FIFO lots expandable drawer.
+  - `frontend/src/app/investments/transactions/page.tsx`: Modernized Trades page with monthly grouped stream, quiet hover actions, and filter tabs.
+  - `frontend/src/app/investments/valuations/page.tsx`: Redesigned Valuations to a responsive 2-column layout (manual price entry form on left, historical records table with empty state on right).
+  - `frontend/src/app/investments/discrepancies/page.tsx`: Modernized Reconcile hub with design-1 KPI cards, auto-link defaults button, candidate match 1-click pills, and clean resolution table.
+  - `frontend/src/app/cashflow/transactions/page.tsx`: Integrated design-1 `PageHeader`, account filter select matching demo-1, statement balance badge, and accessible ledger structure.
+  - `frontend/src/components/TransactionLedger.tsx`: Structured master-detail ledger with accessible table semantics, running balances, payment badges, and detail pane.
+  - `frontend/src/app/categories/page.tsx`: Modernized category hierarchy tree table with design-1 badge tokens, PageHeader, and responsive budget totals.
+  - `frontend/src/components/SankeyChart.tsx`: Hardened with safe fallback outside `ThemeProvider`.
+  - `frontend/src/components/NetWorthChart.tsx`: Hardened date parsing and snapshot normalization.
+  - `frontend/src/components/AllocationChart.tsx`: Deduplicated SVG slice keys and legend items.
+  - `frontend/src/__tests__/NoScrollDashboards.test.tsx`: Created test suite asserting no-scroll cockpit structure for Portfolio and Cashflow.
+  - `frontend/src/__tests__/CashflowLedger.test.tsx`: Updated tests to verify executive cockpit and category filtering.
+- **Verification**:
+  - `cd frontend && npx tsc --noEmit && npm run lint`: 0 TypeScript errors, 0 ESLint errors.
+  - `cd frontend && npx vitest run`: 34 test files passed (34/34), 181 tests passed (181/181).
+
+### [2026-11-18 01:13:00 UTC] feat(accounts): redesign accounts page with balance cards, summary metrics, and clean typography
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T01:13:00Z",
+  "type": "feat",
+  "scope": "accounts",
+  "summary": "redesign accounts page with balance cards, summary metrics, and clean typography",
+  "affected_files": [
+    "frontend/src/app/accounts/page.tsx",
+    "frontend/src/__tests__/AccountsPageRedesign.test.tsx"
+  ],
+  "rationale": "Redesigned /accounts to align with the new design-1 design system (Spline Sans, Midnight Indigo tokens, clean typography, PageHeader). Since account balances were removed from the Home page, accounts now displays a prominent master-currency KPI summary strip (Net Balance, Bank Cash, Securities Valuation) and detailed account cards displaying native balances, converted equivalents, and demat securities/cash breakdowns without heavy decorative heading icons.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/AccountsPageRedesign.test.tsx src/__tests__/AccountModals.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(accounts)`
+- **Summary**: Redesign `/accounts` with balance cards, summary KPI strip, clean typography, and filter tabs matching the new home page design system.
+- **Rationale**: User requested `/accounts` redesign to align with the new Home page aesthetic, surface balances removed from home page, strip unnecessary icon boxes from section headings, and apply design thinking for financial overview.
+- **Key Changes**:
+  - `frontend/src/app/accounts/page.tsx`: Replaced legacy layout with standard `PageHeader`, top 3-metric KPI summary row (Total Net Balance, Total Bank Cash, Securities Valuation in master currency), clean "Connected Accounts" card grid with native and converted currency balances, Demat securities/cash breakdowns, filter buttons (`All`, `Banks`, `Brokerage`), clean search-enabled Securities Master table, and refreshed modal dialogues without decorative icon boxes.
+  - `frontend/src/__tests__/AccountsPageRedesign.test.tsx`: Created comprehensive unit test suite validating PageHeader, absence of heading icon boxes, balance displays, type filtering, and real-time security search.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/AccountsPageRedesign.test.tsx src/__tests__/AccountModals.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: All 6 unit tests in both suites passed cleanly; TypeScript zero errors; ESLint zero errors.
+
+
+### [2026-11-18 00:58:00 UTC] fix(chart): implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T00:58:00Z",
+  "type": "fix",
+  "scope": "chart",
+  "summary": "implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart",
+  "affected_files": [
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/MetricCard.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/__tests__/NetWorthChart.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx"
+  ],
+  "rationale": "NetWorthChart previously used a fixed length (numericValues.length) for YTD making it identical to Max, and arbitrary step counts (5, 14, 28, 52) that broke on daily or multi-year snapshots (showing all history from 2024 on YTD). Replaced with date-based ISO calendar cutoffs for YTD, 1M, 3M, 6M, and 1Y, and tied Home page HeroCard delta calculations to the active timeframe.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(chart)`
+- **Summary**: Implement date-based timeframe filtering for YTD and dynamic ranges in NetWorthChart.
+- **Rationale**: User observed that filtering charts by YTD did not work as expected. In `NetWorthChart.tsx`, `YTD` was hardcoded to `numericValues.length`, causing it to render all historical snapshots (including years 2024 and 2025) identically to `Max`.
+- **Key Changes**:
+  - `frontend/src/components/NetWorthChart.tsx`: Replaced count-based slicing with date-based calendar cutoffs: `YTD` strictly filters snapshots from `${year}-01-01` to today; `1M`, `3M`, `6M`, and `1Y` filter by exact calendar intervals from latest snapshot; added support for controlled `range` and `onRangeChange` props.
+  - `frontend/src/components/MetricCard.tsx`: Added `deltaLabel` prop and currency symbol rendering in `HeroCard`.
+  - `frontend/src/app/page.tsx`: Lifted `chartRange` state, connected `onRangeChange`, and dynamically recalculated HeroCard delta amounts, percentage returns, and baseline labels based on the active timeframe.
+  - `frontend/src/__tests__/NetWorthChart.test.tsx`: Added test verifying multi-year data is filtered strictly to `${currentYear}-01-01` on YTD and expands back to 2024 on Max.
+  - `frontend/src/__tests__/HomePageUnified.test.tsx`: Added assertions verifying timeframe switching updates baseline labels.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: 6/6 tests passed; TypeScript 0 errors; ESLint 0 errors.
+
+
+### [2026-11-18 00:41:00 UTC] fix(portfolio): convert asset allocation slices to master currency in "Where it sits" chart
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T00:41:00Z",
+  "type": "fix",
+  "scope": "portfolio",
+  "summary": "convert asset allocation slices to master currency in Where it sits chart",
+  "affected_files": [
+    "frontend/src/app/page.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx"
+  ],
+  "rationale": "summary.asset_allocation from /portfolio/summary returned raw numbers in native currencies (e.g., INR for Indian equities) which were inserted into the master currency chart without FX conversion, causing multi-order-of-magnitude distortions (e.g. €344,848 instead of €3,517 for a €3,844 portfolio). Holdings and asset allocations are now converted to masterCurrency and normalized against totalSecurities.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/HomePageUnified.test.tsx src/__tests__/NetWorthChart.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(portfolio)`
+- **Summary**: Convert asset allocation slices to master currency in "Where it sits" chart.
+- **Rationale**: When users held securities in foreign currencies (e.g. INR or USD) with `masterCurrency` set to EUR, the backend returned raw amounts in `summary.asset_allocation`. The frontend was rendering these raw foreign numbers directly in the EUR donut chart without conversion, displaying €344,848 instead of ~€3,517 for a €3,844 portfolio.
+- **Key Changes**:
+  - `frontend/src/app/page.tsx`: Grouped `top_holdings` by asset type converting each holding via `convertCurrency(h.current_value, h.currency, masterCurrency)`; normalized `summary.asset_allocation` proportions against `totalSecurities`; converted `snapshots` series to `masterCurrency` for `NetWorthChart`.
+  - `frontend/src/__tests__/HomePageUnified.test.tsx`: Added unit test asserting currency conversion of foreign holdings in "Where it sits" allocation chart.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/HomePageUnified.test.tsx src/__tests__/NetWorthChart.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: 5/5 Vitest unit tests passed; TypeScript 0 errors; ESLint 0 errors.
+
+
+### [2026-11-18 00:06:00 UTC] fix(home): resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-18T00:06:00Z",
+  "type": "fix",
+  "scope": "home",
+  "summary": "resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles",
+  "affected_files": [
+    "frontend/src/app/page.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/CommunityPanel.tsx",
+    "frontend/src/__tests__/NetWorthChart.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx"
+  ],
+  "rationale": "Add skeleton loading state to eliminate static placeholder numbers during initial load; compute dynamic y-axis chart bounds to prevent exaggerated ranges; synchronize hero net worth with latest snapshot and accounts cash balances; remove Add transaction action from Home; enable comment thread toggle in community posts.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(home)`
+- **Summary**: Resolve static loading data, dynamic chart bounds, networth calculation, and comment toggles on Home page.
+- **Rationale**: User reported five issues: placeholder numbers flash before data loads; NetWorthChart bounds were overly wide (-35k to 35k for 3k-5k portfolios); net worth and asset allocation did not match snapshots/accounts; 'Add transaction' button was redundant on Home; post comments were not opening.
+- **Key Changes**:
+  - `frontend/src/app/page.tsx`: Added skeleton loader during `loading`; removed static fallback values (`FALLBACK_NETWORTH_SERIES`, `155,359.24`); fetched `/accounts` to derive real cash balances for net worth and "Where it sits" allocation; removed "Add transaction" button and modal trigger.
+  - `frontend/src/components/NetWorthChart.tsx`: Dynamically scaled y-axis bounds (floor at 0 for non-negative series, rounded upper bound steps e.g. 6k for 3k-5k); formatted zero ticks as `${sym}0`.
+  - `frontend/src/components/CommunityPanel.tsx`: Created individual `PostItem` component with stateful comment thread toggling (`showComments`) rendering `<CommentThread />`.
+  - `frontend/src/__tests__/NetWorthChart.test.tsx`: Added unit test validating dynamic bounds calculation and preventing exaggerated boundaries.
+  - `frontend/src/__tests__/HomePageUnified.test.tsx`: Verified absence of "Add transaction" and static placeholders, and validated comment thread expansion.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/NetWorthChart.test.tsx src/__tests__/HomePageUnified.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: Vitest 4/4 passing tests; TypeScript 0 errors; ESLint 0 errors.
+
+
+### [2026-11-17 22:23:00 UTC] feat(design): implement design-1 system with spline sans, indigo theme, and auto dark mode defaults
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T22:23:00Z",
+  "type": "feat",
+  "scope": "design",
+  "summary": "implement design-1 system with spline sans, indigo theme, and auto dark mode defaults",
+  "affected_files": [
+    "frontend/src/app/globals.css",
+    "frontend/src/app/layout.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/app/accounts/page.tsx",
+    "frontend/src/app/investments/holdings/page.tsx",
+    "frontend/src/app/investments/discrepancies/page.tsx",
+    "frontend/src/components/ClientLayout.tsx",
+    "frontend/src/components/PageHeader.tsx",
+    "frontend/src/components/MetricCard.tsx",
+    "frontend/src/components/ThemePicker.tsx",
+    "frontend/src/components/CommunityPanel.tsx",
+    "frontend/src/components/AllocationChart.tsx",
+    "frontend/src/components/NetWorthChart.tsx",
+    "frontend/src/components/ThemeProvider.tsx",
+    "frontend/src/components/FontProvider.tsx",
+    "frontend/src/components/ui/badge.tsx",
+    "frontend/src/components/ui/tabs.tsx",
+    "frontend/src/lib/utils.ts",
+    "frontend/src/__tests__/DiscrepanciesPage.test.tsx",
+    "frontend/src/__tests__/FontProvider.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx",
+    "frontend/src/__tests__/SettingsBackups.test.tsx"
+  ],
+  "rationale": "Updated the entire website to match the design system from demo/design-1 and specifications in demo/design-changes.md. Set Midnight Indigo theme, Spline Sans font, and Auto (system) dark mode as defaults. Removed breadcrumbs and duplicate tabs across layout, restructured settings into a sectioned sidebar navigation including database backups, decluttered home page with compact allocation donut, annual snapshot, SVG net worth chart, and an expandable community panel with inline comments.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/OliveTheme.test.tsx src/__tests__/FontProvider.test.tsx src/__tests__/SettingsPseudonym.test.tsx src/__tests__/SettingsFont.test.tsx src/__tests__/SettingsBackups.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/DiscrepanciesPage.test.tsx src/__tests__/HoldingsTable.test.tsx src/__tests__/Sidebar.test.tsx src/__tests__/PageTitles.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(design)`
+- **Summary**: Implement design-1 design system with Spline Sans font, Midnight Indigo theme, and Auto dark mode defaults.
+- **Rationale**: Elevate UI aesthetics, declutter views across the app, standardize typography scale and custom themes with background textures, and integrate an interactive Home layout and sectioned Settings hub matching `demo/design-1` and `demo/design-changes.md`.
+- **Key Changes**:
+  - `frontend/src/app/globals.css`: Integrated all 5 themes (Lime, Indigo, Paper, Graphite, Amber) with light/dark tokens, subtle background textures (dot grid, blueprint, film grain), typography scale (`micro`, `label`, `body`, `title`, `heading`, `display`), and backwards compatibility mappings.
+  - `frontend/src/app/layout.tsx`: Configured default `data-theme="indigo"`, `data-font="spline"`, and inline pre-paint script resolving system dark mode preference, palette, texture, and font.
+  - `frontend/src/components/ClientLayout.tsx`: Removed redundant top breadcrumbs.
+  - `frontend/src/components/PageHeader.tsx`: Introduced clean page header with title, subtitle, and action slot, along with unified empty states.
+  - `frontend/src/components/MetricCard.tsx`: Created reusable metric cards supporting compact, hero, and display variants with delta badges.
+  - `frontend/src/components/ThemePicker.tsx`: Created theme picker cards with live swatches, texture toggles, and dark mode synchronization.
+  - `frontend/src/components/CommunityPanel.tsx`: Created home community panel featuring pseudonym posting, expand/collapse full-screen view, sorting, deletion, and expandable comment threads.
+  - `frontend/src/components/AllocationChart.tsx`: Added `compact` layout mode with donut on the left and 2-line legend on the right.
+  - `frontend/src/components/NetWorthChart.tsx`: Added SVG smooth curve chart with fill gradient, range tabs, and jsdom ResizeObserver safety guards.
+  - `frontend/src/app/page.tsx`: Rebuilt Home page into decluttered layout featuring Net worth hero + SVG chart, compact "Where it sits" allocation, "2026 so far" snapshot, and live Community panel.
+  - `frontend/src/app/settings/page.tsx`: Implemented sectioned settings layout (Profile, Finance, Appearance, Community, Data & API) with database auto-backup configuration, manual backup snapshotting, and API keys.
+  - `frontend/src/app/accounts/page.tsx`: Cleaned account badges to subtle plain text, made actions hover-only, and removed redundant header backup controls.
+  - `frontend/src/app/investments/holdings/page.tsx`: Removed redundant Type column and badge styling.
+  - `frontend/src/app/investments/discrepancies/page.tsx`: Renamed page title to "Reconcile · greenline" and simplified payout text.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/OliveTheme.test.tsx src/__tests__/FontProvider.test.tsx src/__tests__/SettingsPseudonym.test.tsx src/__tests__/SettingsFont.test.tsx src/__tests__/SettingsBackups.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/DiscrepanciesPage.test.tsx src/__tests__/HoldingsTable.test.tsx src/__tests__/Sidebar.test.tsx src/__tests__/PageTitles.test.tsx`
+  - Output: All 10 test suites passed (48/48 tests passing), TypeScript type check exited with 0 errors, and ESLint reported 0 errors.
+
+### [2026-11-17 21:17:30 UTC] feat(navigation): adopt design-2 sleek theme toggle and compact footer with red logout and settings icon
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T21:17:30Z",
+  "type": "feat",
+  "scope": "navigation",
+  "summary": "adopt design-2 sleek theme toggle and compact footer with red logout and settings icon",
+  "affected_files": [
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/__tests__/Sidebar.test.tsx"
+  ],
+  "rationale": "Adopted the sleek rounded-full segmented theme toggle control inspired by demo/design-2. Replaced the user profile card logout icon with a Settings gear icon pointing to /settings and removed the redundant standalone Settings button. Repositioned the logout button alongside the theme toggle in the bottom row with red accent styling.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(navigation)`
+- **Summary**: Adopt design-2 sleek theme toggle and compact footer with red logout and settings icon
+- **Rationale**: Adopted the sleek rounded-full segmented theme toggle control inspired by demo/design-2. Replaced the user profile card logout icon with a Settings gear icon pointing to `/settings` and removed the redundant standalone Settings button. Repositioned the logout button alongside the theme toggle in the bottom row with red accent styling.
+- **Key Changes**:
+  - `frontend/src/components/Sidebar.tsx`: Removed the standalone full-width Settings button; added `<Settings className="w-4 h-4" />` link inside the user profile row; updated the theme switcher to a compact rounded-full pill design and placed a red-accented `<LogOut className="w-3.5 h-3.5" />` button beside it in the same row.
+  - `frontend/src/__tests__/Sidebar.test.tsx`: Added unit tests asserting the removal of the standalone Settings button, existence of the single Settings icon link in the user profile row, and presence of the red logout button next to the theme toggle.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: `10 passed (Sidebar.test.tsx); TypeScript check passed; ESLint passed with 0 errors`
+
+
+### [2026-11-17 21:03:00 UTC] feat(navigation): redesign navigation sidebar to flat grouped layout based on design-1 specification
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T21:03:00Z",
+  "type": "feat",
+  "scope": "navigation",
+  "summary": "redesign navigation sidebar to flat grouped layout based on design-1 specification",
+  "affected_files": [
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/__tests__/Sidebar.test.tsx"
+  ],
+  "rationale": "Ported the navigation sidebar design from demo/design-1 into the main frontend. Replaced collapsible chevron menus and the non-functional search box with an always-expanded, flat, grouped sidebar layout (Investing, Cashflow, Manage). Updated item labels to match page titles directly (Portfolio, Trades, Reconcile, Income & spend), streamlined user profile footer with initials avatar and logout icon button, and compacted vertical item spacing to fit on 768px height screens.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(navigation)`
+- **Summary**: Upgraded the main navigation sidebar to the flat, grouped layout from `demo/design-1`.
+- **Rationale**: The previous sidebar had collapsible sub-menus, an unused search box, and duplicated navigation patterns. Following the `demo/design-1` design specification, the sidebar is now grouped, flat, and always expanded with cleaner terminology (`Portfolio`, `Trades`, `Reconcile`, `Income & spend`, `Categories`, `Accounts`), integrated user initials avatar with logout action, and compact vertical geometry that fits 768px displays.
+- **Key Changes**:
+  - `frontend/src/components/Sidebar.tsx`:
+    - Replaced collapsible sub-item tree with flat grouped sections: `Investing` (Portfolio, Holdings, Trades, Valuations, Reconcile), `Cashflow` (Income & spend, Transactions, Categories), and `Manage` (Accounts).
+    - Removed non-functional search input box.
+    - Updated active path resolution with exact matching and `aria-current="page"`.
+    - Compacted vertical padding (`py-1.5`) and icon sizing (`w-4 h-4`) to fit viewport height.
+    - Redesigned user profile footer with initials badge, user name/email, and hover-styled logout button.
+    - Integrated clean 3-button theme mode switcher (Light, Dark, System) with accessibility labels.
+  - `frontend/src/__tests__/Sidebar.test.tsx`:
+    - Updated unit tests to assert the flat grouped navigation structure, active state indicators, absence of search box, user profile footer, and theme controls.
+- **Verification**:
+  - `cd frontend && npx vitest run src/__tests__/Sidebar.test.tsx`: 8 passed (100%).
+  - `cd frontend && npx tsc --noEmit`: 0 errors.
+  - `cd frontend && npm run lint`: 0 errors.
+
+### [2026-11-17 20:22:00 UTC] fix(frontend): resolve Next.js API proxy ECONNREFUSED 500 error by pointing BACKEND_URL to backend container
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-17T20:22:00Z",
+  "type": "fix",
+  "scope": "frontend",
+  "summary": "resolve Next.js API proxy ECONNREFUSED 500 error by pointing BACKEND_URL to backend container",
+  "affected_files": [
+    "docker-compose.yml",
+    "frontend/src/__tests__/communityRewrites.test.ts"
+  ],
+  "rationale": "Inside the Docker environment, Next.js rewrites were attempting to proxy /api/v1/accounts and /api/v1/settings to http://localhost:8000 rather than the Docker service hostname http://backend:8000. This resulted in connect ECONNREFUSED 127.0.0.1:8000 inside the frontend container, causing Next.js to return HTTP 500 Internal Server Error in apiFetch. Updated docker-compose.yml to set BACKEND_URL=${BACKEND_URL:-http://backend:8000} and added rewrite rule tests.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/communityRewrites.test.ts && npx tsc --noEmit && npm run lint && curl -i http://localhost:3000/api/v1/settings",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(frontend)`
+- **Summary**: Fixed HTTP 500 Internal Server Error caused by `ECONNREFUSED 127.0.0.1:8000` by pointing `BACKEND_URL` to `http://backend:8000` in `docker-compose.yml`.
+- **Rationale**: Next.js rewrites forward all non-microservice `/api/v1/:path*` requests to `BACKEND_URL`. Inside the frontend Docker container, `localhost:8000` is loopback within the frontend container where no listener exists. Setting `BACKEND_URL` to `http://backend:8000` routes traffic over Docker's bridge network directly to the backend service.
+- **Key Changes**:
+  - `docker-compose.yml`: Set `BACKEND_URL=${BACKEND_URL:-http://backend:8000}`, `NETWORTH_URL=${NETWORTH_URL:-http://networth:8001}`, and `COMMUNITY_URL=${COMMUNITY_URL:-http://community:8002/api/v1/community}`.
+  - `frontend/src/__tests__/communityRewrites.test.ts`: Added assertions verifying the catch-all `/api/v1/:path*` and `/api/v1/portfolio/:path*` destination rewrites.
+- **Verification**:
+  - Tested `curl -i http://localhost:3000/api/v1/settings` and `curl -i http://localhost:3000/api/v1/accounts`: Received clean 401 response from Uvicorn without 500 error or socket drop.
+  - `npx vitest run src/__tests__/communityRewrites.test.ts`: Passed.
+  - `npx tsc --noEmit`: 0 errors.
+  - `npm run lint`: 0 errors.
+
+### [2026-11-14 17:58:00 UTC] feat(community): identify users by UUID and dynamically synchronize pseudonyms across older posts
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T17:58:00Z",
+  "type": "feat",
+  "scope": "community",
+  "summary": "identify users by UUID and dynamically synchronize pseudonyms across older posts",
+  "affected_files": [
+    "services/community/app/services/user_service.py",
+    "services/community/app/db/models.py",
+    "services/community/app/schemas/pseudonym.py",
+    "services/community/app/schemas/post.py",
+    "services/community/app/schemas/comment.py",
+    "services/community/app/services/post_service.py",
+    "services/community/app/services/comment_service.py",
+    "services/community/app/api/routers/posts.py",
+    "services/community/app/api/routers/pseudonyms.py",
+    "services/community/tests/test_user_uuid_and_pseudonym_sync.py",
+    "services/community/tests/conftest.py",
+    "backend/scripts/setup_community_user.sql",
+    "backend/scripts/create_db_community_user.py",
+    "frontend/src/lib/community.ts",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/__tests__/communityApi.test.ts"
+  ],
+  "rationale": "Identify community post and comment authors by an RFC 4122 standard UUID in the backend, and enable dynamic pseudonym synchronization via a dedicated community_users table and cascading updates so that updating a user's pseudonym in Settings instantly updates their display name across all older posts and comments.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests && cd frontend && npx vitest run src/__tests__/communityApi.test.ts && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(community)`
+- **Summary**: Identified users by UUID in the backend for community posts and comments, and dynamically propagated pseudonym updates to all historical posts and comments.
+- **Rationale**: Previously, author pseudonyms were snapshot statically as string columns during post/comment creation. Users are now canonically identified by an RFC 4122 UUID (`user_id` / `user_uuid`). A dedicated `community_users` table tracks user UUID profiles, and pseudonym updates via `/api/v1/community/pseudonyms/me` cascade to all older posts and comments in the database.
+- **Key Changes**:
+  - `services/community/app/services/user_service.py`: Added RFC 4122 deterministic UUID generator `get_user_uuid`, user profile resolver, and `update_user_pseudonym` cascading updates across `community_posts` and `community_comments`.
+  - `services/community/app/db/models.py`: Added `CommunityUser` model; exposed `author_uuid` and `user_uuid` properties on `CommunityPost` and `CommunityComment`; joined `user` relationship to maintain `author_sub` backwards compatibility.
+  - `services/community/app/schemas/pseudonym.py`: Added `UpdatePseudonymRequest` and `UserProfileResponse` schemas.
+  - `services/community/app/schemas/post.py` & `schemas/comment.py`: Added `author_uuid` and `user_uuid` to response schemas.
+  - `services/community/app/api/routers/pseudonyms.py`: Added `GET /pseudonyms/me` and `PUT /pseudonyms/me` to fetch and update community profile with cascading updates.
+  - `services/community/app/services/post_service.py` & `services/comment_service.py`: Stored canonical user UUID in `user_id` on post/comment creation and synced pseudonyms.
+  - `backend/scripts/setup_community_user.sql` & `backend/scripts/create_db_community_user.py`: Added `COMMUNITY_USERS` table DDL, permissions grants, and idempotent creation for Oracle DB.
+  - `frontend/src/lib/community.ts`: Added `updateCommunityPseudonym` and `fetchMyCommunityPseudonym` API functions.
+  - `frontend/src/app/settings/page.tsx`: Updated `handleSavePseudonym` to synchronize chosen pseudonyms to `/community/pseudonyms/me`.
+  - `services/community/tests/test_user_uuid_and_pseudonym_sync.py`: Added TDD unit and regression tests verifying user UUID identification and older post pseudonym updates.
+- **Verification**:
+  - `PYTHONPATH=services/community backend/.venv/bin/pytest services/community/tests`: 34 passed (100%).
+  - `cd frontend && npx vitest run src/__tests__/communityApi.test.ts src/__tests__/CommunityComponents.test.tsx src/__tests__/SettingsPseudonym.test.tsx`: 28 passed (100%).
+  - `cd frontend && npx tsc --noEmit && npm run lint`: 0 type errors, 0 lint errors.
+
+### [2026-11-14 13:28:00 UTC] feat(community): implement standalone community microservice, unified home page, and pseudonym settings
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T13:28:00Z",
+  "type": "feat",
+  "scope": "community",
+  "summary": "implement standalone community microservice, unified home page, and pseudonym settings",
+  "affected_files": [
+    "backend/app/api/routers/settings.py",
+    "backend/scripts/create_db_community_user.py",
+    "backend/scripts/setup_community_user.sql",
+    "backend/tests/test_oracle_community_user_permissions.py",
+    "docker-compose.yml",
+    "frontend/next.config.ts",
+    "frontend/src/app/page.tsx",
+    "frontend/src/app/settings/page.tsx",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/lib/community.ts",
+    "frontend/src/lib/pseudonym.ts",
+    "services/community/app/main.py"
+  ],
+  "rationale": "Add community post and commenting functionality to Greenline. Implemented a dedicated standalone microservice in services/community/ on port 8002 backed by dedicated Oracle tables and a scoped database user. Redesigned the overview page at / into a unified Home page integrating portfolio overview metrics alongside the community feed with multi-mode view toggles, and added community pseudonym management with a whimsical random pseudonym generator in user settings.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(community)`
+- **Summary**: Implemented standalone Community microservice (`services/community/`), dedicated least-privilege Oracle DB user and tables, unified Home page redesign (`/`), and user settings pseudonym management with a whimsical random generator.
+- **Rationale**: Enables users to share posts with rich text formatting and media attachments, reply to nested comment threads, configure a custom community display name or generate whimsical pseudonyms, and view community discussions directly alongside their portfolio overview metrics.
+- **Key Changes**:
+  - `services/community/`: Standalone FastAPI microservice on port 8002 with dedicated models, schemas, and REST endpoints (`/api/v1/community/posts`, `/api/v1/community/comments`), containerized via Dockerfile and configured in `docker-compose.yml`.
+  - `backend/scripts/setup_community_user.sql` & `create_db_community_user.py`: Provisioned dedicated Oracle tables (`community_posts`, `community_comments`) and dedicated user `GREENLINE_COMMUNITY` with scoped DML on community tables and strict denial on all core financial tables.
+  - `frontend/src/app/page.tsx`: Redesigned root page into the unified Home page with view mode toggles (`[Unified]`, `[Overview Only]`, `[Community Feed]`), embedded `CommunityFeed`, post composer with media chips, and nested comment threads.
+  - `frontend/src/app/settings/page.tsx`: Added "Community Profile & Pseudonym" configuration card with custom display name input and whimsical random pseudonym generator ("Giant Elephant", "Crazy Dog").
+  - `frontend/next.config.ts`: Configured Next.js proxy rewrites to route `/api/v1/community/:path*` to `http://community:8002`.
+- **Verification**:
+  - 81/81 automated tests passed (32 microservice tests, 8 Oracle security permission tests, 3 backend settings tests, 38 frontend vitest tests).
+  - TypeScript type check (`npx tsc --noEmit`) and ESLint passed with 0 errors.
+  - Independent post-victory audit verified genuine Oracle persistence and strict least-privilege isolation.
+
+
+
+### [2026-11-14 12:55:00 UTC] test(community): add adversarial stress probes and test matrix validation for milestone 5
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T12:55:00Z",
+  "type": "test",
+  "scope": "community",
+  "summary": "add adversarial stress probes and test matrix validation for milestone 5",
+  "affected_files": [
+    "services/community/tests/test_adversarial_probes.py"
+  ],
+  "rationale": "Harden Community microservice test suite with Tier 5 adversarial stress loops verifying deterministic sorting, authentication and authorization boundaries, input edge cases, and Oracle DB isolation.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests/test_adversarial_probes.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `test(community)`
+- **Summary**: Add adversarial stress probes and test matrix validation for milestone 5.
+- **Rationale**: Harden Community microservice test suite with Tier 5 adversarial stress loops verifying deterministic sorting, authentication and authorization boundaries, input edge cases, and Oracle DB isolation.
+- **Key Changes**:
+  - `services/community/tests/test_adversarial_probes.py`: Implemented 5 adversarial probe suites testing post/comment sorting determinism stress loops (50 repetitions), authentication/authorization denial (401/403/404), input boundary limits (empty, 10k/5k limits, unicode/emojis/RTL, SQLi, XSS, cross-post comments), and Oracle DB least-privilege table denials (all 21 financial tables ORA-00942 and zero DDL ORA-01031).
+- **Verification**:
+  - Command: `PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests/test_adversarial_probes.py -v`
+  - Output: `5 passed in 3.18s`
+
+### [2026-11-14 12:31:00 UTC] feat(frontend): implement unified home page redesign and community feed ui
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T12:31:00Z",
+  "type": "feat",
+  "scope": "frontend",
+  "summary": "implement unified home page redesign and community feed ui",
+  "affected_files": [
+    "docker-compose.yml",
+    "frontend/next.config.ts",
+    "frontend/src/lib/community.ts",
+    "frontend/src/components/community/MarkdownContent.tsx",
+    "frontend/src/components/community/PostComposer.tsx",
+    "frontend/src/components/community/PostCard.tsx",
+    "frontend/src/components/community/CommentThread.tsx",
+    "frontend/src/components/community/CommunityFeed.tsx",
+    "frontend/src/components/Sidebar.tsx",
+    "frontend/src/app/page.tsx",
+    "frontend/src/__tests__/Sidebar.test.tsx",
+    "frontend/src/__tests__/communityApi.test.ts",
+    "frontend/src/__tests__/CommunityComponents.test.tsx",
+    "frontend/src/__tests__/HomePageUnified.test.tsx",
+    "frontend/src/__tests__/communityRewrites.test.ts"
+  ],
+  "rationale": "Implements Milestone 4 by redesigning the home page to integrate portfolio overview metrics alongside a standalone community feed with rich formatting, media attachments, and comments.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/communityApi.test.ts src/__tests__/CommunityComponents.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/communityRewrites.test.ts src/__tests__/Sidebar.test.tsx",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(frontend)`
+- **Summary**: Implement unified home page redesign and community feed UI with rich markdown composer, media attachments, and commenting.
+- **Rationale**: Satisfies Milestone 4 requirements to bridge frontend users to the standalone community microservice via Next.js proxy rewrites and interactive social components embedded on the Home dashboard.
+- **Key Changes**:
+  - `docker-compose.yml`: Passed `COMMUNITY_URL=http://community:8002/api/v1/community` to the frontend container environment.
+  - `frontend/next.config.ts`: Configured gateway proxy rewrites routing `/api/v1/community/:path*` to the community microservice on port 8002.
+  - `frontend/src/lib/community.ts`: Implemented typed API client functions for fetching posts, creating posts, fetching comments, creating comments, and fetching random pseudonyms with Auth0 Bearer token injection.
+  - `frontend/src/components/community/MarkdownContent.tsx`: Created AST-based safe markdown compiler supporting headings, bold, italic, code, quotes, lists, and sanitized links without dangerouslySetInnerHTML.
+  - `frontend/src/components/community/PostComposer.tsx`: Built post composer with rich markdown toolbar, media attachments input and chip previews, and author pseudonym display with randomize button.
+  - `frontend/src/components/community/PostCard.tsx`: Created post card component displaying author pseudonym, relative timestamp, media previews, and collapsible comment threads.
+  - `frontend/src/components/community/CommentThread.tsx`: Built comment thread component supporting threaded replies, author pseudonym display, and inline reply submission.
+  - `frontend/src/components/community/CommunityFeed.tsx`: Built feed container with sort switching (Latest/Oldest), manual refresh, loading skeletons, and empty state.
+  - `frontend/src/components/Sidebar.tsx`: Updated navigation branding to label `/` as "Home" with Home icon.
+  - `frontend/src/app/page.tsx`: Redesigned root page into a unified Home hub featuring portfolio overview metrics and interactive community feed with view mode switcher (`Unified`, `Overview Only`, `Community Feed`).
+  - `frontend/src/__tests__/`: Added comprehensive test suites covering API client methods, community UI components, unified home page rendering, and gateway rewrites.
+- **Verification**:
+  - Command: `cd frontend && npx tsc --noEmit && npm run lint && npx vitest run src/__tests__/communityApi.test.ts src/__tests__/CommunityComponents.test.tsx src/__tests__/HomePageUnified.test.tsx src/__tests__/communityRewrites.test.ts src/__tests__/Sidebar.test.tsx`
+  - Output: TypeScript 0 errors, ESLint 0 errors, Vitest 52/52 tests passed.
+
+### [2026-11-14 11:53:00 UTC] fix(community): add deterministic id tie-breaker for comment ordering in community microservice
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T11:53:00Z",
+  "type": "fix",
+  "scope": "community",
+  "summary": "add deterministic id tie-breaker for comment ordering in community microservice",
+  "affected_files": [
+    "services/community/app/services/comment_service.py",
+    "services/community/app/db/models.py",
+    "services/community/tests/test_comments.py",
+    "services/community/tests/test_community_models.py"
+  ],
+  "rationale": "Oracle DB produces non-deterministic ordering when sorting comments with identical created_at timestamps without a secondary unique tie-breaker. Adding CommunityComment.id.asc() ensures stable chronological ordering under concurrency.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v && for i in {1..5}; do PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -q || exit 1; done && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(community)`
+- **Summary**: Add deterministic `id.asc()` secondary tie-breaker to comment queries and post comments relationship in the Community microservice.
+- **Rationale**: Prevent intermittent race conditions and indeterminate sorting order in Oracle DB when multiple comments share identical `created_at` timestamps.
+- **Key Changes**:
+  - `services/community/app/services/comment_service.py`: Add `CommunityComment.id.asc()` to `get_comments` order_by clause.
+  - `services/community/app/db/models.py`: Update `CommunityPost.comments` relationship `order_by` to include `[CommunityComment.created_at.asc(), CommunityComment.id.asc()]`.
+  - `services/community/tests/test_comments.py`: Add `test_get_comments_deterministic_tie_breaker_same_timestamp` asserting deterministic order when comments share identical timestamps.
+  - `services/community/tests/test_community_models.py`: Add `test_community_models_comments_relationship_order_by_tie_breaker` testing relationship order_by expressions.
+- **Verification**:
+  - Command: `PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v`
+  - Output: 27 passed in 4.19s
+  - Command: `for i in {1..5}; do PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -q || exit 1; done`
+  - Output: 5/5 loop passes with zero regressions
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v`
+  - Output: 8 passed in 1.48s
+
+
+### [2026-11-14 11:15:00 UTC] feat(community): implement standalone community microservice with posts, comments, and pseudonyms
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T11:15:00Z",
+  "type": "feat",
+  "scope": "community",
+  "summary": "implement standalone community microservice with posts, comments, and pseudonyms",
+  "affected_files": [
+    "services/community/app/config.py",
+    "services/community/app/db/database.py",
+    "services/community/app/db/models.py",
+    "services/community/app/schemas/post.py",
+    "services/community/app/schemas/comment.py",
+    "services/community/app/schemas/pseudonym.py",
+    "services/community/app/services/auth0_service.py",
+    "services/community/app/services/post_service.py",
+    "services/community/app/services/comment_service.py",
+    "services/community/app/services/pseudonym_service.py",
+    "services/community/app/api/deps.py",
+    "services/community/app/api/routers/posts.py",
+    "services/community/app/api/routers/comments.py",
+    "services/community/app/api/routers/pseudonyms.py",
+    "services/community/app/main.py",
+    "services/community/Dockerfile",
+    "services/community/requirements.txt",
+    "services/community/tests/conftest.py",
+    "services/community/tests/test_posts.py",
+    "services/community/tests/test_comments.py",
+    "services/community/tests/test_pseudonyms.py",
+    "services/community/tests/test_community_models.py",
+    "services/community/tests/test_service_health.py",
+    "services/community/tests/test_e2e_community_service.py",
+    "docker-compose.yml",
+    "backend/tests/conftest.py"
+  ],
+  "rationale": "Implement Milestone 2 standalone community microservice (port 8002) connecting via dedicated Oracle user GREENLINE_COMMUNITY to access community_posts and community_comments tables, offering stateless RS256 Auth0 verification and REST endpoints for creating posts with rich text and media attachments, threaded comments, and random pseudonyms.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(community)`
+- **Summary**: Implement standalone FastAPI Community microservice at `services/community/` with posts, threaded comments, random pseudonym generator, and container orchestration.
+- **Rationale**: Decouple community discussions from the core financial ledger by creating an isolated microservice running on port 8002 that connects exclusively using the dedicated least-privilege `GREENLINE_COMMUNITY` Oracle user.
+- **Key Changes**:
+  - `services/community/app/config.py`: BaseSettings reading port 8002, API prefix `/api/v1/community`, dedicated user `GREENLINE_COMMUNITY`, and Auth0 configuration.
+  - `services/community/app/db/database.py` & `models.py`: Async engine and ORM models for `CommunityPost` and `CommunityComment` with cascade deletion and properties for `post_id`, `comment_id`, and `author_sub`.
+  - `services/community/app/schemas/`: Pydantic validation schemas for posts, comments, media attachments, and pseudonyms.
+  - `services/community/app/services/`: Services for Auth0 token verification, random pseudonym generation, post creation/retrieval, and threaded comments.
+  - `services/community/app/api/deps.py` & `routers/`: Auth dependencies and REST endpoints under `/api/v1/community`.
+  - `services/community/Dockerfile` & `requirements.txt`: Container packaging and dependencies.
+  - `docker-compose.yml`: Added `community` microservice container service on port 8002 and linked to frontend gateway.
+  - `services/community/tests/`: 25 automated tests covering endpoints, validation, pagination, multi-user threads, cascade deletion, and least-privilege DB security.
+- **Verification**:
+  - Command: `PYTHONPATH=services/community /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/community/tests -v && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py -v`
+  - Output: 25 passed in 4.05s (community) and 8 passed in 1.52s (security user permissions).
+
+### [2026-11-14 10:17:00 UTC] feat(settings): integrate community pseudonym management card and preview in settings page
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T10:17:00Z",
+  "type": "feat",
+  "scope": "settings",
+  "summary": "integrate community pseudonym management card and preview in settings page",
+  "affected_files": [
+    "frontend/src/app/settings/page.tsx"
+  ],
+  "rationale": "Implement Milestone 3 frontend community pseudonym configuration interface, providing users with a dedicated settings card to configure their community pseudonym, generate whimsical aliases using the pseudonym library, view a live preview badge, and display their configured alias in the current profile card.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/SettingsPseudonym.test.tsx src/__tests__/pseudonym.test.ts && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_settings.py",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(settings)`
+- **Summary**: Integrate Community Profile & Pseudonym configuration card with live preview badge and random name generation in settings page.
+- **Rationale**: Users need the ability to customize or randomize their community pseudonym for anonymous benchmarking and community discussions, with full persistence to backend settings and local storage.
+- **Key Changes**:
+  - `frontend/src/app/settings/page.tsx`: Added Community Profile & Pseudonym configuration card with controlled input, "Pick Random Name" button powered by `generateRandomPseudonym()`, Save button, Enter-key handler, live preview badge, and Community Alias row in Current Profile card.
+- **Verification**:
+  - Command: `cd frontend && npx vitest run src/__tests__/SettingsPseudonym.test.tsx src/__tests__/pseudonym.test.ts && npx tsc --noEmit && npm run lint && PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_settings.py`
+  - Output: 10/10 Vitest tests passed, 0 TypeScript errors, 0 ESLint errors, 3/3 pytest backend settings tests passed.
+
+### [2026-11-14 10:02:00 UTC] feat(database): provision dedicated community tables and scoped db user with least privilege
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-14T10:02:00Z",
+  "type": "feat",
+  "scope": "database",
+  "summary": "provision dedicated community tables and scoped db user with least privilege",
+  "affected_files": [
+    "backend/scripts/setup_community_user.sql",
+    "backend/scripts/create_db_community_user.py",
+    "scripts/setup_community_user.sql",
+    "backend/tests/test_oracle_community_user_permissions.py"
+  ],
+  "rationale": "In alignment with the standalone microservice architectural requirement, dedicated database tables (community_posts, community_comments) and a scoped database user (GREENLINE_COMMUNITY) are provisioned. The user has strictly least-privilege DML permissions on the community tables, an AFTER LOGON trigger setting CURRENT_SCHEMA, zero DDL privileges, and zero access to all 21 core financial tables. Core backend models and migrations have zero community post/comment definitions.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py backend/tests/test_migrations.py -v",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(database)`
+- **Summary**: Provision dedicated database tables and least-privilege scoped user for Community microservice.
+- **Rationale**: Standalone microservice architecture requires community post and comment persistence to be owned exclusively by dedicated tables and accessed via a scoped database user, isolating financial records and credentials from community interactions.
+- **Key Changes**:
+  - `backend/scripts/setup_community_user.sql`: Least-privilege SQL DDL and grants provisioning `community_posts` and `community_comments` with `GREENLINE_COMMUNITY` user and `AFTER LOGON` trigger.
+  - `backend/scripts/create_db_community_user.py`: Python CLI tool provisioning tables and credentials against Autonomous Cloud DB and local Oracle Free 23ai containers.
+  - `scripts/setup_community_user.sql`: Root mirror of setup script.
+  - `backend/tests/test_oracle_community_user_permissions.py`: Security and permissions verification suite covering all 8 static and live database assertions.
+- **Verification**:
+  - Command: `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_oracle_community_user_permissions.py backend/tests/test_migrations.py -v`
+  - Output: 10 passed in 3.27s (100% pass rate).
+
+
 ### [2026-11-13 17:33:00 UTC] feat(portfolio): incorporate dividends into realized pnl and compute holding-level xirr in networth service
 
 <!-- changelog-entry-json

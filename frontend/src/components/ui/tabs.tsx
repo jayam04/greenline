@@ -1,8 +1,69 @@
-"use client"
+"use client";
 
-import { Tabs as TabsPrimitive } from "@base-ui/react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "@/lib/utils"
+import * as React from "react";
+import { Tabs as TabsPrimitive } from "@base-ui/react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+
+type SegmentedOption<T extends string> = { value: T; label: React.ReactNode };
+
+/** Pill segmented control. Use for view toggles and ranges (1M, YTD...). */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  size = "default",
+  className,
+}: {
+  options: SegmentedOption<T>[];
+  value: T;
+  onChange: (v: T) => void;
+  size?: "sm" | "default";
+  className?: string;
+}) {
+  return (
+    <div role="tablist" className={cn("inline-flex rounded-full bg-surface-2 p-1", className)}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="tab"
+          aria-selected={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "rounded-full font-medium transition-colors",
+            size === "sm" ? "px-3 py-1 text-label" : "px-4 py-1.5 text-body",
+            value === o.value ? "bg-surface text-foreground shadow-card font-semibold" : "text-muted hover:text-foreground"
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Filter chips (account pickers, asset classes). Multiple can be inactive. */
+export function Chip({
+  active,
+  children,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "rounded-full border px-3 py-1 text-label font-medium transition-colors",
+        active
+          ? "border-primary bg-primary text-primary-foreground font-semibold"
+          : "border-border-strong bg-surface text-muted hover:text-foreground hover:bg-surface-2"
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
 
 function Tabs({
   className,
@@ -19,7 +80,7 @@ function Tabs({
       )}
       {...props}
     />
-  )
+  );
 }
 
 const tabsListVariants = cva(
@@ -35,7 +96,7 @@ const tabsListVariants = cva(
       variant: "default",
     },
   }
-)
+);
 
 function TabsList({
   className,
@@ -49,7 +110,7 @@ function TabsList({
       className={cn(tabsListVariants({ variant }), className)}
       {...props}
     />
-  )
+  );
 }
 
 function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
@@ -65,7 +126,7 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
       )}
       {...props}
     />
-  )
+  );
 }
 
 function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
@@ -75,7 +136,7 @@ function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
       className={cn("flex-1 text-sm outline-none", className)}
       {...props}
     />
-  )
+  );
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants };

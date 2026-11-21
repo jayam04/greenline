@@ -74,6 +74,34 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  community:
+    build:
+      context: ./services/community
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./services/community/app:/app/app
+      - ./services/community/tests:/app/tests
+    environment:
+      DATABASE_URL: ${DATABASE_URL_COMMUNITY:-oracle+oracledb://@}
+      DATABASE_URL_COMMUNITY: ${DATABASE_URL_COMMUNITY:-oracle+oracledb://@}
+      ORACLE_COMMUNITY_USER: ${ORACLE_COMMUNITY_USER:-GREENLINE_COMMUNITY}
+      COMMUNITY_DB_PASSWORD: ${COMMUNITY_DB_PASSWORD:-SecureCommunity2026#DbPass}
+      ORACLE_DSN: ${ORACLE_DSN:-}
+      ORACLE_SCHEMA: ${ORACLE_SCHEMA:-ADMIN}
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-jayam04.eu.auth0.com}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
+      AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
+      AUTH0_TEST_MODE: ${AUTH0_TEST_MODE:-false}
+      PORT: 8002
+      PYTHONPATH: /app
+    depends_on:
+      oracle:
+        condition: service_healthy
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
@@ -88,9 +116,10 @@ services:
       - /app/.next
     environment:
       - NEXT_PUBLIC_API_URL=
-      - INTERNAL_API_URL=http://backend:8000
-      - NETWORTH_URL=http://networth:8001
-      - BACKEND_URL=http://backend:8000
+      - INTERNAL_API_URL=http://localhost:3000
+      - NETWORTH_URL=${NETWORTH_URL:-http://networth:8001}
+      - COMMUNITY_URL=${COMMUNITY_URL:-http://community:8002/api/v1/community}
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
       - NEXT_PUBLIC_AUTH0_DOMAIN=${NEXT_PUBLIC_AUTH0_DOMAIN:-jayam04.eu.auth0.com}
       - NEXT_PUBLIC_AUTH0_CLIENT_ID=${NEXT_PUBLIC_AUTH0_CLIENT_ID:-wTsdPwbGO91s4SjnzhA4pC9ik4MFEjby}
       - NEXT_PUBLIC_AUTH0_AUDIENCE=${NEXT_PUBLIC_AUTH0_AUDIENCE:-http://localhost:8000}
@@ -101,6 +130,8 @@ services:
       backend:
         condition: service_started
       networth:
+        condition: service_started
+      community:
         condition: service_started
     restart: unless-stopped
 

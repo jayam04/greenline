@@ -604,3 +604,41 @@ async def get_annual_snapshot(
         net_savings=round(total_income - total_expenses, 2),
         currency=target_currency
     )
+
+
+@router.get("/realized-pnl", response_model=List[LotSaleResponse])
+async def get_realized_pnl(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    u_id = get_user_id(current_user)
+    stmt = (
+        select(LotSale, Lot.buy_date, Transaction.transaction_date, Asset.symbol)
+        .join(Lot, LotSale.lot_id == Lot.lot_id)
+        .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
+        .join(Asset, Lot.asset_id == Asset.asset_id)
+        .where(LotSale.user_id == u_id)
+        .order_by(desc(Transaction.transaction_date))
+    )
+
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    out = []
+    for lot_sale, buy_date, sell_date, symbol in rows:
+        out.append(LotSaleResponse(
+            lot_sale_id=lot_sale.lot_sale_id,
+            lot_id=lot_sale.lot_id,
+            sell_transaction_id=lot_sale.sell_transaction_id,
+            quantity_sold=lot_sale.quantity_sold,
+            sale_price_per_unit=lot_sale.sale_price_per_unit,
+            cost_basis=lot_sale.cost_basis,
+            realized_pnl=lot_sale.realized_pnl,
+            holding_period_days=lot_sale.holding_period_days,
+            buy_date=buy_date,
+            sell_date=sell_date,
+            asset_symbol=symbol
+        ))
+
+    return out
+

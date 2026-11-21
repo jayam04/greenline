@@ -588,9 +588,9 @@ async def calculate_account_snapshots(
         is_income = signed_amt > 0 and tkind == "INCOME"
         cf_events.append((ctx.transaction_date, signed_amt, is_income))
 
-    # 5. Iterate strictly on calendar Sundays
+    # 5. Iterate day by day from start_date to end_date
     snapshots_list = []
-    curr_date = get_next_sunday(start_date)
+    curr_date = start_date
 
     while curr_date <= end_date:
         total_curr_val = 0.0
@@ -651,6 +651,224 @@ async def calculate_account_snapshots(
             "asset_class_breakdowns": []
         })
 
-        curr_date += datetime.timedelta(days=7)
+        curr_date += datetime.timedelta(days=1)
 
     return snapshots_list
+
+
+async def calculate_all_accounts_snapshots(
+    db: AsyncSession,
+    end_date: Optional[datetime.date] = None,
+    accounts: Optional[List[Account]] = None
+) -> Dict[int, Dict[datetime.date, Dict]]:
+    """
+    Computes daily timeline data points across all accounts in a single batch pass,
+    avoiding N+1 queries per account and using bisect search for O(log N) replay.
+    """
+    if end_date is None:
+        end_date = datetime.date.today()
+
+    if accounts is None:
+        acc_res = await db.execute(select(Account))
+        all_accounts = list(acc_res.scalars().all())
+    else:
+        all_accounts = accounts
+
+    if not all_accounts:
+        return {}
+
+    # 1. Fetch all lots
+    lot_res = await db.execute(select(Lot))
+    all_lots = list(lot_res.scalars().all())
+    lots_by_account: Dict[int, List[Lot]] = {}
+    lot_ids = []
+    for l in all_lots:
+        lots_by_account.setdefault(l.account_id, []).append(l)
+        lot_ids.append(l.lot_id)
+
+    # 2. Fetch all sales
+    sales_map: Dict[int, List[Tuple[datetime.date, float, float]]] = {}
+    if lot_ids:
+        sale_stmt = (
+            select(LotSale.lot_id, Transaction.transaction_date, LotSale.quantity_sold, LotSale.realized_pnl)
+            .join(Transaction, LotSale.sell_transaction_id == Transaction.transaction_id)
+            .where(LotSale.lot_id.in_(lot_ids))
+        )
+        sale_res = await db.execute(sale_stmt)
+        for lid, sdate, qsold, rpnl in sale_res.all():
+            sales_map.setdefault(lid, []).append((sdate, qsold, rpnl))
+
+    # Pre-process sales for O(log S) cumulative lookup
+    lot_sales_cum: Dict[int, Tuple[List[datetime.date], List[float], List[float]]] = {}
+    for lid, slist in sales_map.items():
+        sorted_s = sorted(slist, key=lambda x: x[0])
+        s_d = [x[0] for x in sorted_s]
+        c_q: List[float] = []
+        c_r: List[float] = []
+        cur_q = 0.0
+        cur_r = 0.0
+        for x in sorted_s:
+            cur_q += float(x[1] or 0.0)
+            cur_r += float(x[2] or 0.0)
+            c_q.append(cur_q)
+            c_r.append(cur_r)
+        lot_sales_cum[lid] = (s_d, c_q, c_r)
+
+    # 3. Fetch price history
+    asset_ids = list(set(l.asset_id for l in all_lots))
+    prices_map: Dict[int, List[Tuple[datetime.date, float]]] = {}
+    if asset_ids:
+        ph_stmt = (
+            select(PriceHistory.asset_id, PriceHistory.price_date, PriceHistory.close_price)
+            .where(PriceHistory.asset_id.in_(asset_ids))
+            .order_by(asc(PriceHistory.price_date))
+        )
+        ph_res = await db.execute(ph_stmt)
+        for aid, pdate, cprice in ph_res.all():
+            prices_map.setdefault(aid, []).append((pdate, cprice))
+
+    # Pre-process prices for O(log P) bisect lookup
+    parsed_prices: Dict[int, Tuple[List[datetime.date], List[float]]] = {}
+    for aid, plist in prices_map.items():
+        v_list = [(d, float(p)) for d, p in plist if p is not None and not math.isnan(p) and not math.isinf(p) and p > 0]
+        parsed_prices[aid] = ([x[0] for x in v_list], [x[1] for x in v_list])
+
+    # 4. Fetch all transactions
+    tx_stmt = select(Transaction).order_by(asc(Transaction.transaction_date))
+    all_txs = list((await db.execute(tx_stmt)).scalars().all())
+
+    # 5. Fetch all cashflow payments in a lightweight projection
+    cf_stmt = (
+        select(
+            CashflowTransaction.transaction_date,
+            CashflowTransaction.transaction_kind,
+            CashflowPayment.account_id,
+            CashflowPayment.amount
+        )
+        .join(CashflowPayment, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
+        .order_by(asc(CashflowTransaction.transaction_date))
+    )
+    cf_records = (await db.execute(cf_stmt)).all()
+    cf_events_by_account: Dict[int, List[Tuple[datetime.date, float, bool]]] = {}
+    for tx_date, tkind, acc_id, pmt_amt in cf_records:
+        signed_amt = float(pmt_amt or 0.0)
+        is_income = signed_amt > 0 and tkind == "INCOME"
+        cf_events_by_account.setdefault(acc_id, []).append((tx_date, signed_amt, is_income))
+
+    # 6. Compute timeline per account
+    account_timelines: Dict[int, Dict[datetime.date, Dict]] = {}
+
+    for acc in all_accounts:
+        acc_id = acc.account_id
+        acc_lots = lots_by_account.get(acc_id, [])
+        acc_cf_events = cf_events_by_account.get(acc_id, [])
+
+        acc_tx_events = []
+        for tx in all_txs:
+            cash_acc_id, cash_change = compute_transaction_cash_movement(tx)
+            if cash_acc_id == acc_id:
+                ttype = (tx.transaction_type or "").lower()
+                amt = float(tx.total_amount or 0.0)
+                fees = float(tx.fees or 0.0)
+                taxes = float(tx.taxes or 0.0)
+                inv_delta = 0.0
+                if ttype == "deposit":
+                    inv_delta = amt - fees - taxes
+                elif ttype == "withdrawal":
+                    inv_delta = -(amt + fees + taxes)
+                acc_tx_events.append((tx.transaction_date, cash_change, inv_delta))
+
+        acc_tx_events.sort(key=lambda x: x[0])
+        tx_dates = [x[0] for x in acc_tx_events]
+        cum_tx_cash: List[float] = []
+        cum_tx_inv: List[float] = []
+        c_cash = 0.0
+        c_inv = 0.0
+        for x in acc_tx_events:
+            c_cash += x[1]
+            c_inv += x[2]
+            cum_tx_cash.append(c_cash)
+            cum_tx_inv.append(c_inv)
+
+        sorted_cf = sorted(acc_cf_events, key=lambda x: x[0])
+        cf_dates = [x[0] for x in sorted_cf]
+        cum_cf_cash: List[float] = []
+        cum_cf_inv: List[float] = []
+        c_cf_cash = 0.0
+        c_cf_inv = 0.0
+        for x in sorted_cf:
+            c_cf_cash += x[1]
+            if x[2]:
+                c_cf_inv += max(0.0, x[1])
+            cum_cf_cash.append(c_cf_cash)
+            cum_cf_inv.append(c_cf_inv)
+
+        all_acc_dates = tx_dates + cf_dates
+        if not all_acc_dates:
+            start_date = acc.created_at or datetime.date.today()
+        else:
+            start_date = min(all_acc_dates)
+
+        if start_date > end_date:
+            account_timelines[acc_id] = {}
+            continue
+
+        curr_date = start_date
+        delta = datetime.timedelta(days=1)
+        timelines_for_acc: Dict[datetime.date, Dict] = {}
+
+        while curr_date <= end_date:
+            t_idx = bisect.bisect_right(tx_dates, curr_date)
+            cash_balance = cum_tx_cash[t_idx - 1] if t_idx > 0 else 0.0
+            total_invested = cum_tx_inv[t_idx - 1] if t_idx > 0 else 0.0
+
+            cf_idx = bisect.bisect_right(cf_dates, curr_date)
+            if cf_idx > 0:
+                cash_balance += cum_cf_cash[cf_idx - 1]
+                total_invested += cum_cf_inv[cf_idx - 1]
+
+            total_curr_val = 0.0
+            total_cost_basis = 0.0
+            total_rpnl = 0.0
+
+            for lot in acc_lots:
+                if lot.buy_date <= curr_date:
+                    lid = lot.lot_id
+                    sold_qty = 0.0
+                    if lid in lot_sales_cum:
+                        s_d, c_q, c_r = lot_sales_cum[lid]
+                        s_idx = bisect.bisect_right(s_d, curr_date)
+                        if s_idx > 0:
+                            sold_qty = c_q[s_idx - 1]
+                            total_rpnl += c_r[s_idx - 1]
+                    rem_qty = max(0.0, lot.quantity_original - sold_qty)
+                    if rem_qty > 0.00000001:
+                        aid = lot.asset_id
+                        price = lot.cost_per_unit
+                        if aid in parsed_prices:
+                            p_d, p_v = parsed_prices[aid]
+                            p_idx = bisect.bisect_right(p_d, curr_date)
+                            if p_idx > 0:
+                                price = p_v[p_idx - 1]
+                        total_curr_val += rem_qty * price
+                        total_cost_basis += rem_qty * lot.cost_per_unit
+
+            net_worth = total_curr_val + cash_balance
+            total_unrealized = total_curr_val - total_cost_basis
+
+            timelines_for_acc[curr_date] = {
+                "snapshot_id": 0,
+                "snapshot_date": curr_date,
+                "total_invested": total_invested if total_invested > 0 else total_cost_basis,
+                "total_current_value": total_curr_val,
+                "cash_balance": cash_balance,
+                "total_realized_pnl": total_rpnl,
+                "total_unrealized_pnl": total_unrealized,
+                "net_worth": net_worth,
+                "asset_class_breakdowns": []
+            }
+            curr_date += delta
+
+        account_timelines[acc_id] = timelines_for_acc
+
+    return account_timelines

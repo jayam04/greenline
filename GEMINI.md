@@ -23,7 +23,7 @@ When responding to ANY coding task, bug report, or feature implementation:
    - Modify only the necessary application files to pass the tests cleanly.
 4. **Refactor / Verify**:
    - Run the full verification suite to ensure zero regressions:
-     - `PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests`
+     - `PYTHONPATH=services/networth /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/networth/tests` (or `backend/tests`)
      - `cd frontend && npx tsc --noEmit && npm run lint`
    - Always display test execution output in the turn response.
 5. **Update `.agents/changelog.md`**:

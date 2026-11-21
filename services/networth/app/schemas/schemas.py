@@ -10,6 +10,10 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
 class UserResponse(BaseModel):
     user_id: int
     username: str
@@ -21,12 +25,27 @@ class UserResponse(BaseModel):
     updated_at: Optional[datetime.datetime] = None
     model_config = ConfigDict(from_attributes=True)
 
+class UserSyncRequest(BaseModel):
+    email: Optional[str] = None
+    name: Optional[str] = None
+    picture: Optional[str] = None
+
 # Account Schemas
 class AccountBase(BaseModel):
     account_name: str
     broker_name: Optional[str] = None
-    account_type: str
+    account_type: str # demat, mutual_fund, pf, nps, crypto_exchange, bank
     currency: str = "USD"
+    default_dividend_account_id: Optional[int] = None
+
+class AccountCreate(AccountBase):
+    pass
+
+class AccountUpdate(BaseModel):
+    account_name: Optional[str] = None
+    broker_name: Optional[str] = None
+    account_type: Optional[str] = None
+    currency: Optional[str] = None
     default_dividend_account_id: Optional[int] = None
 
 class AccountResponse(AccountBase):
@@ -43,17 +62,70 @@ class AssetBase(BaseModel):
     symbol: str
     isin: Optional[str] = None
     name: str
-    asset_type: str
+    asset_type: str # stock, etf, mutual_fund, bond, fd, crypto, gold
     exchange: Optional[str] = None
     sector: Optional[str] = None
     industry: Optional[str] = None
     currency: str = "USD"
 
+class AssetCreate(AssetBase):
+    pass
+
+class AssetUpdate(BaseModel):
+    symbol: Optional[str] = None
+    isin: Optional[str] = None
+    name: Optional[str] = None
+    asset_type: Optional[str] = None
+    exchange: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    currency: Optional[str] = None
+
 class AssetResponse(AssetBase):
     asset_id: int
     model_config = ConfigDict(from_attributes=True)
 
-# Lot Schemas
+# Transaction Schemas
+class TransactionCreate(BaseModel):
+    account_id: int
+    funding_account_id: Optional[int] = None
+    asset_id: Optional[int] = None
+    transaction_type: str # buy, sell, dividend, bonus, split, interest, fee, deposit, withdrawal
+    transaction_date: datetime.date
+    quantity: Optional[float] = None
+    price_per_unit: Optional[float] = None
+    total_amount: float
+    fees: float = 0.0
+    taxes: float = 0.0
+    source: Optional[str] = "manual"
+    notes: Optional[str] = None
+
+class TransactionUpdate(BaseModel):
+    account_id: Optional[int] = None
+    funding_account_id: Optional[int] = None
+    asset_id: Optional[int] = None
+    transaction_type: Optional[str] = None
+    transaction_date: Optional[datetime.date] = None
+    quantity: Optional[float] = None
+    price_per_unit: Optional[float] = None
+    total_amount: Optional[float] = None
+    fees: Optional[float] = None
+    taxes: Optional[float] = None
+    source: Optional[str] = None
+    notes: Optional[str] = None
+
+class TransactionResponse(TransactionCreate):
+    transaction_id: int
+    account_name: Optional[str] = None
+    account_currency: Optional[str] = "USD"
+    funding_account_name: Optional[str] = None
+    funding_account_currency: Optional[str] = None
+    asset_symbol: Optional[str] = None
+    asset_name: Optional[str] = None
+    source: str = "manual"
+    model_config = ConfigDict(from_attributes=True)
+
+# Lot & LotSale Schemas
 class LotResponse(BaseModel):
     lot_id: int
     account_id: int
@@ -63,6 +135,7 @@ class LotResponse(BaseModel):
     quantity_original: float
     quantity_remaining: float
     cost_per_unit: float
+    asset_symbol: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 class LotSaleResponse(BaseModel):
@@ -73,13 +146,19 @@ class LotSaleResponse(BaseModel):
     sale_price_per_unit: float
     cost_basis: float
     realized_pnl: float
-    holding_period_days: Optional[int] = None
+    holding_period_days: int
     sell_date: Optional[datetime.date] = None
     buy_date: Optional[datetime.date] = None
     asset_symbol: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
 # Price History Schemas
+class PriceHistoryCreate(BaseModel):
+    asset_id: int
+    price_date: datetime.date
+    close_price: float = Field(..., gt=0, le=1_000_000_000)
+    source: str = "manual"
+
 class PriceHistoryResponse(BaseModel):
     price_id: int
     asset_id: int
@@ -88,8 +167,30 @@ class PriceHistoryResponse(BaseModel):
     source: str
     model_config = ConfigDict(from_attributes=True)
 
+class CustomPriceResponse(BaseModel):
+    price_id: int
+    asset_id: int
+    asset_symbol: str
+    asset_name: Optional[str] = None
+    currency: str
+    price_date: datetime.date
+    close_price: float
+    source: str
+    model_config = ConfigDict(from_attributes=True)
+
+# Corporate Action Schemas
 # Portfolio Summary & Holdings Schemas
 class HoldingSummary(BaseModel):
+    """
+    HoldingSummary presents both open position valuation and realized P&L across asset lifecycle.
+    - realized_pnl: Net realized profit/loss after trade fees & taxes allocated to sold lots.
+    - unrealized_pnl: Current market value minus open lots cost basis (including acquisition fees/taxes).
+    - net_pnl: Total net P&L after all trade costs (realized_pnl + unrealized_pnl).
+    - fees_and_taxes: Total transaction fees + taxes paid across asset transactions (informational).
+    - unrealized_pnl_pct: (unrealized_pnl / total_cost * 100) for open positions.
+    - realized_pnl_pct: (realized_pnl / cost_basis_sold * 100) for realized positions.
+    - net_pnl_pct: (net_pnl / (total_cost + cost_basis_sold) * 100) across total committed capital.
+    """
     asset_id: int
     symbol: str
     name: str
@@ -137,8 +238,66 @@ class PortfolioSummaryResponse(BaseModel):
     portfolio_xirr: Optional[float] = None
     asset_allocation: dict
     sector_allocation: dict = {}
-    top_holdings: List[HoldingSummary] = []
+    top_holdings: List[HoldingSummary]
     closed_holdings: List[HoldingSummary] = []
+
+# Discrepancy Schemas
+class CandidateMatchItem(BaseModel):
+    match_id: int
+    match_type: str  # "cashflow" or "transaction"
+    account_id: int
+    account_name: str
+    date: datetime.date
+    amount: float
+    title: str
+
+class DiscrepancyItemResponse(BaseModel):
+    expected_dividend_id: Optional[int] = None
+    transaction_id: Optional[int] = None
+    account_id: int
+    account_name: str
+    asset_id: int
+    asset_symbol: str
+    asset_name: Optional[str] = None
+    currency: str
+    transaction_date: datetime.date
+    quantity: float
+    price_per_unit: float
+    total_amount: float
+    expected_amount: Optional[float] = None
+    linked_transaction_amount: Optional[float] = None
+    taxes: float = 0.0
+    net_amount: float
+    source: str = "yfinance"
+    status: str = "UNMATCHED"
+    suggested_funding_account_id: Optional[int] = None
+    suggested_funding_account_name: Optional[str] = None
+    candidate_matches: List[CandidateMatchItem] = []
+    notes: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class DiscrepancySummaryResponse(BaseModel):
+    total_count: int
+    total_unlinked_amount: float
+    auto_linkable_count: int
+    unlinked_items: List[DiscrepancyItemResponse]
+
+class DiscrepancyResolveItem(BaseModel):
+    expected_dividend_id: Optional[int] = None
+    transaction_id: Optional[int] = None
+    funding_account_id: int
+    transaction_date: Optional[datetime.date] = None
+    total_amount: Optional[float] = None
+    taxes: Optional[float] = None
+    notes: Optional[str] = None
+
+class DiscrepancyResolveRequest(BaseModel):
+    resolutions: List[DiscrepancyResolveItem]
+    set_default_for_demat: Optional[Dict[str, int]] = None
+
+class DiscrepancyActionRequest(BaseModel):
+    expected_dividend_ids: List[int]
+
 
 class AnnualSnapshotResponse(BaseModel):
     year_label: str
@@ -185,3 +344,185 @@ class BenchmarkDataPoint(BaseModel):
 class BenchmarkResponse(BaseModel):
     benchmark_name: str
     data: List[BenchmarkDataPoint]
+
+# Category Schemas
+class CategoryBase(BaseModel):
+    name: str
+    parent_id: Optional[int] = None
+    category_type: str = "EXPENSE" # INCOME, EXPENSE, INVESTMENT, TRANSFER
+    default_label: Optional[str] = None # ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    parent_id: Optional[int] = None
+    category_type: Optional[str] = None
+    default_label: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+
+class CategoryResponse(CategoryBase):
+    category_id: int
+    created_at: datetime.datetime
+    effective_label: Optional[str] = None
+    full_path: Optional[str] = None
+    level: int = 1
+    model_config = ConfigDict(from_attributes=True)
+
+class CategoryTreeResponse(CategoryResponse):
+    subcategories: List['CategoryTreeResponse'] = []
+
+# Cashflow Payment Schemas
+class CashflowPaymentCreate(BaseModel):
+    account_id: int
+    amount: float
+    currency: Optional[str] = None
+
+class CashflowPaymentResponse(BaseModel):
+    payment_id: int
+    cashflow_id: int
+    account_id: int
+    account_name: Optional[str] = None
+    account_currency: Optional[str] = "EUR"
+    amount: float
+    model_config = ConfigDict(from_attributes=True)
+
+# Cashflow Item Schemas
+class CashflowItemCreate(BaseModel):
+    category_id: int
+    amount: float
+    label: Optional[str] = None # ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT
+    description: Optional[str] = None
+
+class CashflowItemResponse(BaseModel):
+    item_id: int
+    cashflow_id: int
+    category_id: int
+    category_name: Optional[str] = None
+    category_type: Optional[str] = None
+    amount: float
+    label: Optional[str] = None
+    effective_label: Optional[str] = None
+    description: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+# Cashflow Transaction Schemas
+class CashflowTransactionCreate(BaseModel):
+    transaction_date: datetime.date
+    title: str
+    total_amount: Optional[float] = None
+    currency: Optional[str] = None
+    transaction_kind: Optional[str] = None # EXPENSE, INCOME, TRANSFER
+    notes: Optional[str] = None
+    payments: List[CashflowPaymentCreate]
+    items: List[CashflowItemCreate]
+
+class CashflowTransactionUpdate(BaseModel):
+    transaction_date: Optional[datetime.date] = None
+    title: Optional[str] = None
+    total_amount: Optional[float] = None
+    currency: Optional[str] = None
+    transaction_kind: Optional[str] = None
+    notes: Optional[str] = None
+    payments: Optional[List[CashflowPaymentCreate]] = None
+    items: Optional[List[CashflowItemCreate]] = None
+
+class CashflowTransactionResponse(BaseModel):
+    cashflow_id: int
+    transaction_date: datetime.date
+    title: str
+    total_amount: float
+    currency: str = "EUR"
+    master_amount_eur: Optional[float] = None
+    transaction_kind: Optional[str] = "EXPENSE"
+    notes: Optional[str] = None
+    created_at: datetime.datetime
+    payments: List[CashflowPaymentResponse] = []
+    items: List[CashflowItemResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class CashflowSummaryResponse(BaseModel):
+    total_income: float
+    total_expenses: float
+    total_invested: float
+    net_savings: float
+    savings_rate_pct: float
+    breakdown_by_label: Dict[str, float] = {}
+    top_expense_categories: List[Dict[str, Any]] = []
+
+# Sankey Schemas
+class SankeyNode(BaseModel):
+    id: str
+    name: str
+    category_type: Optional[str] = None
+    level: int = 1
+    color: Optional[str] = None
+
+class SankeyLink(BaseModel):
+    source: str
+    target: str
+    value: float
+    color: Optional[str] = None
+
+class SankeyDataResponse(BaseModel):
+    nodes: List[SankeyNode]
+    links: List[SankeyLink]
+    total_income: float
+    total_expenses: float
+    total_investments: float = 0.0
+    net_savings: float = 0.0
+    depth: int = 2
+
+# Backup Schemas
+class BackupItemResponse(BaseModel):
+    filename: str
+    filepath: str
+    size_bytes: int
+    size_formatted: str
+    created_at: str
+    kind: str
+    note: Optional[str] = None
+
+class BackupListResponse(BaseModel):
+    total_count: int
+    backups: List[BackupItemResponse]
+
+class BackupConfigResponse(BaseModel):
+    database_file: str
+    data_dir: str
+    active_db_path: str
+    autobackup_enabled: bool
+    autobackup_interval_hours: int
+    autobackup_max_copies: int
+    last_backup_timestamp: Optional[str] = None
+    next_backup_timestamp: Optional[str] = None
+    is_overdue: bool
+    total_backups_count: int
+
+class BackupConfigUpdate(BaseModel):
+    autobackup_enabled: Optional[bool] = None
+    autobackup_interval_hours: Optional[int] = None
+    autobackup_max_copies: Optional[int] = None
+
+class BackupCreateRequest(BaseModel):
+    note: Optional[str] = None
+
+# MCP API Key Schemas
+class ApiKeyCreate(BaseModel):
+    name: str = "Default MCP Key"
+
+class ApiKeyResponse(BaseModel):
+    key_id: int
+    name: str
+    key_prefix: str
+    is_active: bool
+    created_at: datetime.datetime
+    last_used_at: Optional[datetime.datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class ApiKeyCreateResponse(ApiKeyResponse):
+    key: str # Full raw secret key returned only once upon creation

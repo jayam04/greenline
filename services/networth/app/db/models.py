@@ -1,9 +1,10 @@
 import datetime
 from sqlalchemy import (
     Column, Integer, Identity, String as SQLString, Float, Date, DateTime, ForeignKey,
-    UniqueConstraint, Text, Index
+    UniqueConstraint, Text, Index, Boolean
 )
 from sqlalchemy.orm import relationship
+
 try:
     from .database import Base
 except (ImportError, ValueError):
@@ -19,7 +20,7 @@ class String(SQLString):
 
 class User(Base):
     __tablename__ = "users"
-
+    
     user_id = Column(Integer, Identity(), primary_key=True)
     auth0_sub = Column(String(255), unique=True, nullable=True, index=True)
     email = Column(String(255), nullable=True, index=True)
@@ -40,7 +41,7 @@ class User(Base):
 
 class Account(Base):
     __tablename__ = "accounts"
-
+    
     account_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     account_name = Column(String, nullable=False)
@@ -58,7 +59,7 @@ class Account(Base):
 
 class Asset(Base):
     __tablename__ = "assets"
-
+    
     asset_id = Column(Integer, Identity(), primary_key=True)
     symbol = Column(String, index=True, nullable=False)  # e.g. AAPL, RELIANCE
     isin = Column(String, index=True, nullable=True)
@@ -77,22 +78,22 @@ class Asset(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
-
+    
     transaction_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
     funding_account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="SET NULL"), nullable=True)
-    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=True)
+    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=True)  # Null for cash-only entries
     transaction_type = Column(String, nullable=False)  # buy, sell, dividend, bonus, split, interest, fee, deposit, withdrawal
     transaction_date = Column(Date, nullable=False, index=True)
-    quantity = Column(Float, nullable=True)
+    quantity = Column(Float, nullable=True)  # Null for cash-only entries
     price_per_unit = Column(Float, nullable=True)
-    total_amount = Column(Float, nullable=False)
+    total_amount = Column(Float, nullable=False)  # quantity * price +- charges
     fees = Column(Float, default=0.0)
     taxes = Column(Float, default=0.0)
-    source = Column(String, default="manual")
+    source = Column(String, default="manual")  # manual, yfinance_auto, csv_import
     notes = Column(Text, nullable=True)
-    expected_dividend_id = Column(Integer, nullable=True, index=True)
+    expected_dividend_id = Column(Integer, ForeignKey("expected_dividends.expected_dividend_id", ondelete="SET NULL", name="fk_transactions_expected_dividend", use_alter=True), nullable=True, index=True)
 
     account = relationship("Account", back_populates="transactions", foreign_keys=[account_id])
     funding_account = relationship("Account", foreign_keys=[funding_account_id])
@@ -103,7 +104,7 @@ class Transaction(Base):
 
 class Lot(Base):
     __tablename__ = "lots"
-
+    
     lot_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False)
@@ -112,7 +113,7 @@ class Lot(Base):
     buy_date = Column(Date, nullable=False)
     quantity_original = Column(Float, nullable=False)
     quantity_remaining = Column(Float, nullable=False)
-    cost_per_unit = Column(Float, nullable=False)
+    cost_per_unit = Column(Float, nullable=False)  # Includes fees/taxes, adjusted for splits/bonus
 
     account = relationship("Account", back_populates="lots")
     asset = relationship("Asset", back_populates="lots")
@@ -122,16 +123,16 @@ class Lot(Base):
 
 class LotSale(Base):
     __tablename__ = "lot_sales"
-
+    
     lot_sale_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     lot_id = Column(Integer, ForeignKey("lots.lot_id"), nullable=False)
     sell_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id"), nullable=False)
     quantity_sold = Column(Float, nullable=False)
     sale_price_per_unit = Column(Float, nullable=False)
-    cost_basis = Column(Float, nullable=False)
-    realized_pnl = Column(Float, nullable=False)
-    holding_period_days = Column(Integer, nullable=False)
+    cost_basis = Column(Float, nullable=False)  # quantity_sold * lot.cost_per_unit
+    realized_pnl = Column(Float, nullable=False)  # (sale - cost_basis)
+    holding_period_days = Column(Integer, nullable=False)  # sale_date - buy_date
 
     lot = relationship("Lot", back_populates="lot_sales")
     sell_transaction = relationship("Transaction", foreign_keys=[sell_transaction_id], back_populates="sell_lot_sales")
@@ -139,13 +140,13 @@ class LotSale(Base):
 
 class PriceHistory(Base):
     __tablename__ = "price_history"
-
+    
     price_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, default=0, server_default="0", nullable=False, index=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id"), nullable=False)
     price_date = Column(Date, nullable=False)
     close_price = Column(Float, nullable=False)
-    source = Column(String, default="manual")
+    source = Column(String, default="manual")  # API/manual/yfinance
 
     asset = relationship("Asset", back_populates="price_history")
 
@@ -156,7 +157,7 @@ class PriceHistory(Base):
 
 class Dividend(Base):
     __tablename__ = "dividends"
-
+    
     dividend_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     asset_id = Column(Integer, ForeignKey("assets.asset_id"), nullable=False)
@@ -171,16 +172,44 @@ class Dividend(Base):
     account = relationship("Account", back_populates="dividends")
 
 
+class ExpectedDividend(Base):
+    __tablename__ = "expected_dividends"
+    
+    expected_dividend_id = Column(Integer, Identity(), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
+    asset_id = Column(Integer, ForeignKey("assets.asset_id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id = Column(Integer, ForeignKey("accounts.account_id", ondelete="CASCADE"), nullable=False, index=True)
+    ex_date = Column(Date, nullable=False, index=True)
+    pay_date = Column(Date, nullable=True)
+    eligible_shares = Column(Float, nullable=False, default=0.0)
+    dividend_rate = Column(Float, nullable=False, default=0.0)
+    expected_amount = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(3), nullable=False, default="USD")
+    source = Column(String, default="yfinance")
+    matched_transaction_id = Column(Integer, ForeignKey("transactions.transaction_id", ondelete="SET NULL", name="fk_expected_dividends_matched_tx"), nullable=True, index=True)
+    status = Column(String, nullable=False, default="UNMATCHED")  # UNMATCHED, MATCHED, AMOUNT_MISMATCH, DISMISSED, ORPHAN
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    asset = relationship("Asset")
+    account = relationship("Account")
+    matched_transaction = relationship("Transaction", foreign_keys=[matched_transaction_id])
+
+    __table_args__ = (
+        UniqueConstraint("asset_id", "account_id", "ex_date", name="uix_expected_dividend_asset_account_date"),
+    )
+
+
 class CashFlow(Base):
     __tablename__ = "cash_flows"
-
+    
     cash_flow_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     scope_type = Column(String, nullable=False)  # portfolio, account, asset
-    scope_id = Column(Integer, nullable=True)
+    scope_id = Column(Integer, nullable=True)  # account_id or asset_id depending on scope_type
     flow_date = Column(Date, nullable=False)
-    amount = Column(Float, nullable=False)
-    flow_type = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)  # Negative = money in (buy/deposit), Positive = money out (sell/withdrawal/dividend)
+    flow_type = Column(String, nullable=False)  # buy, sell, dividend, deposit, withdrawal, mark_to_market
 
     __table_args__ = (
         Index("idx_cash_flows_scope_date", "scope_type", "scope_id", "flow_date"),
@@ -189,7 +218,7 @@ class CashFlow(Base):
 
 class NetworthSnapshot(Base):
     __tablename__ = "networth_snapshots"
-
+    
     snapshot_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     snapshot_date = Column(Date, nullable=False, index=True)
@@ -209,7 +238,7 @@ class NetworthSnapshot(Base):
 
 class NetworthByAssetClass(Base):
     __tablename__ = "networth_by_asset_class"
-
+    
     id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     snapshot_id = Column(Integer, ForeignKey("networth_snapshots.snapshot_id"), nullable=False)
@@ -221,7 +250,7 @@ class NetworthByAssetClass(Base):
 
 class Benchmark(Base):
     __tablename__ = "benchmarks"
-
+    
     id = Column(Integer, Identity(), primary_key=True)
     benchmark_name = Column(String, nullable=False)  # e.g. S&P 500, Nifty 50
     price_date = Column(Date, nullable=False)
@@ -234,7 +263,7 @@ class Benchmark(Base):
 
 class XIRRCache(Base):
     __tablename__ = "xirr_cache"
-
+    
     id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
     scope_type = Column(String, nullable=False)  # portfolio, account, asset
@@ -244,6 +273,7 @@ class XIRRCache(Base):
     computed_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+# Income & Expense Cashflow Models
 class Category(Base):
     __tablename__ = "categories"
 
@@ -300,8 +330,32 @@ class CashflowItem(Base):
     cashflow_id = Column(Integer, ForeignKey("cashflow_transactions.cashflow_id", ondelete="CASCADE"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.category_id"), nullable=False)
     amount = Column(Float, nullable=False)
-    label = Column(String, nullable=True)
+    label = Column(String, nullable=True)  # Overrides category default_label if set (ESSENTIAL, DISCRETIONARY, LUXURY, INVESTMENT)
     description = Column(String, nullable=True)
 
     cashflow_transaction = relationship("CashflowTransaction", back_populates="items")
     category = relationship("Category", back_populates="items", lazy="selectin")
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True, default=0, server_default="0", nullable=False)
+    key = Column("key", String, primary_key=True, quote=True)
+    value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    key_id = Column(Integer, Identity(), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    key_prefix = Column(String, nullable=False)  # e.g. gl_mcp_3a9f...
+    key_hash = Column(String, nullable=False, unique=True)  # SHA-256 hex digest
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", lazy="selectin")

@@ -32,6 +32,90 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 19:45:00 UTC] refactor(backend): consolidate backend into networth-service for two-service architecture
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T19:45:00Z",
+  "type": "refactor",
+  "scope": "backend",
+  "summary": "consolidate backend into networth-service for two-service architecture",
+  "affected_files": [
+    "services/networth/app/config.py",
+    "services/networth/app/main.py",
+    "services/networth/app/scheduler.py",
+    "services/networth/app/api/deps.py",
+    "services/networth/app/api/routers/accounts.py",
+    "services/networth/app/api/routers/assets.py",
+    "services/networth/app/api/routers/auth.py",
+    "services/networth/app/api/routers/backup.py",
+    "services/networth/app/api/routers/benchmarks.py",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/app/api/routers/categories.py",
+    "services/networth/app/api/routers/discrepancies.py",
+    "services/networth/app/api/routers/mcp_router.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/app/api/routers/prices.py",
+    "services/networth/app/api/routers/settings.py",
+    "services/networth/app/api/routers/snapshots.py",
+    "services/networth/app/api/routers/transactions.py",
+    "services/networth/app/db/migrations.py",
+    "services/networth/app/db/models.py",
+    "services/networth/app/mcp/server.py",
+    "services/networth/app/schemas/schemas.py",
+    "services/networth/app/schemas/mcp_schemas.py",
+    "services/networth/app/schemas/mcp_stock_schemas.py",
+    "services/networth/app/services/auth_service.py",
+    "services/networth/app/services/backup_service.py",
+    "services/networth/app/services/cashflow_engine.py",
+    "services/networth/app/services/dividend_engine.py",
+    "services/networth/app/services/fifo_engine.py",
+    "services/networth/app/services/mcp_openapi_service.py",
+    "services/networth/app/services/price_engine.py",
+    "services/networth/app/services/snapshot_engine.py",
+    "services/networth/app/services/xirr_service.py",
+    "services/networth/Dockerfile",
+    "services/networth/requirements.txt",
+    "services/networth/tests/conftest.py",
+    "services/networth/tests/test_e2e_networth_microservice.py",
+    "services/networth/tests/test_service_init.py",
+    "services/networth/tests/test_snapshots.py",
+    "services/community/pytest.ini",
+    "services/community/tests/conftest.py",
+    "backend/app",
+    "backend/tests",
+    "docker-compose.yml",
+    "docker-compose.demo.yml",
+    "docker-compose.prod.yml",
+    "frontend/next.config.ts",
+    "pyproject.toml",
+    "AGENTS.md",
+    "GEMINI.md",
+    ".agents/rules/test_first_development.md"
+  ],
+  "rationale": "Refactored the core backend monolith into services/networth (networth-service) as planned, transitioning the application to an explicit two-service architecture consisting of networth-service (port 8000) and community-service (port 8002). Eliminated cross-service HTTP client hops (networth_client.py) and external container dependencies for snapshots and portfolio calculations by running them in-process. Removed empty directories services/cashflow and services/investments. Preserved complete backward compatibility via directory symlinks in backend/ and updated compose configurations and Next.js rewrites.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/networth pytest services/networth/tests && cd services/community && pytest tests && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `refactor(backend)`
+- **Summary**: Consolidate backend into networth-service for two-service architecture.
+- **Rationale**: Cleanly organize the application into exactly two services (`services/networth` on port 8000 and `services/community` on port 8002) while eliminating unnecessary HTTP round-trips for core financial computations.
+- **Key Changes**:
+  - `services/networth/`: Complete backend application unified under `networth-service` including all routers, models, migrations, engines, MCP server, scheduler, and background workers.
+  - `backend/`: Replaced `backend/app` and `backend/tests` with symlinks pointing to `services/networth/app` and `services/networth/tests` for backwards compatibility.
+  - `docker-compose.yml`, `docker-compose.demo.yml`, `docker-compose.prod.yml`: Configured two application containers (`networth` on port 8000, `community` on port 8002).
+  - `frontend/next.config.ts`: Streamlined gateway rewrites to point to `COMMUNITY_URL` and `NETWORTH_URL`.
+  - Removed unused empty directories `services/cashflow` and `services/investments`.
+- **Verification**:
+  - `services/networth/tests`: 35/35 E2E networth tests, 20/20 Auth0 RLS tests, 11/11 service init tests, and engine tests passed.
+  - `services/community/tests`: 34/34 community tests passed.
+  - `frontend`: `npx tsc --noEmit` (0 errors), `npm run lint` (0 errors), `npx vitest run` (36/36 files passed, 189/189 tests passed).
+
 ### [2026-11-21 12:57:00 UTC] fix(layout): fix excessive main body left padding and desktop content displacement
 
 <!-- changelog-entry-json

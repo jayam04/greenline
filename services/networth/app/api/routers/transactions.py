@@ -1,5 +1,6 @@
 from typing import List, Optional
 import asyncio
+import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -10,8 +11,16 @@ from app.schemas.schemas import TransactionCreate, TransactionUpdate, Transactio
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.services.price_engine import cleanup_orphan_transaction_prices
-from app.services.networth_client import notify_snapshot_recalculate
+from app.services.background_worker import background_worker
 from app.api.deps import get_current_user, get_user_id
+
+async def notify_snapshot_recalculate(
+    user_id: int,
+    start_date: Optional[datetime.date] = None,
+    reason: str = "trade_event",
+    auth_token: Optional[str] = None
+) -> bool:
+    return await background_worker.enqueue_recalculate(user_id=user_id, start_date=start_date, reason=reason)
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 

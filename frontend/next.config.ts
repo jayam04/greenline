@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
-const NETWORTH_URL = process.env.NETWORTH_URL || "http://localhost:8001";
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const NETWORTH_URL = process.env.NETWORTH_URL || "http://localhost:8000";
 
 const resolveCommunityDestination = () => {
   const raw = process.env.COMMUNITY_URL || "http://localhost:8002/api/v1/community/:path*";
@@ -30,7 +29,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/api/v1/:path*",
-        destination: `${BACKEND_URL}/api/v1/:path*`,
+        destination: `${NETWORTH_URL}/api/v1/:path*`,
       },
     ];
   },

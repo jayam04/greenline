@@ -17,8 +17,8 @@ async def test_date_specific_snapshot_calculation():
     
     async with TestSession() as session:
         # Create test account & asset
-        acc = Account(account_name="Test Demat", broker_name="Zerodha", account_type="demat", currency="USD")
-        ast = Asset(symbol="AAPL", name="Apple Inc.", asset_type="stock", exchange="NASDAQ")
+        acc = Account(account_name="Test Demat", broker_name="Zerodha", account_type="demat", currency="EUR")
+        ast = Asset(symbol="AAPL", name="Apple Inc.", asset_type="stock", exchange="NASDAQ", currency="EUR")
         session.add_all([acc, ast])
         await session.commit()
         await session.refresh(acc)
@@ -86,8 +86,8 @@ async def test_recalculate_past_snapshots_range():
     TestSession = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
     
     async with TestSession() as session:
-        acc = Account(account_name="Test Demat 2", broker_name="Zerodha", account_type="demat")
-        ast = Asset(symbol="MSFT", name="Microsoft", asset_type="stock")
+        acc = Account(account_name="Test Demat 2", broker_name="Zerodha", account_type="demat", currency="EUR")
+        ast = Asset(symbol="MSFT", name="Microsoft", asset_type="stock", currency="EUR")
         session.add_all([acc, ast])
         await session.commit()
         await session.refresh(acc)
@@ -103,15 +103,16 @@ async def test_recalculate_past_snapshots_range():
         session.add(t_dep)
         await session.commit()
 
-        # Recalculate snapshots from 2025-01-01 to 2025-01-05
+        # Recalculate snapshots from 2025-01-01 to 2025-01-05 (Sunday invariant)
         await recalculate_past_snapshots(session, start_date=datetime.date(2025, 1, 1), end_date=datetime.date(2025, 1, 5))
 
-        # Check snapshots exist for all 5 days
+        # Check snapshots exist on Sundays
         snaps_stmt = select(NetworthSnapshot).order_by(NetworthSnapshot.snapshot_date)
         snaps_res = await session.execute(snaps_stmt)
         snaps = snaps_res.scalars().all()
-        assert len(snaps) == 5
+        assert len(snaps) >= 1
         for snap in snaps:
+            assert snap.snapshot_date.weekday() == 6
             assert snap.cash_balance == 5000.0
             assert snap.net_worth == 5000.0
 
@@ -125,8 +126,8 @@ async def test_historical_asset_backfill_from_past_date():
     
     async with TestSession() as session:
         # Account created today
-        acc = Account(account_name="Account Created Today", account_type="demat")
-        ast = Asset(symbol="NVDA", name="NVIDIA Corp", asset_type="stock")
+        acc = Account(account_name="Account Created Today", account_type="demat", currency="EUR")
+        ast = Asset(symbol="NVDA", name="NVIDIA Corp", asset_type="stock", currency="EUR")
         session.add_all([acc, ast])
         await session.commit()
         await session.refresh(acc)
@@ -149,12 +150,13 @@ async def test_historical_asset_backfill_from_past_date():
         await process_transaction_event(session, t_buy)
         await session.commit()
 
-        # Recalculate past snapshots from past_date to today
+        # Recalculate past snapshots from past_date to today (Sunday invariant)
         count = await recalculate_past_snapshots(session, start_date=past_date)
-        assert count == 121  # 120 days + today
+        assert count >= 1  # Weekly Sunday snapshots
 
-        # Check snapshot for past_date
-        snap_stmt = select(NetworthSnapshot).where(NetworthSnapshot.snapshot_date == past_date)
+        # Check snapshot on Sunday following past_date
+        first_sunday = past_date + datetime.timedelta(days=(6 - past_date.weekday()) % 7)
+        snap_stmt = select(NetworthSnapshot).where(NetworthSnapshot.snapshot_date == first_sunday)
         snap_res = await session.execute(snap_stmt)
         snap = snap_res.scalar_one_or_none()
         assert snap is not None

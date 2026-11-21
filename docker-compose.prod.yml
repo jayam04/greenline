@@ -1,7 +1,7 @@
 services:
-  backend:
+  networth:
     build:
-      context: ./backend
+      context: ./services/networth
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -18,6 +18,22 @@ services:
       - PYTHONPATH=/app
     restart: unless-stopped
 
+  community:
+    build:
+      context: ./services/community
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=${DATABASE_URL_COMMUNITY:-oracle+oracledb://@}
+      - ORACLE_COMMUNITY_USER=${ORACLE_COMMUNITY_USER:-GREENLINE_COMMUNITY}
+      - COMMUNITY_DB_PASSWORD=${COMMUNITY_DB_PASSWORD:-SecureCommunity2026#DbPass}
+      - ORACLE_DSN=${ORACLE_DSN:-}
+      - ORACLE_SCHEMA=${ORACLE_SCHEMA:-ADMIN}
+      - PORT=8002
+      - PYTHONPATH=/app
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
@@ -26,7 +42,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NETWORTH_URL=http://networth:8000
+      - COMMUNITY_URL=http://community:8002/api/v1/community
     depends_on:
-      - backend
+      - networth
+      - community
     restart: unless-stopped

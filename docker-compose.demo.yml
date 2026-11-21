@@ -1,15 +1,15 @@
 services:
-  backend-demo:
+  networth-demo:
     build:
-      context: ./backend
+      context: ./services/networth
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8005:8000"
     volumes:
       - ./data:/data
-      - ./backend/app:/app/app
-      - ./backend/tests:/app/tests
+      - ./services/networth/app:/app/app
+      - ./services/networth/tests:/app/tests
     environment:
       - DATABASE_URL=${DATABASE_URL:-oracle+oracledb://@}
       - ORACLE_USER=${ORACLE_USER:-}
@@ -38,5 +38,5 @@ services:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
     depends_on:
-      - backend-demo
+      - networth-demo
     restart: unless-stopped

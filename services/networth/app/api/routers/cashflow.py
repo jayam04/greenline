@@ -16,6 +16,7 @@ from app.services.cashflow_engine import (
     convert_currency, resolve_transaction_kind
 )
 from app.api.deps import get_current_user, get_user_id
+from app.core.timing import time_block
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
 
@@ -46,14 +47,11 @@ async def list_cashflow_transactions(
     if end_date:
         stmt = stmt.where(CashflowTransaction.transaction_date <= end_date)
 
-    import time
-    print(f"Database exec started: {time.time()}")
     res = await db.execute(stmt)
-    print(f"Database exec started: {time.time()}")
     transactions = res.scalars().all()
-    print(f"Database exec started: {time.time()}")
 
-    lineage_map = await build_category_lineage_map(db, user_id=u_id)
+    with time_block("build_category_lineage_map"):
+        lineage_map = await build_category_lineage_map(db, user_id=u_id)
     results = []
 
     for tx in transactions:

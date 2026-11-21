@@ -32,6 +32,59 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 23:34:00 UTC] feat(observability): add end-to-end performance diagnostic logging and query profiler
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T23:34:00Z",
+  "type": "feat",
+  "scope": "observability",
+  "summary": "add end-to-end performance diagnostic logging and query profiler",
+  "affected_files": [
+    "services/networth/app/core/timing.py",
+    "services/networth/app/main.py",
+    "services/networth/app/db/database.py",
+    "services/networth/app/api/deps.py",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/tests/test_timing.py",
+    "services/networth/tests/test_community_proxy.py",
+    "services/networth/app/api/routers/community_proxy.py",
+    "services/community/app/core/timing.py",
+    "services/community/app/main.py",
+    "services/community/app/db/database.py",
+    "services/community/tests/test_timing.py",
+    "frontend/src/lib/api.ts",
+    "docker-compose.yml",
+    ".env.example"
+  ],
+  "rationale": "Users observed slow API response times; added granular diagnostic instrumentation across HTTP request lifecycles, database query execution, connection pool checkouts, Auth0 verification, and client transit to expose latency bottlenecks.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "backend/.venv/bin/pytest services/networth/tests/test_timing.py && cd services/community && pytest tests/test_timing.py && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(observability)`
+- **Summary**: Implemented end-to-end diagnostic performance profiling and timing logs across backend microservices (`networth`, `community`), database query execution via SQLAlchemy event listeners, authentication resolution, and frontend DevTools client logging.
+- **Rationale**:
+  - API responses were perceived as slow. Without structured timing logs, it was unclear whether delays originated in network transit, Auth0 RS256 token verification, connection pool checkout, or remote Oracle database roundtrips.
+  - Adding correlation IDs (`X-Request-ID`) and server duration headers (`X-Process-Time-Ms`) alongside SQL execution listeners highlights slow queries (>50ms) and provides immediate visibility into bottlenecks.
+- **Key Changes**:
+  - `services/networth/app/core/timing.py` & `services/community/app/core/timing.py`: Created reusable `RequestTimingContext`, `TimingMiddleware`, `time_block`, and `record_db_query` helpers.
+  - `services/networth/app/main.py` & `services/community/app/main.py`: Registered `TimingMiddleware` to inject timing headers and output structured end-of-request summaries.
+  - `services/networth/app/db/database.py` & `services/community/app/db/database.py`: Attached `before_cursor_execute` and `after_cursor_execute` listeners to measure query durations and flag queries taking >50ms with `[SLOW QUERY]`.
+  - `services/networth/app/api/deps.py`: Profiled `get_current_user` resolution duration across API keys, cached Auth0 tokens, and local JWTs.
+  - `services/networth/app/api/routers/cashflow.py`: Replaced raw `print` statements with structured `time_block`.
+  - `frontend/src/lib/api.ts`: Added browser console timing output (`[API] ... | Client: ...ms (Server: ...ms, Transit: ...ms)`) for developer inspection.
+  - `docker-compose.yml` & `.env.example`: Added configurable `ENABLE_TIMING_LOGS`, `LOG_SQL_QUERIES`, and `SLOW_QUERY_THRESHOLD_MS`.
+- **Verification**:
+  - Automated tests in `services/networth/tests/test_timing.py` and `services/community/tests/test_timing.py` passed.
+  - Frontend TypeScript check (`npx tsc --noEmit`), ESLint, and all 36 Vitest test suites (189 tests) passed.
+  - Live inspection confirmed `[SLOW QUERY]` logs identifying individual remote Oracle queries taking 100ms-400ms.
+
 ### [2026-11-21 20:56:00 UTC] fix(docker): unify compose files and support dev/prod and cloud/localdockerdb env passing
 
 <!-- changelog-entry-json

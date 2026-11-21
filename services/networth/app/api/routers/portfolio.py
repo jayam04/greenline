@@ -23,6 +23,7 @@ except (ImportError, ValueError):
     from app.services.cashflow_engine import convert_currency
     from app.services.portfolio import calculate_all_account_cash_balances
     from app.api.deps import get_current_user, get_user_id
+    from app.core.timing import time_block
 
 import pyxirr
 

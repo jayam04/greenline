@@ -58,6 +58,9 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
       AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
       AUTH0_TEST_MODE: ${AUTH0_TEST_MODE:-false}
+      ENABLE_TIMING_LOGS: ${ENABLE_TIMING_LOGS:-true}
+      LOG_SQL_QUERIES: ${LOG_SQL_QUERIES:-false}
+      SLOW_QUERY_THRESHOLD_MS: ${SLOW_QUERY_THRESHOLD_MS:-50.0}
       PYTHONPATH: /app
     depends_on:
       oracle:
@@ -100,6 +103,9 @@ services:
       AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
       AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
       AUTH0_TEST_MODE: ${AUTH0_TEST_MODE:-false}
+      ENABLE_TIMING_LOGS: ${ENABLE_TIMING_LOGS:-true}
+      LOG_SQL_QUERIES: ${LOG_SQL_QUERIES:-false}
+      SLOW_QUERY_THRESHOLD_MS: ${SLOW_QUERY_THRESHOLD_MS:-50.0}
       PORT: 8002
       PYTHONPATH: /app
     depends_on:

@@ -16,12 +16,13 @@ from app.services.cashflow_engine import seed_default_categories
 from app.services.background_worker import background_worker
 from app.db.migrations import run_db_migrations
 from app.scheduler import start_scheduler, stop_scheduler
+from app.core.timing import TimingMiddleware
 
 from app.api.routers import (
     auth, accounts, assets, transactions, portfolio,
     snapshots, prices, benchmarks, backup,
     categories, cashflow, settings as app_settings_router, discrepancies,
-    mcp_router
+    mcp_router, community_proxy
 )
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ app = FastAPI(
 
 # GZip middleware for responses > 1000 bytes
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(TimingMiddleware)
 
 # CORS setup
 app.add_middleware(
@@ -136,6 +138,7 @@ app.include_router(cashflow.router, prefix=settings.API_V1_STR)
 app.include_router(app_settings_router.router, prefix=settings.API_V1_STR)
 app.include_router(discrepancies.router, prefix=settings.API_V1_STR)
 app.include_router(mcp_router.router, prefix=settings.API_V1_STR)
+app.include_router(community_proxy.router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health")

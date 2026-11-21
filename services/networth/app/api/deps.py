@@ -1,5 +1,6 @@
 import hashlib
 import datetime
+import time
 from typing import Optional, Any
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
@@ -9,6 +10,7 @@ from app.db.database import get_db
 from app.db.models import User, ApiKey
 from app.services.auth_service import decode_access_token, get_or_sync_auth0_user
 from app.services.auth0_service import verify_auth0_token
+from app.core.timing import record_auth_time
 
 def get_user_id(user: Any) -> int:
     if user is None:
@@ -56,6 +58,7 @@ async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
+    auth_start = time.perf_counter()
     raw_api_key = x_api_key if isinstance(x_api_key, str) else None
     raw_auth = authorization if isinstance(authorization, str) else None
     raw_token = token if isinstance(token, str) else None
@@ -110,6 +113,7 @@ async def get_current_user(
             user_res = await db.execute(user_stmt)
             user = user_res.scalar_one_or_none()
             if user:
+                record_auth_time((time.perf_counter() - auth_start) * 1000.0, "api_key", user.user_id)
                 return user
 
     # 2. Try validating candidates as Auth0 RS256 Bearer tokens
@@ -128,6 +132,7 @@ async def get_current_user(
                     stmt = select(User).where(User.auth0_sub == sub)
                     existing_user = (await db.execute(stmt)).scalar_one_or_none()
                     if existing_user:
+                        record_auth_time((time.perf_counter() - auth_start) * 1000.0, "auth0_cached", existing_user.user_id)
                         return existing_user
 
                 user = await get_or_sync_auth0_user(
@@ -139,6 +144,7 @@ async def get_current_user(
                 )
                 if user:
                     _user_token_cache[sub] = candidate
+                    record_auth_time((time.perf_counter() - auth_start) * 1000.0, "auth0_sync", user.user_id)
                     return user
 
     # 3. Fallback: Try decoding candidates as local HS256 JWT tokens
@@ -151,6 +157,7 @@ async def get_current_user(
                 result = await db.execute(stmt)
                 user = result.scalar_one_or_none()
                 if user:
+                    record_auth_time((time.perf_counter() - auth_start) * 1000.0, "local_jwt", user.user_id)
                     return user
 
     raise HTTPException(

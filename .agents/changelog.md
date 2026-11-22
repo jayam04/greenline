@@ -32,6 +32,42 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 23:46:00 UTC] feat(observability): log request received and response sent timestamps
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T23:46:00Z",
+  "type": "feat",
+  "scope": "observability",
+  "summary": "log request received and response sent timestamps",
+  "affected_files": [
+    "services/networth/app/core/timing.py",
+    "services/community/app/core/timing.py",
+    "services/networth/tests/test_timing.py",
+    "services/community/tests/test_timing.py",
+    "frontend/src/lib/api.ts"
+  ],
+  "rationale": "Add high-resolution timestamps indicating exact time when each HTTP request was received and when the response was completed/sent across backend logs, HTTP headers, and frontend DevTools.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "backend/.venv/bin/pytest services/networth/tests/test_timing.py && cd services/community && pytest tests/test_timing.py && cd frontend && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(observability)`
+- **Summary**: Added millisecond-accurate timestamps for request reception and response dispatch across backend logs (`networth`, `community`), response headers (`X-Request-Received-At`, `X-Response-Sent-At`), and frontend console logs.
+- **Rationale**:
+  - Allows immediate correlation and verification of whether network delays occur prior to server arrival, during backend processing, or in transit back to the client.
+- **Key Changes**:
+  - `services/networth/app/core/timing.py` & `services/community/app/core/timing.py`: Added `received_at` and `sent_at` UTC datetimes to `RequestTimingContext`; formatted logger to output `[YYYY-MM-DD HH:MM:SS.mmm UTC]`; updated `--> [REQ]` to log exact reception time and `<-- [RESP]` to log exact response dispatch time with duration breakdown; injected `X-Request-Received-At` and `X-Response-Sent-At` headers into responses.
+  - `services/networth/tests/test_timing.py` & `services/community/tests/test_timing.py`: Added assertions for context fields and headers.
+  - `frontend/src/lib/api.ts`: Captured client dispatch/receipt timestamps and server receive/send headers in DevTools debug logging.
+- **Verification**:
+  - Command: `backend/.venv/bin/pytest services/networth/tests/test_timing.py && cd services/community && pytest tests/test_timing.py && cd frontend && npx tsc --noEmit && npm run lint`
+  - Output: All tests and linters passed with 0 errors.
+
 ### [2026-11-21 23:34:00 UTC] feat(observability): add end-to-end performance diagnostic logging and query profiler
 
 <!-- changelog-entry-json

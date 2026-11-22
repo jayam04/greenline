@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import logging
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -10,7 +11,15 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-logger = logging.getLogger("greenline.community.timing")
+logger = logging.getLogger("greenline.timing")
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(
+        logging.Formatter("[%(asctime)s.%(msecs)03d UTC] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    )
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 ENABLE_TIMING_LOGS = os.getenv("ENABLE_TIMING_LOGS", "true").lower() in ("true", "1", "yes")
 LOG_SQL_QUERIES = os.getenv("LOG_SQL_QUERIES", "false").lower() in ("true", "1", "yes")
@@ -24,6 +33,8 @@ class RequestTimingContext:
     path: str
     method: str
     client_ip: str = ""
+    received_at: Optional[datetime] = None
+    sent_at: Optional[datetime] = None
     db_queries: List[Dict[str, Any]] = field(default_factory=list)
     db_time_ms: float = 0.0
     db_query_count: int = 0
@@ -112,28 +123,36 @@ class TimingMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         path = request.url.path
         method = request.method
+        received_at = datetime.now(timezone.utc)
+        received_at_str = received_at.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + " UTC"
 
         ctx = RequestTimingContext(
             request_id=req_id,
             start_time=time.perf_counter(),
             path=path,
             method=method,
-            client_ip=client_ip
+            client_ip=client_ip,
+            received_at=received_at
         )
         token = current_timing_context.set(ctx)
 
         if ENABLE_TIMING_LOGS and not path.endswith("/health"):
-            logger.info(f"--> [REQ {req_id}] {method} {path} from {client_ip}")
+            logger.info(f"--> [REQ {req_id}] Received {method} {path} from {client_ip} at {received_at_str}")
 
         try:
             response = await call_next(request)
         finally:
+            sent_at = datetime.now(timezone.utc)
+            ctx.sent_at = sent_at
+            sent_at_str = sent_at.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + " UTC"
             total_ms = (time.perf_counter() - ctx.start_time) * 1000.0
             current_timing_context.reset(token)
 
-        # Inject diagnostic headers for frontend inspection
+        # Inject diagnostic headers for client inspection
         response.headers["X-Process-Time-Ms"] = f"{total_ms:.2f}"
         response.headers["X-Request-ID"] = req_id
+        response.headers["X-Request-Received-At"] = received_at.isoformat()
+        response.headers["X-Response-Sent-At"] = sent_at.isoformat()
 
         if ENABLE_TIMING_LOGS and not path.endswith("/health"):
             status_code = response.status_code
@@ -143,8 +162,9 @@ class TimingMiddleware(BaseHTTPMiddleware):
             pool_str = f" | Pool: {ctx.pool_checkout_ms:.1f}ms" if ctx.pool_checkout_ms > 0 else ""
 
             logger.info(
-                f"<-- [SUMMARY {req_id}] {method} {path} -> {status_code} | "
-                f"Total: {total_ms:.1f}ms | DB: {ctx.db_time_ms:.1f}ms ({ctx.db_query_count} queries)"
+                f"<-- [RESP {req_id}] Sent {status_code} for {method} {path} at {sent_at_str} | "
+                f"Received: {received_at_str} -> Sent: {sent_at_str} | Total: {total_ms:.1f}ms | "
+                f"DB: {ctx.db_time_ms:.1f}ms ({ctx.db_query_count} queries)"
                 f"{pool_str}{auth_str}{calc_str}"
             )
 

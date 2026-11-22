@@ -61,6 +61,7 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   const apiBase = getApiBase();
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   let res: Response;
+  const reqSentDate = new Date();
   const startMs = typeof performance !== "undefined" ? performance.now() : Date.now();
   try {
     res = await fetch(`${apiBase}/api/v1${cleanEndpoint}`, {
@@ -92,18 +93,26 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     }
   }
 
+  const resRecvDate = new Date();
   const totalClientMs = Math.round(
     (typeof performance !== "undefined" ? performance.now() : Date.now()) - startMs
   );
   const serverProcessMs = res?.headers?.get?.("x-process-time-ms") || null;
   const requestId = res?.headers?.get?.("x-request-id") || null;
+  const serverReceivedAt = res?.headers?.get?.("x-request-received-at") || null;
+  const serverSentAt = res?.headers?.get?.("x-response-sent-at") || null;
   const transitMs = serverProcessMs ? Math.max(0, Math.round(totalClientMs - parseFloat(serverProcessMs))) : null;
 
   if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
     const method = options.method || "GET";
+    const fmtTime = (d: Date) => d.toTimeString().split(" ")[0] + "." + String(d.getMilliseconds()).padStart(3, "0");
+    const clientTimeStr = `Sent: ${fmtTime(reqSentDate)} | Recv: ${fmtTime(resRecvDate)}`;
+    const serverTimeStr = (serverReceivedAt && serverSentAt)
+      ? ` | Server: Recv ${serverReceivedAt.slice(11, 23)}, Sent ${serverSentAt.slice(11, 23)}`
+      : "";
     const serverPart = serverProcessMs ? ` (Server: ${serverProcessMs}ms, Transit: ${transitMs}ms)` : "";
     const reqPart = requestId ? ` [${requestId}]` : "";
-    console.debug(`[API] ${method} ${cleanEndpoint} -> ${res.status} | Client: ${totalClientMs}ms${serverPart}${reqPart}`);
+    console.debug(`[API] ${method} ${cleanEndpoint} -> ${res.status} | ${clientTimeStr}${serverTimeStr} | Client: ${totalClientMs}ms${serverPart}${reqPart}`);
   }
 
   if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {

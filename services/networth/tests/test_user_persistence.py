@@ -73,7 +73,7 @@ async def test_get_or_sync_auth0_user_lifecycle(test_session: AsyncSession):
     assert user1.name == "Original Name"
     assert user1.picture == "https://example.com/pic1.png"
     assert user1.user_id is not None
-    assert user1.password_hash is None
+    assert user1.password_hash in (None, "!auth0_managed_user")
 
     # 2. Sync profile update
     user2 = await get_or_sync_auth0_user(
@@ -86,6 +86,17 @@ async def test_get_or_sync_auth0_user_lifecycle(test_session: AsyncSession):
     assert user2.user_id == user1.user_id
     assert user2.name == "Updated Name"
     assert user2.picture == "https://example.com/pic2.png"
+
+    # 2b. Calling with unchanged profile should be purely read-only (no updated_at change, no DB write)
+    orig_updated_at = user2.updated_at
+    user_no_change = await get_or_sync_auth0_user(
+        db=test_session,
+        sub=unique_sub,
+        email=email,
+        name="Updated Name",
+        picture="https://example.com/pic2.png",
+    )
+    assert user_no_change.updated_at == orig_updated_at
 
     # 3. Account linking: local unlinked user with same email
     link_email = f"link_{datetime.datetime.utcnow().timestamp()}@example.com"

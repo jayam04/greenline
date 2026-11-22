@@ -78,7 +78,7 @@ async def get_or_sync_auth0_user(
         if picture and user.picture != picture:
             user.picture = picture
             changed = True
-        if changed or user.auth0_sub == sub:
+        if changed:
             user.updated_at = datetime.datetime.utcnow()
             await db.commit()
             await db.refresh(user)

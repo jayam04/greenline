@@ -9,19 +9,21 @@ from cachetools import TTLCache
 
 try:
     from ...db.database import get_db
-    from ...db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, NetworthSnapshot, CashFlow
+    from ...db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, Category, NetworthSnapshot, CashFlow
     from ...schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
     from ...services.xirr_service import calculate_xirr_for_scope
     from ...services.cashflow_engine import convert_currency
-    from ...services.portfolio import calculate_all_account_cash_balances
+    from ...services.portfolio import calculate_all_account_cash_balances, calculate_all_account_balances
+    from ...services.snapshot_engine import calculate_account_snapshots
     from ..deps import get_current_user, get_user_id
 except (ImportError, ValueError):
     from app.db.database import get_db
-    from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, NetworthSnapshot, CashFlow
+    from app.db.models import Account, Asset, Lot, LotSale, PriceHistory, Transaction, User, CashflowTransaction, CashflowItem, Category, NetworthSnapshot, CashFlow
     from app.schemas.schemas import PortfolioSummaryResponse, HoldingSummary, LotResponse, LotSaleResponse, AnnualSnapshotResponse
     from app.services.xirr_service import calculate_xirr_for_scope
     from app.services.cashflow_engine import convert_currency
-    from app.services.portfolio import calculate_all_account_cash_balances
+    from app.services.portfolio import calculate_all_account_cash_balances, calculate_all_account_balances
+    from app.services.snapshot_engine import calculate_account_snapshots
     from app.api.deps import get_current_user, get_user_id
     from app.core.timing import time_block
 
@@ -515,28 +517,32 @@ async def get_annual_snapshot(
 
     year_label = f"FY {start_year}-{start_year+1}" if (fy_month, fy_day) != (1, 1) else f"CY {start_year}"
 
-    # Cashflow income & expense
+    # Cashflow income & expense (optimized single join, returning scalar items without ORM relationship queries)
     c_stmt = (
-        select(CashflowTransaction)
-        .options(selectinload(CashflowTransaction.items).selectinload(CashflowItem.category))
+        select(
+            CashflowItem.amount,
+            CashflowTransaction.currency,
+            Category.category_type
+        )
+        .join(CashflowTransaction, CashflowItem.cashflow_id == CashflowTransaction.cashflow_id)
+        .outerjoin(Category, CashflowItem.category_id == Category.category_id)
         .where(
             CashflowTransaction.user_id == u_id,
             CashflowTransaction.transaction_date >= start_date,
             CashflowTransaction.transaction_date <= end_date
         )
     )
-    c_txs = list((await db.execute(c_stmt)).scalars().all())
+    c_rows = (await db.execute(c_stmt)).all()
 
     total_income = 0.0
     total_expenses = 0.0
-    for ctx in c_txs:
-        for itm in ctx.items:
-            amt = convert_currency(float(itm.amount or 0.0), ctx.currency or "EUR", master_currency or "EUR")
-            cat_type = itm.category.category_type if itm.category else "EXPENSE"
-            if cat_type == "INCOME":
-                total_income += amt
-            elif cat_type != "TRANSFER":
-                total_expenses += amt
+    for itm_amount, ctx_currency, cat_type in c_rows:
+        amt = convert_currency(float(itm_amount or 0.0), ctx_currency or "EUR", master_currency or "EUR")
+        ctype = cat_type or "EXPENSE"
+        if ctype == "INCOME":
+            total_income += amt
+        elif ctype != "TRANSFER":
+            total_expenses += amt
 
     # 2. Fetch investment transactions in date range
     target_currency = master_currency or "EUR"
@@ -570,23 +576,48 @@ async def get_annual_snapshot(
         elif ttype == "dividend":
             total_income += amt
 
-    # 3. Net worth delta from snapshots (stored in EUR, converted to target_currency)
+    # 3. Net worth delta from snapshots (limit 1 instructs Oracle to use FETCH FIRST 1 ROWS ONLY)
     snap_start_stmt = (
         select(NetworthSnapshot.net_worth)
         .where(NetworthSnapshot.user_id == u_id, NetworthSnapshot.snapshot_date <= start_date)
         .order_by(desc(NetworthSnapshot.snapshot_date))
+        .limit(1)
     )
-    start_nw_eur = float((await db.execute(snap_start_stmt)).scalars().first() or 0.0)
+    start_nw_eur_row = (await db.execute(snap_start_stmt)).scalars().first()
 
     snap_end_stmt = (
         select(NetworthSnapshot.net_worth)
         .where(NetworthSnapshot.user_id == u_id, NetworthSnapshot.snapshot_date <= end_date)
         .order_by(desc(NetworthSnapshot.snapshot_date))
+        .limit(1)
     )
-    end_nw_eur = float((await db.execute(snap_end_stmt)).scalars().first() or 0.0)
+    end_nw_eur_row = (await db.execute(snap_end_stmt)).scalars().first()
 
-    start_nw = convert_currency(start_nw_eur, "EUR", target_currency)
-    end_nw = convert_currency(end_nw_eur, "EUR", target_currency)
+    if end_nw_eur_row is not None:
+        end_nw = convert_currency(float(end_nw_eur_row), "EUR", target_currency)
+    else:
+        # Dynamic fallback when no precomputed end-date snapshot exists yet
+        all_balances = await calculate_all_account_balances(db, user_id=u_id)
+        acc_stmt = select(Account).where(Account.user_id == u_id)
+        all_accs = (await db.execute(acc_stmt)).scalars().all()
+        end_nw = sum(
+            convert_currency(all_balances.get(a.account_id, 0.0), a.currency or "EUR", target_currency)
+            for a in all_accs
+        )
+
+    if start_nw_eur_row is not None:
+        start_nw = convert_currency(float(start_nw_eur_row), "EUR", target_currency)
+    else:
+        # Dynamic fallback when no precomputed start-date snapshot exists yet
+        acc_stmt = select(Account).where(Account.user_id == u_id)
+        all_accs = (await db.execute(acc_stmt)).scalars().all()
+        start_nw = 0.0
+        for acc in all_accs:
+            snaps = await calculate_account_snapshots(db, account_id=acc.account_id, end_date=start_date)
+            if snaps:
+                valid_snaps = [s for s in snaps if s["snapshot_date"] <= start_date]
+                if valid_snaps:
+                    start_nw += convert_currency(valid_snaps[-1]["net_worth"], acc.currency or "EUR", target_currency)
 
     net_worth_delta = round(end_nw - start_nw, 2)
     net_worth_delta_pct = round((net_worth_delta / start_nw * 100.0) if start_nw > 0 else 0.0, 2)

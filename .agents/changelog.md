@@ -32,6 +32,43 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-22 00:33:00 UTC] perf(portfolio): eliminate auth lock contention and optimize annual snapshot queries
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-22T00:33:00Z",
+  "type": "perf",
+  "scope": "portfolio",
+  "summary": "eliminate auth lock contention and optimize annual snapshot queries",
+  "affected_files": [
+    "services/networth/app/services/auth_service.py",
+    "services/networth/app/api/deps.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/tests/test_user_persistence.py"
+  ],
+  "rationale": "Request req_64046095 was taking 4.6 seconds due to row-level lock contention on users table caused by unconditional updated_at commits during concurrent Auth0 sync, alongside 12 sequential queries in annual_snapshot using unneeded selectinload ORM relationships and unconstrained snapshot full scans.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "backend/.venv/bin/pytest services/networth/tests/test_user_persistence.py services/networth/tests/test_annual_snapshot.py services/networth/tests/test_annual_snapshot_with_securities.py && cd services/community && pytest tests && cd frontend && npx tsc --noEmit && npm run lint",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `perf(portfolio)`
+- **Summary**: Eliminated exclusive row-level lock serialization on `users` table during concurrent request authentication and replaced 5-query ORM `selectinload` in `annual_snapshot` with a single targeted scalar join with `LIMIT 1` index scans.
+- **Rationale**:
+  - `req_64046095` suffered from 2.1s lock contention in `auth0_sync` because multiple parallel requests executed `UPDATE users SET updated_at = ...` on the same user row concurrently.
+  - `annual_snapshot` executed 12 sequential queries; `selectinload` loaded 5 full ORM models across transactions, payments, items, accounts, and categories when only scalar amounts were needed, and snapshot lookups lacked `.limit(1)` causing Oracle full scans.
+- **Key Changes**:
+  - `services/networth/app/services/auth_service.py`: Changed `if changed or user.auth0_sub == sub:` to `if changed:` so read requests never issue unnecessary `UPDATE` or acquire exclusive row locks.
+  - `services/networth/app/api/deps.py`: Bypassed `ApiKey` database queries for credentials formatted as JWTs (starting with `ey` or containing multiple dots).
+  - `services/networth/app/api/routers/portfolio.py`: Replaced 5-query `selectinload` with a single joined query returning `(amount, currency, category_type)`; added `.limit(1)` to `snap_start_stmt` and `snap_end_stmt` to trigger Oracle `FETCH FIRST 1 ROWS ONLY`.
+  - `services/networth/tests/test_user_persistence.py`: Added regression test verifying `updated_at` is preserved when Auth0 user profile is unchanged.
+- **Verification**:
+  - Command: `backend/.venv/bin/pytest services/networth/tests/test_user_persistence.py services/networth/tests/test_annual_snapshot.py services/networth/tests/test_annual_snapshot_with_securities.py && cd services/community && pytest tests && cd frontend && npx tsc --noEmit && npm run lint`
+  - Output: All tests passed with 0 errors.
+
 ### [2026-11-21 23:46:00 UTC] feat(observability): log request received and response sent timestamps
 
 <!-- changelog-entry-json

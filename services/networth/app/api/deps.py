@@ -101,20 +101,22 @@ async def get_current_user(
 
     # 1. Try matching candidates against database API keys
     for candidate in cleaned_candidates:
-        k_hash = hash_api_key(candidate)
-        stmt = select(ApiKey).where(ApiKey.key_hash == k_hash, ApiKey.is_active == True)
-        res = await db.execute(stmt)
-        api_key_obj = res.scalar_one_or_none()
-        if api_key_obj:
-            api_key_obj.last_used_at = datetime.datetime.utcnow()
-            await db.commit()
+        # Skip API key lookup if candidate format matches JWT (starts with ey or contains multiple dot separators)
+        if not candidate.startswith("ey") and candidate.count(".") < 2:
+            k_hash = hash_api_key(candidate)
+            stmt = select(ApiKey).where(ApiKey.key_hash == k_hash, ApiKey.is_active == True)
+            res = await db.execute(stmt)
+            api_key_obj = res.scalar_one_or_none()
+            if api_key_obj:
+                api_key_obj.last_used_at = datetime.datetime.utcnow()
+                await db.commit()
 
-            user_stmt = select(User).where(User.user_id == api_key_obj.user_id)
-            user_res = await db.execute(user_stmt)
-            user = user_res.scalar_one_or_none()
-            if user:
-                record_auth_time((time.perf_counter() - auth_start) * 1000.0, "api_key", user.user_id)
-                return user
+                user_stmt = select(User).where(User.user_id == api_key_obj.user_id)
+                user_res = await db.execute(user_stmt)
+                user = user_res.scalar_one_or_none()
+                if user:
+                    record_auth_time((time.perf_counter() - auth_start) * 1000.0, "api_key", user.user_id)
+                    return user
 
     # 2. Try validating candidates as Auth0 RS256 Bearer tokens
     for candidate in cleaned_candidates:

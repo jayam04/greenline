@@ -31,11 +31,11 @@ graph LR
 - Enumerate edge cases: zero values, negative balances, missing exchange rates, split payments, and database constraints.
 
 ### Step 2: Write Failing Test (Red Phase)
-- Create or update test files in `backend/tests/` or frontend test suites **before** writing application code.
+- Create or update backend test files in `services/networth/tests/` or frontend test suites **before** writing application code.
 - Refer to [Backend Testing Guide](./references/backend_testing_guide.md) for async DB fixture boilerplate.
 - Run the targeted test to confirm it fails on the missing capability or reproduces the bug:
   ```bash
-  PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests/test_your_feature.py -v
+  cd services/networth && .venv/bin/pytest tests/test_your_feature.py -v
   ```
 
 ### Step 3: Implement (Green Phase)
@@ -46,7 +46,7 @@ graph LR
 - Clean up duplicate code and optimize queries without changing behavior.
 - Execute full test suites, type checking, and linters to verify zero regressions:
   ```bash
-  PYTHONPATH=backend /home/jayampatel/swe/greenline/backend/.venv/bin/pytest backend/tests
+  cd services/networth && .venv/bin/pytest tests
   cd frontend && npx tsc --noEmit && npm run lint
   ```
 - Always present test execution output in the turn response.

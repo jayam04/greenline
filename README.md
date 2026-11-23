@@ -177,15 +177,15 @@ docker compose down
 
 ## 💻 Local Development Setup (Without Docker)
 
-### Backend Setup
+### Networth Service Setup
 ```bash
-cd backend
+cd services/networth
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run database migrations and start FastAPI server
-PYTHONPATH=. uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Frontend Setup
@@ -210,7 +210,7 @@ export ORACLE_DSN='(description=(address=(protocol=tcps)(host=...)(port=1521))(c
 
 `ORACLE_DSN` should be the TLS connect descriptor supplied by OCI. Keep credentials in a secret manager or environment, and URL encode special characters if credentials are embedded directly in `DATABASE_URL`. The driver uses Thin mode and does not require Oracle Client libraries.
 
-To initialize a new Oracle schema, run [`backend/app/db/schemas/seed.sql`](backend/app/db/schemas/seed.sql) once using SQLcl or SQL*Plus. The application’s startup migrations then maintain the schema automatically.
+The Networth service creates and updates its schema through startup migrations. No separate seed SQL file is required.
 
 ---
 
@@ -225,7 +225,8 @@ Backend automated tests run against a local Oracle Free (`FREEPDB1`) container:
 docker compose --profile localdockerdb up oracle -d
 
 # Execute backend test suite
-PYTHONPATH=services/networth pytest services/networth/tests
+cd services/networth
+pytest tests
 ```
 
 ### Frontend Unit & Component Tests (Vitest)
@@ -245,7 +246,7 @@ npx playwright test
 ### Linting & Type Checking
 ```bash
 # Backend linting with Ruff
-ruff check backend/app backend/tests
+ruff check services/networth/app services/networth/tests
 
 # Frontend TypeScript check and ESLint
 cd frontend
@@ -262,15 +263,9 @@ greenline/
 ├── .github/
 │   ├── data/                 # Visual showcase screenshots & assets
 │   └── workflows/            # GitHub Actions CI/CD workflows
-├── backend/
-│   ├── app/
-│   │   ├── api/              # REST routers (accounts, assets, portfolio, cashflow, categories)
-│   │   ├── db/               # SQLAlchemy models, sessions, migrations, and Oracle schema
-│   │   ├── schemas/          # Pydantic v2 request & response schemas
-│   │   └── services/         # Core financial engines (FIFO, XIRR, Snapshots, Cashflow)
-│   ├── tests/                # Automated pytest unit & integration tests
-│   ├── Dockerfile
-│   └── requirements.txt
+├── services/
+│   ├── networth/             # Networth FastAPI service, database migrations, and pytest suite
+│   └── community/            # Community FastAPI service
 ├── docs/                     # Static showcase website & documentation (GitHub Pages)
 │   ├── assets/screenshots/   # High-resolution retina screenshots
 │   ├── index.html            # Showcase landing page

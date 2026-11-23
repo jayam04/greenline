@@ -34,18 +34,18 @@ jobs:
       - name: Install Backend Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+          pip install -r services/networth/requirements.txt
           pip install pytest-cov ruff
 
       - name: Lint with Ruff
         run: |
-          ruff check backend/app backend/tests
+          ruff check services/networth/app services/networth/tests
 
       - name: Run Pytest Test Suite
         env:
-          PYTHONPATH: backend
+          PYTHONPATH: services/networth
         run: |
-          pytest backend/tests -v --cov=app --cov-report=xml --cov-report=term-missing
+          pytest services/networth/tests -v --cov=app --cov-report=xml --cov-report=term-missing
 
       - name: Upload Coverage to Artifacts
         if: matrix.python-version == '3.10'
@@ -121,7 +121,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
+          pip install -r services/networth/requirements.txt
           cd frontend
           npm ci
           npx playwright install --with-deps chromium
@@ -136,7 +136,7 @@ jobs:
           DATABASE_URL: oracle+oracledb://greenline_test:test_password@localhost:1521/?service_name=FREEPDB1
         run: |
           mkdir -p data
-          PYTHONPATH=backend python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          PYTHONPATH=services/networth python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
           timeout 30 bash -c 'until curl -s http://localhost:8000/docs > /dev/null; do sleep 1; done'
 
       - name: Start Frontend Server

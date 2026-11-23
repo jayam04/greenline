@@ -19,6 +19,13 @@ services:
       retries: 10
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: greenline-redis
+    ports:
+      - "6379:6379"
+    restart: always
+
   networth:
     build:
       context: ./services/networth
@@ -61,10 +68,14 @@ services:
       ENABLE_TIMING_LOGS: ${ENABLE_TIMING_LOGS:-true}
       LOG_SQL_QUERIES: ${LOG_SQL_QUERIES:-false}
       SLOW_QUERY_THRESHOLD_MS: ${SLOW_QUERY_THRESHOLD_MS:-50.0}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app
     depends_on:
       oracle:
         condition: service_healthy
+        required: false
+      redis:
+        condition: service_started
         required: false
     extra_hosts:
       - "host.docker.internal:host-gateway"

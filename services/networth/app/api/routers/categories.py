@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.db.models import Category, CashflowItem, CashflowTransaction, User
 from app.schemas.schemas import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryTreeResponse
 from app.services.cashflow_engine import build_category_lineage_map, convert_currency
+from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -177,6 +178,8 @@ async def create_category(
     db.add(category)
     await db.commit()
     await db.refresh(category)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_cashflow_cache(u_id)
 
     lineage_map = await build_category_lineage_map(db, user_id=u_id)
     meta = lineage_map[category.category_id]
@@ -239,6 +242,8 @@ async def update_category(
 
     await db.commit()
     await db.refresh(category)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_cashflow_cache(u_id)
 
     lineage_map = await build_category_lineage_map(db, user_id=u_id)
     meta = lineage_map[category.category_id]
@@ -284,3 +289,5 @@ async def delete_category(
 
     await db.delete(category)
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_cashflow_cache(u_id)

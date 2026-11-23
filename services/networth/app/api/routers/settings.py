@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.db.database import get_db
 from app.db.models import AppSetting, User
+from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -171,6 +172,7 @@ async def update_settings(
             current_pseudo = None
 
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(u_id)
 
     return AppSettingsSchema(
         link_brokerage_with_bank=payload.link_brokerage_with_bank,

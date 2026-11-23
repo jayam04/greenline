@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { formatCurrency } from "@/lib/format";
 import { 
   Edit, Trash2, RefreshCw, ShoppingBag, Briefcase, 
@@ -74,6 +74,11 @@ export const getTxStyles = (tx: UnifiedRowItem) => {
 interface TransactionLedgerProps {
   transactions: UnifiedRowItem[];
   loading?: boolean;
+  loadingMore?: boolean;
+  hasMore?: boolean;
+  error?: string | null;
+  onLoadMore?: () => void;
+  onRetry?: () => void;
   masterCurrency?: string;
   showRunningBalance?: boolean;
   selectedAccountIds?: number[];
@@ -113,6 +118,11 @@ function formatDateHeader(dateStr: string) {
 export function TransactionLedger({
   transactions,
   loading = false,
+  loadingMore = false,
+  hasMore = true,
+  error = null,
+  onLoadMore,
+  onRetry,
   masterCurrency = "EUR",
   showRunningBalance = false,
   selectedAccountIds = [],
@@ -122,6 +132,25 @@ export function TransactionLedger({
   onDeleteTrade
 }: TransactionLedgerProps) {
   const [selectedTxKey, setSelectedTxKey] = useState<string | null>(null);
+
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const hasMoreRef = useRef(hasMore);
+  const loadingMoreRef = useRef(loadingMore);
+  const onLoadMoreRef = useRef(onLoadMore);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    loadingMoreRef.current = loadingMore;
+  }, [loadingMore]);
+
+  useEffect(() => {
+    onLoadMoreRef.current = onLoadMore;
+  }, [onLoadMore]);
 
   const groupedTransactions = useMemo(() => groupTransactionsByDate(transactions), [transactions]);
 
@@ -133,22 +162,30 @@ export function TransactionLedger({
     }
   }, [transactions, selectedTxKey]);
 
-  if (loading) {
-    return (
-      <div className="py-12 text-center text-slate-400 font-semibold w-full">
-        <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
-        Loading ledger...
-      </div>
-    );
-  }
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
-  if (transactions.length === 0) {
-    return (
-      <div className="py-12 text-center text-slate-400 font-medium text-xs w-full">
-        No transactions recorded for this period.
-      </div>
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          if (hasMoreRef.current && !loadingMoreRef.current) {
+            onLoadMoreRef.current?.();
+          }
+        }
+      },
+      { root: scrollContainerRef.current }
     );
-  }
+
+    if (hasMore) {
+      observer.observe(sentinel);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore]);
 
   const selectedTx = transactions.find(t => t.key === selectedTxKey) || transactions[0];
 
@@ -156,10 +193,24 @@ export function TransactionLedger({
     <div className="flex flex-col md:flex-row border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 min-h-[500px]">
       
       {/* LEFT PANE: List (1/3 width) */}
-      <div className="w-full md:w-1/3 border-r border-border flex flex-col max-h-[700px] overflow-y-auto bg-surface-2/30">
+      <div ref={scrollContainerRef} className="w-full md:w-1/3 border-r border-border flex flex-col max-h-[700px] overflow-y-auto bg-surface-2/30">
         <table role="table" className="w-full border-collapse">
           <tbody className="divide-y divide-border">
-            {transactions.map((tx, idx) => {
+            {loading && transactions.length === 0 ? (
+              <tr>
+                <td className="py-12 text-center text-slate-400 font-semibold w-full">
+                  <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-slate-400" />
+                  Loading ledger...
+                </td>
+              </tr>
+            ) : transactions.length === 0 ? (
+              <tr>
+                <td className="py-12 text-center text-slate-400 font-medium text-xs w-full">
+                  No transactions recorded for this period.
+                </td>
+              </tr>
+            ) : (
+              transactions.map((tx, idx) => {
               const isSelected = selectedTxKey === tx.key;
               const { amountColor, iconColor, Icon } = getTxStyles(tx);
               const prevDate = idx > 0 ? transactions[idx - 1].date : null;
@@ -223,9 +274,35 @@ export function TransactionLedger({
                   </td>
                 </tr>
               );
-            })}
+            }))}
           </tbody>
         </table>
+
+        {/* Sentinel element following table */}
+        <div
+          ref={sentinelRef}
+          data-testid="cashflow-sentinel"
+          className="py-2 flex flex-col items-center justify-center min-h-[30px]"
+        >
+          {loadingMore && (
+            <div role="status" className="flex items-center gap-2 py-2 text-xs text-muted">
+              <RefreshCw className="size-4 animate-spin text-primary" />
+              <span>Loading more...</span>
+            </div>
+          )}
+          {error && (
+            <div className="flex flex-col items-center gap-1 py-2">
+              <span className="text-xs text-loss">{error}</span>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="px-2 py-1 text-xs rounded border border-border bg-surface-2 hover:bg-surface-3 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* RIGHT PANE: Detail (2/3 width) */}

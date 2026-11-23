@@ -21,6 +21,7 @@ from app.services.backup_service import (
     create_backup, restore_from_backup, restore_from_json_data, 
     delete_backup, validate_and_resolve_backup_path
 )
+from app.services import cache_service
 from app.scheduler import reschedule_autobackup_job
 
 router = APIRouter(prefix="/backup", tags=["backup"])
@@ -115,6 +116,7 @@ async def restore_database_from_file(
     _require_admin_user(current_user)
     try:
         res = await restore_from_backup(filename, db)
+        await cache_service.invalidate_pattern("gl:*")
         return res
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -307,6 +309,7 @@ async def import_portfolio_data(
 
     try:
         res = await restore_from_json_data(data, db)
+        await cache_service.invalidate_pattern("gl:*")
         return res
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

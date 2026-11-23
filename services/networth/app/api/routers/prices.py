@@ -7,6 +7,7 @@ from app.db.models import PriceHistory, Asset, User, Transaction
 from app.schemas.schemas import PriceHistoryCreate, PriceHistoryResponse, CustomPriceResponse
 from app.services.price_engine import update_prices_for_assets, cleanup_orphan_transaction_prices
 from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
+from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/prices", tags=["prices"])
@@ -95,6 +96,7 @@ async def add_manual_price(
     
     # Re-trigger snapshot calculation
     await generate_daily_snapshot(db, price_in.price_date, user_id=u_id)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
     return ph
 
 @router.delete("/{price_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -116,6 +118,7 @@ async def delete_price(
 
     # Re-trigger daily snapshot from that date
     await generate_daily_snapshot(db, p_date, user_id=u_id)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
 
 @router.post("/refresh", status_code=status.HTTP_200_OK)
 async def trigger_price_refresh(
@@ -146,4 +149,5 @@ async def trigger_price_refresh(
     else:
         await generate_daily_snapshot(db, user_id=u_id)
 
+    await cache_service.invalidate_user_snapshot_cache(u_id)
     return {"message": f"Price update completed. {count} new price records added."}

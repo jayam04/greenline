@@ -1,6 +1,26 @@
 import '@testing-library/jest-dom';
 import React from 'react';
 import { vi } from 'vitest';
+import { MockIntersectionObserver } from './mockIntersectionObserver';
+
+// Mock IntersectionObserver globally for tests
+if (typeof window !== 'undefined') {
+  (window as any).IntersectionObserver = MockIntersectionObserver;
+}
+if (typeof global !== 'undefined') {
+  (global as any).IntersectionObserver = MockIntersectionObserver;
+}
+
+// Mock ResizeObserver if not provided by jsdom
+if (typeof window !== 'undefined' && typeof (window as any).ResizeObserver === 'undefined') {
+  class MockResizeObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  (window as any).ResizeObserver = MockResizeObserver;
+  (global as any).ResizeObserver = MockResizeObserver;
+}
 
 // Mock matchMedia for jsdom
 Object.defineProperty(window, 'matchMedia', {
@@ -25,8 +45,8 @@ vi.mock('next/navigation', () => ({
     prefetch: vi.fn(),
     back: vi.fn(),
   }),
-  useSearchParams: () => new URLSearchParams(),
-  usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''),
+  usePathname: () => (typeof window !== 'undefined' ? window.location.pathname : '/'),
 }));
 
 // Mock Next.js fonts

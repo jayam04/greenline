@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { apiFetch } from "@/lib/api";
 import { formatQty, formatNum, formatMoney } from "@/lib/format";
+import { parsePaginatedResponse, syncUrlPage } from "@/lib/pagination";
 import { TransactionModal, TransactionItem } from "@/components/TransactionModal";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -36,27 +37,112 @@ interface Transaction {
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const [editingTransaction, setEditingTransaction] = useState<TransactionItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
 
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const inFlightRef = useRef(false);
+  const queryVersionRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const currentPageRef = useRef(1);
+  const filterTypeRef = useRef("all");
+
+  const fetchChunk = async (targetPage: number, isInitial = false, currentFilter = filterTypeRef.current) => {
+    if (inFlightRef.current && !isInitial) return;
+    inFlightRef.current = true;
+    const currentVersion = ++queryVersionRef.current;
+
+    if (isInitial) {
+      setLoading(true);
+      setError(null);
+    } else {
+      setIsLoadingMore(true);
+      setError(null);
+    }
+
+    try {
+      let endpoint = `/transactions?page=${targetPage}&page_size=20`;
+      if (currentFilter && currentFilter !== "all") {
+        endpoint += `&type=${encodeURIComponent(currentFilter)}`;
+      }
+
+      const res = await apiFetch<any>(endpoint);
+      if (currentVersion !== queryVersionRef.current) return;
+
+      const parsed = parsePaginatedResponse<Transaction>(res, targetPage, 20);
+      currentPageRef.current = targetPage;
+      setCurrentPage(targetPage);
+      hasMoreRef.current = parsed.hasMore;
+      setHasMore(parsed.hasMore);
+
+      setTransactions((prev) => {
+        if (isInitial) return parsed.items;
+        const existingIds = new Set(prev.map((t) => t.transaction_id));
+        const unique = parsed.items.filter((t) => !existingIds.has(t.transaction_id));
+        return [...prev, ...unique];
+      });
+
+      syncUrlPage(targetPage);
+    } catch (err: any) {
+      if (currentVersion !== queryVersionRef.current) return;
+      console.error("Failed to fetch trades chunk:", err);
+      setError(err.message || "Failed to load trades");
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
+      setIsLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
     document.title = "Trades · greenline";
-    loadTransactions();
+    const searchParams = new URLSearchParams(window.location.search);
+    const pageParam = parseInt(searchParams.get("page") || "1", 10);
+    const initialPage = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
+    currentPageRef.current = initialPage;
+    setCurrentPage(initialPage);
+    fetchChunk(initialPage, true, filterTypeRef.current);
   }, []);
 
-  const loadTransactions = async () => {
-    try {
-      setLoading(true);
-      const data = await apiFetch<Transaction[]>("/transactions?limit=500");
-      setTransactions(data || []);
-    } catch (e) {
-      console.error("Failed to load transactions:", e);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      const first = entries[0];
+      if (first && first.isIntersecting) {
+        if (hasMoreRef.current && !inFlightRef.current) {
+          fetchChunk(currentPageRef.current + 1, false, filterTypeRef.current);
+        }
+      }
+    });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleFilterChange = (newFilter: string) => {
+    setFilterType(newFilter);
+    filterTypeRef.current = newFilter;
+    currentPageRef.current = 1;
+    setCurrentPage(1);
+    syncUrlPage(1);
+    fetchChunk(1, true, newFilter);
+  };
+
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    currentPageRef.current = 1;
+    setCurrentPage(1);
+    syncUrlPage(1);
+    fetchChunk(1, true, filterTypeRef.current);
   };
 
   const handleEdit = (tx: Transaction) => {
@@ -70,7 +156,7 @@ export default function TransactionsPage() {
     }
     try {
       await apiFetch(`/transactions/${transactionId}`, { method: "DELETE" });
-      loadTransactions();
+      fetchChunk(1, true, filterTypeRef.current);
     } catch (e: any) {
       alert(e.message || "Failed to delete transaction");
     }
@@ -123,11 +209,12 @@ export default function TransactionsPage() {
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={loadTransactions}
+              onClick={() => fetchChunk(1, true, filterTypeRef.current)}
               className="p-2 text-muted hover:text-foreground hover:bg-surface-2 rounded-control transition-colors"
-              title="Reload Transactions"
+              title="Refresh transactions"
+              aria-label="Refresh transactions"
             >
-              <RefreshCw className={cn("size-4", loading && "animate-spin text-primary")} />
+              <RefreshCw className={cn("size-4", (loading || isLoadingMore) && "animate-spin text-primary")} />
             </button>
             <Button
               size="sm"
@@ -153,13 +240,13 @@ export default function TransactionsPage() {
                 type="text"
                 placeholder="Search asset, symbol, account or notes"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full bg-surface-2 text-foreground placeholder:text-muted text-label rounded-control pl-8.5 pr-4 py-2 border border-border focus:border-border-strong focus:outline-none transition-all"
               />
             </div>
             <select
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
+              onChange={(e) => handleFilterChange(e.target.value)}
               className="w-44 bg-surface-2 text-foreground text-label font-medium rounded-control px-3 py-2 border border-border focus:border-border-strong focus:outline-none cursor-pointer"
             >
               <option value="all">All types</option>
@@ -268,6 +355,39 @@ export default function TransactionsPage() {
               {loading ? "Loading trades..." : "No trades found matching your search."}
             </div>
           )}
+
+          {/* Sentinel element observed by IntersectionObserver */}
+          <div
+            ref={sentinelRef}
+            data-testid="trades-sentinel"
+            className="py-4 flex flex-col items-center justify-center min-h-[40px]"
+          >
+            {isLoadingMore && (
+              <div role="status" className="flex items-center gap-2 text-label text-muted">
+                <RefreshCw className="size-4 animate-spin text-primary" />
+                <span>Loading trades...</span>
+              </div>
+            )}
+            {error && (
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-label text-loss">{error}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const isInitialRetry = transactions.length === 0;
+                    fetchChunk(
+                      isInitialRetry ? currentPageRef.current : currentPageRef.current + 1,
+                      isInitialRetry,
+                      filterTypeRef.current
+                    );
+                  }}
+                  className="px-3 py-1 text-label rounded-control border border-border bg-surface-2 hover:bg-surface-3 transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -283,7 +403,7 @@ export default function TransactionsPage() {
           onSuccess={() => {
             setIsModalOpen(false);
             setEditingTransaction(null);
-            loadTransactions();
+            fetchChunk(1, true, filterTypeRef.current);
           }}
         />
       )}

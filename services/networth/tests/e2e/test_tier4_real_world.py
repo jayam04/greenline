@@ -165,38 +165,38 @@ def test_real_world_frontend_cleanliness_audit():
 def test_real_world_backend_cleanliness_audit():
     """Verify complete absence of backend AI Import router, pipelines, and dead imports."""
     # 1. Router module deleted
-    import_router_file = PROJECT_ROOT / "backend" / "app" / "api" / "routers" / "import_router.py"
-    assert not import_router_file.exists(), "backend/app/api/routers/import_router.py must be deleted"
+    import_router_file = PROJECT_ROOT / "services" / "networth" / "app" / "api" / "routers" / "import_router.py"
+    assert not import_router_file.exists(), "Networth import router must be deleted"
 
     # 2. Schema module deleted
-    import_schemas_file = PROJECT_ROOT / "backend" / "app" / "schemas" / "import_schemas.py"
-    assert not import_schemas_file.exists(), "backend/app/schemas/import_schemas.py must be deleted"
+    import_schemas_file = PROJECT_ROOT / "services" / "networth" / "app" / "schemas" / "import_schemas.py"
+    assert not import_schemas_file.exists(), "Networth import schemas must be deleted"
 
     # 3. Services AI directory deleted
-    ai_dir = PROJECT_ROOT / "backend" / "app" / "services" / "ai"
-    assert not ai_dir.exists(), "backend/app/services/ai directory must be deleted"
+    ai_dir = PROJECT_ROOT / "services" / "networth" / "app" / "services" / "ai"
+    assert not ai_dir.exists(), "Networth AI service directory must be deleted"
 
     # 4. Obsolete backend test files deleted
-    test_import_and_mcp = PROJECT_ROOT / "backend" / "tests" / "test_import_router_and_mcp.py"
-    assert not test_import_and_mcp.exists(), "backend/tests/test_import_router_and_mcp.py must be deleted"
+    test_import_and_mcp = PROJECT_ROOT / "services" / "networth" / "tests" / "test_import_router_and_mcp.py"
+    assert not test_import_and_mcp.exists(), "Networth import router test must be deleted"
 
-    test_ai_staging = PROJECT_ROOT / "backend" / "tests" / "test_ai_staging_and_matcher.py"
-    assert not test_ai_staging.exists(), "backend/tests/test_ai_staging_and_matcher.py must be deleted"
+    test_ai_staging = PROJECT_ROOT / "services" / "networth" / "tests" / "test_ai_staging_and_matcher.py"
+    assert not test_ai_staging.exists(), "Networth AI staging test must be deleted"
 
     # 5. main.py has no import_router
-    main_file = PROJECT_ROOT / "backend" / "app" / "main.py"
+    main_file = PROJECT_ROOT / "services" / "networth" / "app" / "main.py"
     main_text = main_file.read_text(encoding="utf-8")
-    assert "import_router" not in main_text, "backend/app/main.py must not reference import_router"
+    assert "import_router" not in main_text, "Networth main.py must not reference import_router"
 
     # 6. server.py has no app.services.ai or staging models
-    server_file = PROJECT_ROOT / "backend" / "app" / "mcp" / "server.py"
+    server_file = PROJECT_ROOT / "services" / "networth" / "app" / "mcp" / "server.py"
     server_text = server_file.read_text(encoding="utf-8")
-    assert "app.services.ai" not in server_text, "backend/app/mcp/server.py must not import app.services.ai"
-    assert "ImportBatch" not in server_text, "backend/app/mcp/server.py must not reference ImportBatch"
-    assert "StagedRecord" not in server_text, "backend/app/mcp/server.py must not reference StagedRecord"
+    assert "app.services.ai" not in server_text, "Networth MCP server must not import app.services.ai"
+    assert "ImportBatch" not in server_text, "Networth MCP server must not reference ImportBatch"
+    assert "StagedRecord" not in server_text, "Networth MCP server must not reference StagedRecord"
 
     # 7. requirements.txt does not contain pypdf or openpyxl
-    reqs_file = PROJECT_ROOT / "backend" / "requirements.txt"
+    reqs_file = PROJECT_ROOT / "services" / "networth" / "requirements.txt"
     reqs_text = reqs_file.read_text(encoding="utf-8")
-    assert "pypdf" not in reqs_text, "backend/requirements.txt must not contain pypdf"
-    assert "openpyxl" not in reqs_text, "backend/requirements.txt must not contain openpyxl"
+    assert "pypdf" not in reqs_text, "services/networth/requirements.txt must not contain pypdf"
+    assert "openpyxl" not in reqs_text, "services/networth/requirements.txt must not contain openpyxl"

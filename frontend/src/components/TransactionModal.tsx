@@ -368,6 +368,8 @@ export function TransactionModal({ isOpen, onClose, onSuccess, initialData }: Tr
 
   return (
     <div 
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 font-sans"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

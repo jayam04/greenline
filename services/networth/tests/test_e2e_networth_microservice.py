@@ -56,13 +56,7 @@ try:
     from services.networth.app.services.snapshot_engine import recalculate_past_snapshots, generate_daily_snapshot
 except ImportError:
     from app.services.snapshot_engine import recalculate_past_snapshots, generate_daily_snapshot
-try:
-    from backend_conftest import get_test_engine, get_test_sessionmaker, clean_database_tables
-except ImportError:
-    try:
-        from conftest import get_test_engine, get_test_sessionmaker, clean_database_tables
-    except ImportError:
-        from tests.conftest import get_test_engine, get_test_sessionmaker, clean_database_tables
+from conftest import get_test_engine, get_test_sessionmaker, clean_database_tables
 
 # Ensure create_async_engine strips pool_size/max_overflow if NullPool is active
 try:
@@ -215,16 +209,8 @@ def mock_auth0_jwks():
 # ==============================================================================
 
 def get_target_app():
-    """
-    Resolves the FastAPI application target:
-    1. Dedicated Networth microservice app in `services/networth/app/main.py` if present.
-    2. Fallback to `backend/app/main.py` for progressive testability.
-    """
-    try:
-        from services.networth.app.main import app as networth_app
-        return networth_app
-    except ImportError:
-        return core_app
+    """Return the Networth service application under test."""
+    return core_app
 
 
 @pytest.fixture

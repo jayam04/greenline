@@ -11,6 +11,7 @@ from app.api.deps import get_current_user, get_user_id
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import generate_daily_snapshot
 from app.services.cashflow_engine import compute_transaction_cash_movement
+from app.services import cache_service
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -182,6 +183,7 @@ async def create_account(
     db.add(account)
     await db.commit()
     await db.refresh(account)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
     resp = AccountResponse.model_validate(account)
     resp.current_balance = 0.0
     resp.cash_balance = 0.0
@@ -244,6 +246,7 @@ async def update_account(
 
     await db.commit()
     await db.refresh(account)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
     details = await calculate_all_account_details(db, accounts=[account], user_id=u_id)
     d = details.get(account.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
     resp = AccountResponse.model_validate(account)
@@ -277,3 +280,4 @@ async def delete_account(
     await db.commit()
     await recalculate_all_lots(db, user_id=u_id)
     await generate_daily_snapshot(db, user_id=u_id)
+    await cache_service.invalidate_user_snapshot_cache(u_id)

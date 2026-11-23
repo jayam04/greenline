@@ -23,6 +23,7 @@ from app.services.fifo_engine import recalculate_all_lots
 from app.services.snapshot_engine import recalculate_past_snapshots, generate_daily_snapshot
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.api.routers.transactions import _ensure_price_history_for_tx, cleanup_orphan_transaction_prices
+from app.services import cache_service
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
@@ -424,6 +425,8 @@ async def mutate_mcp_cashflow(
             results.append(_build_statement(reloaded, lineage_map))
 
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(current_user.user_id)
+    await cache_service.invalidate_user_cashflow_cache(current_user.user_id)
     return MCPCashflowMutateResponse(
         results=results,
         message=f"Successfully processed {len(operations)} operation(s)."
@@ -833,6 +836,8 @@ async def mutate_mcp_stocks(
     # Recalculate derived state
     await recalculate_all_lots(db)
     await generate_daily_snapshot(db, datetime.date.today())
+    await cache_service.invalidate_user_snapshot_cache(current_user.user_id)
+    await cache_service.invalidate_user_transaction_cache(current_user.user_id)
 
     return MCPStockMutateResponse(
         results=results,

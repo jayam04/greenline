@@ -2,7 +2,7 @@
 
 ## Standard Session Fixture (Oracle Free)
 
-Use standard fixtures provided by `backend/tests/conftest.py`:
+Use standard fixtures provided by `services/networth/tests/conftest.py`:
 
 ```python
 import pytest

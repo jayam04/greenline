@@ -15,6 +15,7 @@ try:
     from ...services.cashflow_engine import convert_currency
     from ...services.portfolio import calculate_all_account_cash_balances, calculate_all_account_balances
     from ...services.snapshot_engine import calculate_account_snapshots
+    from ...services import cache_service
     from ..deps import get_current_user, get_user_id
 except (ImportError, ValueError):
     from app.db.database import get_db
@@ -24,6 +25,7 @@ except (ImportError, ValueError):
     from app.services.cashflow_engine import convert_currency
     from app.services.portfolio import calculate_all_account_cash_balances, calculate_all_account_balances
     from app.services.snapshot_engine import calculate_account_snapshots
+    from app.services import cache_service
     from app.api.deps import get_current_user, get_user_id
     from app.core.timing import time_block
 
@@ -80,6 +82,14 @@ async def get_portfolio_summary(
     u_id = get_user_id(current_user)
     if not isinstance(account_id, int):
         account_id = None
+
+    redis_cache_key = cache_service.get_portfolio_summary_key(u_id, account_id)
+    try:
+        cached = await cache_service.get_cache(redis_cache_key)
+        if cached is not None:
+            return PortfolioSummaryResponse.model_validate_json(cached)
+    except Exception:
+        pass
 
     cache_key = (u_id, account_id)
     if cache_key in portfolio_summary_cache:
@@ -463,6 +473,10 @@ async def get_portfolio_summary(
         closed_holdings=closed_holdings_list
     )
     portfolio_summary_cache[cache_key] = resp
+    try:
+        await cache_service.set_cache(redis_cache_key, resp.model_dump_json(), ttl_seconds=300)
+    except Exception:
+        pass
     return resp
 
 
@@ -498,6 +512,18 @@ async def get_annual_snapshot(
     """Computes annual financial performance and net worth delta."""
     u_id = get_user_id(current_user)
     today = datetime.date.today()
+
+    redis_cache_key = cache_service.get_annual_snapshot_key(
+        u_id,
+        fiscal_year_start=fiscal_year_start,
+        master_currency=master_currency
+    )
+    try:
+        cached = await cache_service.get_cache(redis_cache_key)
+        if cached is not None:
+            return AnnualSnapshotResponse.model_validate_json(cached)
+    except Exception:
+        pass
 
     try:
         parts = (fiscal_year_start or "01-01").split("-")
@@ -622,7 +648,7 @@ async def get_annual_snapshot(
     net_worth_delta = round(end_nw - start_nw, 2)
     net_worth_delta_pct = round((net_worth_delta / start_nw * 100.0) if start_nw > 0 else 0.0, 2)
 
-    return AnnualSnapshotResponse(
+    resp = AnnualSnapshotResponse(
         year_label=year_label,
         start_date=start_date,
         end_date=end_date,
@@ -636,6 +662,11 @@ async def get_annual_snapshot(
         net_savings=round(total_income - total_expenses, 2),
         currency=target_currency
     )
+    try:
+        await cache_service.set_cache(redis_cache_key, resp.model_dump_json(), ttl_seconds=300)
+    except Exception:
+        pass
+    return resp
 
 
 @router.get("/realized-pnl", response_model=List[LotSaleResponse])

@@ -26,7 +26,7 @@ When performing ANY task that involves creating, modifying, fixing, or refactori
 
 4. **Refactor & Verify**:
    - Clean up code structure and verify zero regressions by running full test suites and type checks:
-     - **Backend**: `PYTHONPATH=services/networth /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/networth/tests` (or `backend/tests`)
+     - **Networth service**: `cd services/networth && .venv/bin/pytest tests`
      - **Frontend**: `cd frontend && npx tsc --noEmit && npm run lint`
    - A task is never complete without displaying clean test execution output.
 

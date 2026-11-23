@@ -350,6 +350,16 @@ def reset_dependency_overrides():
     yield
     app.dependency_overrides.clear()
 
+@pytest.fixture(autouse=True)
+def mock_redis_cache():
+    """Autouse fixture providing in-memory fake redis for 100% offline testing."""
+    import fakeredis.aioredis
+    from app.services import cache_service
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    cache_service.set_redis_client(fake)
+    yield fake
+    cache_service.set_redis_client(None)
+
 @pytest.fixture
 async def auth0_client_unauthenticated(test_db_session) -> AsyncGenerator[AsyncClient, None]:
     """Async HTTP client without Authorization header, verifying authentic unauthenticated behavior."""

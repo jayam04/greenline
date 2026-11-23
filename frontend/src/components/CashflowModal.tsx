@@ -388,6 +388,8 @@ export function CashflowModal({ isOpen, onClose, onSuccess, initialData }: Cashf
 
   return (
     <div 
+      role="dialog"
+      aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto font-sans"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     ENV: str = os.getenv("ENV", "dev").lower()
     DB_TARGET: str = os.getenv("DB_TARGET", "localdockerdb").lower()
 
+    # Redis Cache Configuration
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
     # Database connection URL
     DATABASE_URL: str = ""
 

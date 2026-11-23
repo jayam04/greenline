@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { apiFetch } from "@/lib/api";
+import { parsePaginatedResponse, syncUrlPage } from "@/lib/pagination";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { 
@@ -34,6 +35,10 @@ export default function CashflowTransactionsPage() {
   const [tradeTxs, setTradeTxs] = useState<TransactionItem[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -49,34 +54,129 @@ export default function CashflowTransactionsPage() {
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [editingTradeTx, setEditingTradeTx] = useState<TransactionItem | null>(null);
 
-  useEffect(() => {
-    document.title = "Cashflow Transactions · greenline";
-    loadData();
-  }, []);
+  const inFlightRef = useRef(false);
+  const queryVersionRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const currentPageRef = useRef(1);
+  const selectedAccountIdRef = useRef<string>("ALL");
 
-  const loadData = async () => {
-    try {
+  const fetchChunk = async (
+    targetPage: number,
+    isReset = false,
+    accountIdFilter = selectedAccountIdRef.current
+  ) => {
+    if (inFlightRef.current && !isReset) return;
+    inFlightRef.current = true;
+    const currentVersion = isReset ? ++queryVersionRef.current : queryVersionRef.current;
+
+    if (isReset) {
       setLoading(true);
-      const [cfRes, tradeRes, accRes] = await Promise.all([
-        apiFetch<CashflowTransactionItem[]>("/cashflow"),
-        apiFetch<TransactionItem[]>("/transactions"),
-        apiFetch<Account[]>("/accounts"),
+      setError(null);
+    } else {
+      setLoadingMore(true);
+      setError(null);
+    }
+
+    try {
+      let cfUrl = "/cashflow";
+      let trUrl = "/transactions";
+      const queryParts: string[] = [];
+
+      if (targetPage > 1) {
+        queryParts.push(`page=${targetPage}`, "page_size=20");
+      } else if (accountIdFilter && accountIdFilter !== "ALL") {
+        queryParts.push("page=1", "page_size=20");
+      }
+
+      if (accountIdFilter && accountIdFilter !== "ALL") {
+        queryParts.push(`account_id=${encodeURIComponent(accountIdFilter)}`);
+      }
+
+      if (queryParts.length > 0) {
+        const q = queryParts.join("&");
+        cfUrl += `?${q}`;
+        trUrl += `?${q}`;
+      }
+
+      let [cfRes, trRes] = await Promise.all([
+        apiFetch<any>(cfUrl),
+        apiFetch<any>(trUrl),
       ]);
-      setCashflowTxs(cfRes || []);
-      setTradeTxs(tradeRes || []);
-      setAccounts(accRes || []);
-    } catch (err) {
-      console.error("Failed to load cashflow transactions:", err);
+
+      const isEmptyEnvelope = (res: any) => {
+        if (!res) return true;
+        if (Array.isArray(res)) return false;
+        if (typeof res === "object") {
+          if ("items" in res || "data" in res || "total" in res || "transactions" in res) return false;
+          return Object.keys(res).length === 0;
+        }
+        return true;
+      };
+
+      if (isEmptyEnvelope(cfRes) && cfUrl !== "/cashflow") {
+        cfRes = await apiFetch<any>("/cashflow");
+      }
+      if (isEmptyEnvelope(trRes) && trUrl !== "/transactions") {
+        trRes = await apiFetch<any>("/transactions");
+      }
+
+      if (currentVersion !== queryVersionRef.current) return;
+
+      const cfParsed = parsePaginatedResponse<CashflowTransactionItem>(cfRes, targetPage, 20);
+      const trParsed = parsePaginatedResponse<TransactionItem>(trRes, targetPage, 20);
+
+      const nextHasMore = cfParsed.hasMore;
+      currentPageRef.current = targetPage;
+      setCurrentPage(targetPage);
+      hasMoreRef.current = nextHasMore;
+      setHasMore(nextHasMore);
+
+      setCashflowTxs((prev) => {
+        if (isReset) return cfParsed.items;
+        const existingIds = new Set(prev.map((c) => c.cashflow_id));
+        const unique = cfParsed.items.filter((c) => !existingIds.has(c.cashflow_id));
+        return [...prev, ...unique];
+      });
+
+      setTradeTxs((prev) => {
+        if (isReset) return trParsed.items;
+        const existingIds = new Set(prev.map((t) => t.transaction_id));
+        const unique = trParsed.items.filter((t) => !existingIds.has(t.transaction_id));
+        return [...prev, ...unique];
+      });
+
+      syncUrlPage(targetPage);
+    } catch (err: any) {
+      if (currentVersion !== queryVersionRef.current) return;
+      console.error("Failed to load cashflow transactions chunk:", err);
+      setError(err.message || "Failed to load transactions");
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+
+  useEffect(() => {
+    document.title = "Cashflow Transactions · greenline";
+
+    apiFetch<Account[]>("/accounts")
+      .then((accRes) => setAccounts(accRes || []))
+      .catch((e) => console.error("Failed to load accounts:", e));
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const pageParam = parseInt(searchParams.get("page") || "1", 10);
+    const initialPage = Number.isInteger(pageParam) && pageParam >= 1 ? pageParam : 1;
+    currentPageRef.current = initialPage;
+    setCurrentPage(initialPage);
+    fetchChunk(initialPage, true, selectedAccountIdRef.current);
+  }, []);
 
   const handleDeleteCashflow = async (id: number) => {
     if (!confirm("Are you sure you want to delete this transaction?")) return;
     try {
       await apiFetch(`/cashflow/${id}`, { method: "DELETE" });
-      loadData();
+      fetchChunk(1, true, selectedAccountIdRef.current);
     } catch (err: any) {
       alert(err.message || "Failed to delete transaction");
     }
@@ -86,7 +186,7 @@ export default function CashflowTransactionsPage() {
     if (!confirm("Are you sure you want to delete this trade transaction?")) return;
     try {
       await apiFetch(`/transactions/${id}`, { method: "DELETE" });
-      loadData();
+      fetchChunk(1, true, selectedAccountIdRef.current);
     } catch (err: any) {
       alert(err.message || "Failed to delete transaction");
     }
@@ -320,7 +420,8 @@ export default function CashflowTransactionsPage() {
       // Update running balance for each affected account
       const paymentsWithBal = r.payments.map((p) => {
         if (p.amount !== 0) {
-          currentRunningBalances[p.account_id] = (currentRunningBalances[p.account_id] || 0) + p.amount;
+          const nextBal = (currentRunningBalances[p.account_id] || 0) + p.amount;
+          currentRunningBalances[p.account_id] = Math.round(nextBal * 100) / 100;
         }
         return {
           ...p,
@@ -496,11 +597,16 @@ export default function CashflowTransactionsPage() {
               onChange={(e) => {
                 const val = e.target.value;
                 setSelectedAccountId(val);
+                selectedAccountIdRef.current = val;
                 if (val === "ALL") {
                   setSelectedAccountIds([]);
                 } else {
                   setSelectedAccountIds([Number(val)]);
                 }
+                currentPageRef.current = 1;
+                setCurrentPage(1);
+                syncUrlPage(1);
+                fetchChunk(1, true, val);
               }}
               className="h-9 rounded-control border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:border-border-strong focus:outline-none cursor-pointer"
             >
@@ -532,6 +638,22 @@ export default function CashflowTransactionsPage() {
         <TransactionLedger
           transactions={filteredRows}
           loading={loading}
+          loadingMore={loadingMore}
+          hasMore={hasMore}
+          error={error}
+          onLoadMore={() => {
+            if (hasMoreRef.current && !inFlightRef.current) {
+              fetchChunk(currentPageRef.current + 1, false, selectedAccountIdRef.current);
+            }
+          }}
+          onRetry={() => {
+            const isInitialRetry = cashflowTxs.length === 0 && tradeTxs.length === 0;
+            fetchChunk(
+              isInitialRetry ? currentPageRef.current : currentPageRef.current + 1,
+              isInitialRetry,
+              selectedAccountIdRef.current
+            );
+          }}
           showRunningBalance={true}
           selectedAccountIds={selectedAccountIds}
           onEditCashflow={(tx) => {
@@ -554,7 +676,7 @@ export default function CashflowTransactionsPage() {
           setIsCashflowModalOpen(false);
           setEditingCashflowTx(null);
         }}
-        onSuccess={() => loadData()}
+        onSuccess={() => fetchChunk(1, true, selectedAccountIdRef.current)}
         initialData={editingCashflowTx}
       />
 
@@ -565,7 +687,7 @@ export default function CashflowTransactionsPage() {
           setIsTradeModalOpen(false);
           setEditingTradeTx(null);
         }}
-        onSuccess={() => loadData()}
+        onSuccess={() => fetchChunk(1, true, selectedAccountIdRef.current)}
         initialData={editingTradeTx}
       />
 

@@ -16,6 +16,7 @@ from app.schemas.schemas import (
 from app.api.deps import get_current_user, get_user_id
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.dividend_engine import sync_all_dividends
+from app.services import cache_service
 
 router = APIRouter(prefix="/discrepancies", tags=["discrepancies"])
 
@@ -429,6 +430,8 @@ async def resolve_discrepancies(
 
     await db.commit()
     await recalculate_all_lots(db, user_id=u_id)
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_transaction_cache(u_id)
 
     return {"status": "success", "resolved_count": len(payload.resolutions)}
 
@@ -471,6 +474,8 @@ async def unlink_expected_dividends(
             exp.matched_transaction_id = None
             exp.status = "UNMATCHED"
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_transaction_cache(u_id)
     return {"status": "success", "unlinked_count": len(payload.expected_dividend_ids)}
 
 @router.post("/sync-dividends", status_code=status.HTTP_200_OK)

@@ -1,17 +1,20 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 import asyncio
 import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+import json
+import math
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.orm import aliased
 from app.db.database import get_db
 from app.db.models import Transaction, Account, Asset, User, PriceHistory
-from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse
+from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse, PaginatedTransactionResponse
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.services.price_engine import cleanup_orphan_transaction_prices
 from app.services.background_worker import background_worker
+from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 
 async def notify_snapshot_recalculate(
@@ -109,17 +112,60 @@ async def _ensure_price_history_for_tx(db: AsyncSession, tx: Transaction):
             ))
             await db.flush()
 
-@router.get("", response_model=List[TransactionResponse])
-@router.get("/", response_model=List[TransactionResponse])
+@router.get("", response_model=Union[PaginatedTransactionResponse, List[TransactionResponse]])
+@router.get("/", response_model=Union[PaginatedTransactionResponse, List[TransactionResponse]])
 async def list_transactions(
+    response: Response,
     account_id: Optional[int] = None,
     asset_id: Optional[int] = None,
+    page: Optional[int] = Query(None, ge=1, description="Page number (1-indexed)"),
+    page_size: Optional[int] = Query(None, ge=1, description="Items per page"),
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     u_id = get_user_id(current_user)
+    is_paginated = page is not None
+    eff_page = page if is_paginated else 1
+    eff_page_size = min(page_size, 500) if page_size is not None else (50 if is_paginated else limit)
+
+    cache_key = None
+    if is_paginated:
+        cache_key = cache_service.get_transaction_page_key(
+            user_id=u_id,
+            page=eff_page,
+            page_size=eff_page_size,
+            account_id=account_id,
+            asset_id=asset_id,
+        )
+        try:
+            cached_val = await cache_service.get_cache(cache_key)
+            if cached_val is not None:
+                cached_data = json.loads(cached_val)
+                if response is not None:
+                    response.headers["X-Total-Count"] = str(cached_data.get("total", 0))
+                    response.headers["X-Total-Pages"] = str(cached_data.get("total_pages", 0))
+                    response.headers["X-Page"] = str(cached_data.get("page", eff_page))
+                    response.headers["X-Page-Size"] = str(cached_data.get("page_size", eff_page_size))
+                return cached_data
+        except Exception:
+            pass
+
+    count_stmt = select(func.count(Transaction.transaction_id)).where(Transaction.user_id == u_id)
+    if account_id is not None:
+        count_stmt = count_stmt.where(Transaction.account_id == account_id)
+    if asset_id is not None:
+        count_stmt = count_stmt.where(Transaction.asset_id == asset_id)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    if total == 0:
+        total_pages = 0
+        has_more = False
+    else:
+        total_pages = math.ceil(total / eff_page_size) if eff_page_size > 0 else 0
+        has_more = (eff_page * eff_page_size) < total
+
     stmt = select(
         Transaction, 
         Account.account_name, 
@@ -134,12 +180,18 @@ async def list_transactions(
         .outerjoin(Asset, Transaction.asset_id == Asset.asset_id)\
         .where(Transaction.user_id == u_id)
         
-    if account_id:
+    if account_id is not None:
         stmt = stmt.where(Transaction.account_id == account_id)
-    if asset_id:
+    if asset_id is not None:
         stmt = stmt.where(Transaction.asset_id == asset_id)
-        
-    stmt = stmt.order_by(desc(Transaction.transaction_date), desc(Transaction.transaction_id)).limit(limit).offset(offset)
+
+    stmt = stmt.order_by(desc(Transaction.transaction_date), desc(Transaction.transaction_id))
+
+    if is_paginated:
+        calc_offset = (eff_page - 1) * eff_page_size
+        stmt = stmt.offset(calc_offset).limit(eff_page_size)
+    else:
+        stmt = stmt.offset(offset).limit(limit)
     
     res = await db.execute(stmt)
     rows = res.all()
@@ -147,12 +199,32 @@ async def list_transactions(
     out = []
     for tx, acc_name, acc_curr, symbol, asset_name, f_acc_name, f_acc_curr in rows:
         out.append(_build_transaction_response(tx, acc_name, acc_curr, symbol, asset_name, f_acc_name, f_acc_curr))
-        
 
-    out.sort(key=lambda x: (x.transaction_date, x.transaction_id), reverse=True)
-    out = out[:limit]
-        
-    return out
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Total-Pages"] = str(total_pages if is_paginated else (1 if total > 0 else 0))
+        response.headers["X-Page"] = str(eff_page)
+        response.headers["X-Page-Size"] = str(eff_page_size if is_paginated else limit)
+
+    if not is_paginated:
+        return out
+
+    paginated_resp = PaginatedTransactionResponse(
+        items=out,
+        total=total,
+        page=eff_page,
+        page_size=eff_page_size,
+        total_pages=total_pages,
+        has_more=has_more
+    )
+
+    if cache_key is not None:
+        try:
+            await cache_service.set_cache(cache_key, paginated_resp.model_dump_json(), ttl_seconds=300)
+        except Exception:
+            pass
+
+    return paginated_resp
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction(
@@ -225,6 +297,8 @@ async def create_transaction(
             auth_token=authorization
         )
     )
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_transaction_cache(u_id)
 
     # Sync dividends for asset if it's a buy/sell trade
     if tx_asset_id and tx_type in ["buy", "sell"]:
@@ -304,6 +378,8 @@ async def update_transaction(
             auth_token=authorization
         )
     )
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_transaction_cache(u_id)
 
     if tx_asset_id and tx_type in ["buy", "sell"]:
         try:
@@ -363,6 +439,8 @@ async def delete_transaction(
             auth_token=authorization
         )
     )
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_transaction_cache(u_id)
 
     if target_asset_id and is_trade:
         try:

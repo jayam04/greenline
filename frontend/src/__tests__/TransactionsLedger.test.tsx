@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import CashflowTransactionsPage from '@/app/cashflow/transactions/page';
 import * as api from '@/lib/api';
 
@@ -148,12 +148,14 @@ describe('Cashflow Transactions Page (src/app/cashflow/transactions/page.tsx)', 
     
     // Now click GROWW.BO
     const growwRows = screen.getAllByText('GROWW.BO');
-    fireEvent.click(growwRows[0]);
+    await act(async () => {
+      fireEvent.click(growwRows[0]);
+    });
     
     // Wait for the detail pane to show GROWW.BO details
     await waitFor(() => {
       expect(screen.getByText(/Bought x186 at/i)).toBeInTheDocument();
-    });
+    }, { timeout: 3000 });
     
     expect(screen.getByText('+186 GROWW.BO')).toBeInTheDocument();
     expect(screen.getAllByText('Investment Fees & Charges').length).toBeGreaterThanOrEqual(1);

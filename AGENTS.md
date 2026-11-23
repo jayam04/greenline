@@ -38,7 +38,7 @@ For complete fixtures, scaffolding patterns, and runbooks, refer to [`.agents/sk
 - **Backend**:
   - Test runner: `pytest` with `@pytest.mark.anyio`
   - Database fixture: Local Oracle Free 23ai (`FREEPDB1`, `docker compose --profile localdockerdb up oracle -d`) via `conftest.py`
-  - Run command: `PYTHONPATH=services/networth /home/jayampatel/swe/greenline/backend/.venv/bin/pytest services/networth/tests` (or `backend/tests` compatibility symlink)
+  - Run command from the repository root: `cd services/networth && pytest tests` (using that service's virtual environment)
 - **Frontend**:
   - Type checking: `npx tsc --noEmit`
   - Linting: `npm run lint`

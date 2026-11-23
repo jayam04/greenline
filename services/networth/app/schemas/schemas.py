@@ -125,6 +125,27 @@ class TransactionResponse(TransactionCreate):
     source: str = "manual"
     model_config = ConfigDict(from_attributes=True)
 
+class PaginatedTransactionResponse(BaseModel):
+    items: List[TransactionResponse] = []
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_more: bool
+    has_next: Optional[bool] = None
+    has_prev: Optional[bool] = None
+    total_count: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.has_next is None:
+            self.has_next = self.has_more
+        if self.has_prev is None:
+            self.has_prev = self.page > 1
+        if self.total_count is None:
+            self.total_count = self.total
+
+
 # Lot & LotSale Schemas
 class LotResponse(BaseModel):
     lot_id: int
@@ -444,6 +465,27 @@ class CashflowTransactionResponse(BaseModel):
     payments: List[CashflowPaymentResponse] = []
     items: List[CashflowItemResponse] = []
     model_config = ConfigDict(from_attributes=True)
+
+class PaginatedCashflowResponse(BaseModel):
+    items: List[CashflowTransactionResponse] = []
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_more: bool
+    has_next: Optional[bool] = None
+    has_prev: Optional[bool] = None
+    total_count: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.has_next is None:
+            self.has_next = self.has_more
+        if self.has_prev is None:
+            self.has_prev = self.page > 1
+        if self.total_count is None:
+            self.total_count = self.total
+
 
 class CashflowSummaryResponse(BaseModel):
     total_income: float

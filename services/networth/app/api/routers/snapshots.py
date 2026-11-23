@@ -2,6 +2,7 @@ import datetime
 import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status
+from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, asc, func
 from sqlalchemy.orm import selectinload
@@ -13,6 +14,7 @@ try:
     from ...schemas.schemas import NetworthSnapshotResponse, TriggerRecalculateRequest
     from ...services.snapshot_engine import calculate_account_snapshots
     from ...services.background_worker import background_worker
+    from ...services import cache_service
     from ..deps import get_current_user, get_user_id
 except (ImportError, ValueError):
     from app.db.database import get_db
@@ -20,9 +22,12 @@ except (ImportError, ValueError):
     from app.schemas.schemas import NetworthSnapshotResponse, TriggerRecalculateRequest
     from app.services.snapshot_engine import calculate_account_snapshots
     from app.services.background_worker import background_worker
+    from app.services import cache_service
     from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
+
+_snapshot_adapter = TypeAdapter(List[NetworthSnapshotResponse])
 
 # L1 in-memory TTL Cache (sub-millisecond query responses)
 # Key: (user_id: int, account_id: Optional[int], start_date: Optional[datetime.date])
@@ -56,6 +61,14 @@ async def list_snapshots(
     if not isinstance(start_date, (datetime.date, datetime.datetime)):
         start_date = None
 
+    redis_cache_key = cache_service.get_snapshot_key(u_id, account_id=account_id, start_date=start_date)
+    try:
+        cached = await cache_service.get_cache(redis_cache_key)
+        if cached is not None:
+            return _snapshot_adapter.validate_json(cached)
+    except Exception:
+        pass
+
     # 1. Single-account snapshot timeline
     if account_id is not None:
         acc_stmt = select(Account).where(Account.account_id == account_id, Account.user_id == u_id)
@@ -76,6 +89,11 @@ async def list_snapshots(
         sunday_snaps = [s for s in acc_snaps if s["snapshot_date"].weekday() == 6]
         res = [NetworthSnapshotResponse(**s) for s in sunday_snaps]
         snapshots_cache[cache_key] = res
+        try:
+            serialized = _snapshot_adapter.dump_json(res).decode("utf-8")
+            await cache_service.set_cache(redis_cache_key, serialized, ttl_seconds=300)
+        except Exception:
+            pass
         return res
 
     # 2. Aggregated portfolio net worth mode
@@ -109,6 +127,11 @@ async def list_snapshots(
 
     res = [NetworthSnapshotResponse.model_validate(r) for r in sunday_rows]
     snapshots_cache[cache_key] = res
+    try:
+        serialized = _snapshot_adapter.dump_json(res).decode("utf-8")
+        await cache_service.set_cache(redis_cache_key, serialized, ttl_seconds=300)
+    except Exception:
+        pass
     return res
 
 
@@ -130,16 +153,7 @@ async def trigger_recalculate(
         )
 
     # Invalidate cache for this user
-    invalidate_user_cache(u_id)
-    try:
-        from .portfolio import invalidate_portfolio_cache
-        invalidate_portfolio_cache(u_id)
-    except Exception:
-        try:
-            from app.api.routers.portfolio import invalidate_portfolio_cache
-            invalidate_portfolio_cache(u_id)
-        except Exception:
-            pass
+    await cache_service.invalidate_user_snapshot_cache(u_id)
 
     # Enqueue recalculation in background worker
     await background_worker.enqueue_recalculate(

@@ -1,68 +1,139 @@
 import datetime
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+import json
+import math
+from typing import List, Optional, Union
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func, or_, and_
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
 from app.db.models import CashflowTransaction, CashflowPayment, CashflowItem, Account, Category, User
 from app.schemas.schemas import (
     CashflowTransactionCreate, CashflowTransactionUpdate, CashflowTransactionResponse,
-    CashflowPaymentResponse, CashflowItemResponse, CashflowSummaryResponse, SankeyDataResponse
+    CashflowPaymentResponse, CashflowItemResponse, CashflowSummaryResponse, SankeyDataResponse,
+    PaginatedCashflowResponse
 )
 from app.services.cashflow_engine import (
     generate_sankey_data, get_cashflow_summary, build_category_lineage_map, convert_currency_to_eur,
     convert_currency, resolve_transaction_kind
 )
+from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 from app.core.timing import time_block
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
 
-@router.get("", response_model=List[CashflowTransactionResponse])
-@router.get("/", response_model=List[CashflowTransactionResponse])
+@router.get("/transactions", response_model=Union[PaginatedCashflowResponse, List[CashflowTransactionResponse]])
+@router.get("/transactions/", response_model=Union[PaginatedCashflowResponse, List[CashflowTransactionResponse]])
+@router.get("", response_model=Union[PaginatedCashflowResponse, List[CashflowTransactionResponse]])
+@router.get("/", response_model=Union[PaginatedCashflowResponse, List[CashflowTransactionResponse]])
 async def list_cashflow_transactions(
+    response: Response,
     start_date: Optional[datetime.date] = Query(None),
     end_date: Optional[datetime.date] = Query(None),
     account_id: Optional[int] = Query(None),
     category_id: Optional[int] = Query(None),
     label: Optional[str] = Query(None),
+    page: Optional[int] = Query(None, ge=1, description="Page number (1-indexed)"),
+    page_size: Optional[int] = Query(None, ge=1, description="Items per page"),
+    limit: Optional[int] = Query(None, ge=1),
+    offset: Optional[int] = Query(None, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     u_id = get_user_id(current_user)
+    is_paginated = page is not None
+    eff_page = page if is_paginated else 1
+    eff_page_size = min(page_size, 500) if page_size is not None else (50 if is_paginated else (limit or 100))
+
+    cache_key = None
+    if is_paginated:
+        cache_key = cache_service.get_cashflow_page_key(
+            user_id=u_id,
+            page=eff_page,
+            page_size=eff_page_size,
+            start_date=start_date,
+            end_date=end_date,
+            account_id=account_id,
+            category_id=category_id,
+            label=label,
+        )
+        try:
+            cached_val = await cache_service.get_cache(cache_key)
+            if cached_val is not None:
+                cached_data = json.loads(cached_val)
+                if response is not None:
+                    response.headers["X-Total-Count"] = str(cached_data.get("total", 0))
+                    response.headers["X-Total-Pages"] = str(cached_data.get("total_pages", 0))
+                    response.headers["X-Page"] = str(cached_data.get("page", eff_page))
+                    response.headers["X-Page-Size"] = str(cached_data.get("page_size", eff_page_size))
+                return cached_data
+        except Exception:
+            pass
+
+    with time_block("build_category_lineage_map"):
+        lineage_map = await build_category_lineage_map(db, user_id=u_id)
+
+    filters = [CashflowTransaction.user_id == u_id]
+    if start_date:
+        filters.append(CashflowTransaction.transaction_date >= start_date)
+    if end_date:
+        filters.append(CashflowTransaction.transaction_date <= end_date)
+    if account_id:
+        filters.append(CashflowTransaction.payments.any(CashflowPayment.account_id == account_id))
+    if category_id:
+        filters.append(CashflowTransaction.items.any(CashflowItem.category_id == category_id))
+    if label:
+        label_upper = label.upper()
+        cat_ids_with_label = [
+            cid for cid, meta in lineage_map.items()
+            if (meta.get("effective_label") or "").upper() == label_upper
+        ]
+        if cat_ids_with_label:
+            label_condition = or_(
+                func.upper(CashflowItem.label) == label_upper,
+                and_(
+                    or_(CashflowItem.label.is_(None), CashflowItem.label == ""),
+                    CashflowItem.category_id.in_(cat_ids_with_label)
+                )
+            )
+        else:
+            label_condition = func.upper(CashflowItem.label) == label_upper
+        filters.append(CashflowTransaction.items.any(label_condition))
+
+    count_stmt = select(func.count(CashflowTransaction.cashflow_id)).where(*filters)
+    total_count = (await db.execute(count_stmt)).scalar() or 0
+
+    if total_count == 0:
+        total_pages = 0
+        has_more = False
+    else:
+        total_pages = math.ceil(total_count / eff_page_size) if eff_page_size > 0 else 0
+        has_more = (eff_page * eff_page_size) < total_count
+
     stmt = (
         select(CashflowTransaction)
         .options(
             selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
             selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
         )
-        .where(CashflowTransaction.user_id == u_id)
+        .where(*filters)
         .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
     )
 
-    if start_date:
-        stmt = stmt.where(CashflowTransaction.transaction_date >= start_date)
-    if end_date:
-        stmt = stmt.where(CashflowTransaction.transaction_date <= end_date)
+    if is_paginated:
+        calc_offset = (eff_page - 1) * eff_page_size
+        stmt = stmt.offset(calc_offset).limit(eff_page_size)
+    elif limit is not None:
+        calc_offset = offset if offset is not None else 0
+        stmt = stmt.offset(calc_offset).limit(limit)
 
     res = await db.execute(stmt)
     transactions = res.scalars().all()
 
-    with time_block("build_category_lineage_map"):
-        lineage_map = await build_category_lineage_map(db, user_id=u_id)
     results = []
-
     for tx in transactions:
-        # Filter by account_id if specified
-        if account_id and not any(p.account_id == account_id for p in tx.payments):
-            continue
-
-        # Filter by category_id if specified
-        if category_id and not any(i.category_id == category_id for i in tx.items):
-            continue
-
         payments_out = [
             CashflowPaymentResponse(
                 payment_id=p.payment_id,
@@ -80,8 +151,7 @@ async def list_cashflow_transactions(
             cat_meta = lineage_map.get(i.category_id)
             eff_label = i.label or (cat_meta["effective_label"] if cat_meta else None)
 
-            # Filter by label if specified
-            if label and eff_label != label.upper():
+            if label and (eff_label or "").upper() != label.upper():
                 continue
 
             items_out.append(CashflowItemResponse(
@@ -95,9 +165,6 @@ async def list_cashflow_transactions(
                 effective_label=eff_label,
                 description=i.description
             ))
-
-        if label and not items_out:
-            continue
 
         tx_kind = resolve_transaction_kind(tx)
 
@@ -115,7 +182,31 @@ async def list_cashflow_transactions(
             items=items_out
         ))
 
-    return results
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total_count)
+        response.headers["X-Total-Pages"] = str(total_pages if is_paginated else (1 if total_count > 0 else 0))
+        response.headers["X-Page"] = str(eff_page)
+        response.headers["X-Page-Size"] = str(eff_page_size if is_paginated else total_count)
+
+    if not is_paginated:
+        return results
+
+    paginated_response = PaginatedCashflowResponse(
+        items=results,
+        total=total_count,
+        page=eff_page,
+        page_size=eff_page_size,
+        total_pages=total_pages,
+        has_more=has_more
+    )
+
+    if cache_key is not None:
+        try:
+            await cache_service.set_cache(cache_key, paginated_response.model_dump_json(), ttl_seconds=300)
+        except Exception:
+            pass
+
+    return paginated_response
 
 @router.get("/summary", response_model=CashflowSummaryResponse)
 async def get_summary(
@@ -369,6 +460,8 @@ async def create_cashflow_transaction(
         db.add(itm)
 
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_cashflow_cache(u_id)
     return await get_cashflow_transaction(tx.cashflow_id, db=db, current_user=current_user)
 
 @router.put("/{cashflow_id}", response_model=CashflowTransactionResponse)
@@ -528,6 +621,8 @@ async def update_cashflow_transaction(
             ))
 
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_cashflow_cache(u_id)
     return await get_cashflow_transaction(tx.cashflow_id, db=db, current_user=current_user)
 
 @router.delete("/{cashflow_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -548,3 +643,5 @@ async def delete_cashflow_transaction(
 
     await db.delete(tx)
     await db.commit()
+    await cache_service.invalidate_user_snapshot_cache(u_id)
+    await cache_service.invalidate_user_cashflow_cache(u_id)

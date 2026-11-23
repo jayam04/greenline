@@ -13,7 +13,7 @@ from app.schemas.schemas import TransactionCreate, TransactionUpdate, Transactio
 from app.services.fifo_engine import recalculate_all_lots
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.services.price_engine import cleanup_orphan_transaction_prices
-from app.services.background_worker import background_worker
+from app.services.networth_history_client import request_history_recalculation
 from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 
@@ -23,7 +23,7 @@ async def notify_snapshot_recalculate(
     reason: str = "trade_event",
     auth_token: Optional[str] = None
 ) -> bool:
-    return await background_worker.enqueue_recalculate(user_id=user_id, start_date=start_date, reason=reason)
+    return await request_history_recalculation(user_id=user_id, start_date=start_date, reason=reason)
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -302,15 +302,6 @@ async def create_transaction(
     # Run FIFO & Cash flow engine
     await recalculate_all_lots(db, user_id=u_id)
     
-    # Non-blocking async notification to Networth microservice
-    asyncio.create_task(
-        notify_snapshot_recalculate(
-            user_id=u_id,
-            start_date=tx_date,
-            reason="trade_created",
-            auth_token=authorization
-        )
-    )
     await cache_service.invalidate_user_snapshot_cache(u_id)
     await cache_service.invalidate_user_transaction_cache(u_id)
 
@@ -320,6 +311,10 @@ async def create_transaction(
             await sync_dividends_for_asset(db, tx_asset_id)
         except Exception as de:
             print(f"[Dividend Sync Error on Create] {de}")
+
+    asyncio.create_task(notify_snapshot_recalculate(
+        user_id=u_id, start_date=tx_date, reason="trade_created", auth_token=authorization
+    ))
     
     # Format response
     stmt = select(
@@ -355,6 +350,7 @@ async def update_transaction(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    previous_tx_date = tx.transaction_date
     update_data = tx_in.model_dump(exclude_unset=True)
     if "account_id" in update_data and update_data["account_id"] is not None:
         acc = await db.get(Account, update_data["account_id"])
@@ -377,21 +373,13 @@ async def update_transaction(
         await cleanup_orphan_transaction_prices(db, tx.asset_id)
         await db.commit()
 
-    tx_date = tx.transaction_date
+    tx_date = min(previous_tx_date, tx.transaction_date)
     tx_asset_id = tx.asset_id
     tx_type = tx.transaction_type
     tx_id = tx.transaction_id
     
     # Recalculate derived state
     await recalculate_all_lots(db, user_id=u_id)
-    asyncio.create_task(
-        notify_snapshot_recalculate(
-            user_id=u_id,
-            start_date=tx_date,
-            reason="trade_updated",
-            auth_token=authorization
-        )
-    )
     await cache_service.invalidate_user_snapshot_cache(u_id)
     await cache_service.invalidate_user_transaction_cache(u_id)
 
@@ -400,6 +388,10 @@ async def update_transaction(
             await sync_dividends_for_asset(db, tx_asset_id)
         except Exception as de:
             print(f"[Dividend Sync Error on Update] {de}")
+
+    asyncio.create_task(notify_snapshot_recalculate(
+        user_id=u_id, start_date=tx_date, reason="trade_updated", auth_token=authorization
+    ))
 
     stmt_resp = select(
         Transaction, 
@@ -445,14 +437,6 @@ async def delete_transaction(
 
     # Recalculate derived state
     await recalculate_all_lots(db, user_id=u_id)
-    asyncio.create_task(
-        notify_snapshot_recalculate(
-            user_id=u_id,
-            start_date=tx_date,
-            reason="trade_deleted",
-            auth_token=authorization
-        )
-    )
     await cache_service.invalidate_user_snapshot_cache(u_id)
     await cache_service.invalidate_user_transaction_cache(u_id)
 
@@ -461,3 +445,6 @@ async def delete_transaction(
             await sync_dividends_for_asset(db, target_asset_id)
         except Exception as de:
             print(f"[Dividend Sync Error on Delete] {de}")
+    asyncio.create_task(notify_snapshot_recalculate(
+        user_id=u_id, start_date=tx_date, reason="trade_deleted", auth_token=authorization
+    ))

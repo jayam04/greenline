@@ -33,6 +33,25 @@ def get_next_sunday(d: datetime.date) -> datetime.date:
     return d + datetime.timedelta(days=days_to_sunday)
 
 
+def iter_snapshot_dates(
+    start_date: datetime.date,
+    end_date: datetime.date,
+    cadence: str = "weekly",
+):
+    """Yield inclusive daily or calendar-Sunday snapshot dates."""
+    if cadence == "daily":
+        current_date = start_date
+        step = datetime.timedelta(days=1)
+    elif cadence == "weekly":
+        current_date = get_next_sunday(start_date)
+        step = datetime.timedelta(days=7)
+    else:
+        raise ValueError(f"Unsupported snapshot cadence: {cadence}")
+    while current_date <= end_date:
+        yield current_date
+        current_date += step
+
+
 async def generate_daily_snapshot(
     db: AsyncSession, 
     snapshot_date: Optional[datetime.date] = None, 
@@ -237,7 +256,9 @@ async def recalculate_past_snapshots(
     db: AsyncSession, 
     start_date: datetime.date, 
     end_date: Optional[datetime.date] = None, 
-    user_id: int = 0
+    user_id: int = 0,
+    cadence: str = "weekly",
+    replace_range: bool = False,
 ) -> int:
     """
     Weekly end-of-Sunday snapshot engine:
@@ -366,7 +387,22 @@ async def recalculate_past_snapshots(
         is_income = signed_amt_eur > 0 and tkind == "INCOME"
         cf_events.append((cdate, signed_amt_eur, is_income))
 
-    # 9. Fetch existing snapshots to update in-place
+    # 9. Optionally remove the target range before a full rebuild.
+    if replace_range:
+        old_snapshots = list((await db.execute(
+            select(NetworthSnapshot)
+            .options(selectinload(NetworthSnapshot.asset_class_breakdowns))
+            .where(
+                NetworthSnapshot.user_id == user_id,
+                NetworthSnapshot.snapshot_date >= start_date,
+                NetworthSnapshot.snapshot_date <= end_date,
+            )
+        )).scalars().all())
+        for old_snapshot in old_snapshots:
+            await db.delete(old_snapshot)
+        await db.flush()
+
+    # 10. Fetch existing snapshots to update in-place
     existing_snaps: Dict[datetime.date, NetworthSnapshot] = {
         s.snapshot_date: s
         for s in (
@@ -382,11 +418,12 @@ async def recalculate_past_snapshots(
         ).scalars().all()
     }
 
-    # 10. Step strictly on calendar Sundays (curr_date.weekday() == 6)
-    curr_date = get_next_sunday(start_date)
+    # 11. Step through the requested daily or weekly timeline.
+    snapshot_dates = iter(iter_snapshot_dates(start_date, end_date, cadence))
+    curr_date = next(snapshot_dates, None)
     count = 0
 
-    while curr_date <= end_date:
+    while curr_date is not None:
         total_curr_val = 0.0
         total_cost_of_open_lots = 0.0
         allocation_by_class: Dict[str, float] = {}
@@ -466,7 +503,7 @@ async def recalculate_past_snapshots(
             existing_snaps[curr_date] = snap
 
         count += 1
-        curr_date += datetime.timedelta(days=7)
+        curr_date = next(snapshot_dates, None)
 
     await db.flush()
     await db.commit()

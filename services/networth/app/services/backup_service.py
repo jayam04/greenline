@@ -13,12 +13,12 @@ from app.db.models import (
     Account, Asset, Transaction, PriceHistory, 
     ExpectedDividend, Category, CashflowTransaction, CashflowPayment, 
     CashflowItem, AppSetting, Dividend, Lot, LotSale, NetworthSnapshot, 
-    NetworthByAssetClass, CashFlow, XIRRCache, Benchmark
+    NetworthByAssetClass, CashFlow, XIRRCache, Benchmark, User
 )
 from app.db.database import get_tables_in_dependency_order, sync_oracle_identity_values
 from app.db import models as _all_models  # noqa: F401 - register all mapped tables
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import recalculate_past_snapshots
+from app.services.networth_history_client import request_history_recalculation
 
 FILENAME_REGEX = re.compile(r"^[a-zA-Z0-9_\-\.]+\.json$")
 _backup_lock = asyncio.Lock()
@@ -813,12 +813,11 @@ async def restore_from_json_data(data: dict, db: AsyncSession) -> Dict[str, Any]
             print(f"[Backup Restore] Warning: Lot recalculation failed: {e}")
 
         try:
-            if earliest_tx_date:
-                await recalculate_past_snapshots(db, start_date=earliest_tx_date)
-            else:
-                await recalculate_past_snapshots(db, start_date=datetime.date.today())
+            user_ids = (await db.execute(select(User.user_id))).scalars().all()
+            for user_id in user_ids:
+                await request_history_recalculation(user_id, None, "backup_restore")
         except Exception as e:
-            print(f"[Backup Restore] Warning: Snapshot recalculation failed: {e}")
+            print(f"[Backup Restore] Warning: Networth history enqueue failed: {e}")
 
         return {
             "message": "Portfolio backup imported successfully.",

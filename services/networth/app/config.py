@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     # Redis Cache Configuration
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    NETWORTH_HISTORY_URL: str = os.getenv("NETWORTH_HISTORY_URL", "http://localhost:8003")
+    NETWORTH_HISTORY_SERVICE_TOKEN: str = os.getenv("NETWORTH_HISTORY_SERVICE_TOKEN", "")
 
     # Database connection URL
     DATABASE_URL: str = ""
@@ -49,21 +51,26 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         target = self.DB_TARGET.lower()
+        history_mode = os.getenv("NETWORTH_HISTORY_MODE", "false").lower() in ("true", "1", "yes")
+        history_database_url = os.getenv("DATABASE_URL_NETWORTH_HISTORY")
         if target == "cloud":
             self.ORACLE_USER = (
-                os.getenv("ORACLE_CLOUD_USER")
+                (os.getenv("ORACLE_NETWORTH_HISTORY_USER") if history_mode else None)
+                or os.getenv("ORACLE_CLOUD_USER")
                 or os.getenv("ORACLE_NETWORTH_USER")
                 or os.getenv("ORACLE_USER")
             )
             self.ORACLE_PASSWORD = (
-                os.getenv("ORACLE_CLOUD_PASSWORD")
+                (os.getenv("ORACLE_NETWORTH_HISTORY_PASSWORD") if history_mode else None)
+                or os.getenv("ORACLE_CLOUD_PASSWORD")
                 or os.getenv("ORACLE_NETWORTH_PASSWORD")
                 or os.getenv("ORACLE_PASSWORD")
             )
             self.ORACLE_DSN = os.getenv("ORACLE_CLOUD_DSN") or os.getenv("ORACLE_DSN")
             self.ORACLE_SCHEMA = os.getenv("ORACLE_SCHEMA", "ADMIN")
             self.DATABASE_URL = (
-                os.getenv("DATABASE_URL_NETWORTH")
+                (history_database_url if history_mode else None)
+                or os.getenv("DATABASE_URL_NETWORTH")
                 or os.getenv("DATABASE_URL_CLOUD")
                 or os.getenv("DATABASE_URL")
                 or "oracle+oracledb://@"
@@ -72,13 +79,15 @@ class Settings(BaseSettings):
             # localdockerdb mode
             default_host = "oracle" if os.getenv("IS_DOCKER") else "localhost"
             self.ORACLE_USER = (
-                os.getenv("ORACLE_LOCAL_USER")
+                (os.getenv("ORACLE_NETWORTH_HISTORY_USER") if history_mode else None)
+                or os.getenv("ORACLE_LOCAL_USER")
                 or os.getenv("ORACLE_NETWORTH_USER")
                 or os.getenv("ORACLE_USER")
                 or "greenline_test"
             )
             self.ORACLE_PASSWORD = (
-                os.getenv("ORACLE_LOCAL_PASSWORD")
+                (os.getenv("ORACLE_NETWORTH_HISTORY_PASSWORD") if history_mode else None)
+                or os.getenv("ORACLE_LOCAL_PASSWORD")
                 or os.getenv("ORACLE_NETWORTH_PASSWORD")
                 or os.getenv("ORACLE_PASSWORD")
                 or "test_password"
@@ -90,7 +99,8 @@ class Settings(BaseSettings):
             )
             self.ORACLE_SCHEMA = os.getenv("ORACLE_SCHEMA", "ADMIN")
             self.DATABASE_URL = (
-                os.getenv("DATABASE_URL_NETWORTH")
+                (history_database_url if history_mode else None)
+                or os.getenv("DATABASE_URL_NETWORTH")
                 or os.getenv("DATABASE_URL_LOCAL")
                 or os.getenv("DATABASE_URL")
                 or f"oracle+oracledb://{self.ORACLE_USER}:{self.ORACLE_PASSWORD}@{self.ORACLE_DSN}"

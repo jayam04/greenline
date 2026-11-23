@@ -46,3 +46,21 @@ def test_networth_config_db_target_cloud():
         assert s.ORACLE_USER == "cloud_admin"
         assert s.ORACLE_PASSWORD == "cloud_secret_pw"
         assert s.ORACLE_DSN == "(description=...cloud...)"
+
+
+def test_networth_history_config_uses_separate_database_user():
+    with patch.dict(os.environ, {
+        "NETWORTH_HISTORY_MODE": "true",
+        "DB_TARGET": "localdockerdb",
+        "ORACLE_NETWORTH_HISTORY_USER": "GREENLINE_NW_HISTORY",
+        "ORACLE_NETWORTH_HISTORY_PASSWORD": "history-password",
+        "ORACLE_LOCAL_DSN": "oracle:1521/FREEPDB1",
+        "ORACLE_SCHEMA": "ADMIN",
+        "DATABASE_URL_NETWORTH_HISTORY": "",
+    }, clear=False):
+        from app.config import Settings
+        settings = Settings()
+        assert settings.ORACLE_USER == "GREENLINE_NW_HISTORY"
+        assert settings.ORACLE_PASSWORD == "history-password"
+        assert settings.ORACLE_DSN == "oracle:1521/FREEPDB1"
+        assert settings.DATABASE_URL.startswith("oracle+oracledb://GREENLINE_NW_HISTORY:history-password@")

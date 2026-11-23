@@ -368,7 +368,7 @@ async def mutate_stock_transactions(
     """
     from app.db.models import Transaction, Asset
     from app.services.fifo_engine import recalculate_all_lots
-    from app.services.snapshot_engine import generate_daily_snapshot
+    from app.services.networth_history_client import request_history_recalculation
     from app.api.routers.transactions import _ensure_price_history_for_tx, cleanup_orphan_transaction_prices
 
     async with AsyncSessionLocal() as session:
@@ -483,7 +483,7 @@ async def mutate_stock_transactions(
 
         await session.commit()
         await recalculate_all_lots(session)
-        await generate_daily_snapshot(session, datetime.date.today())
+        await request_history_recalculation(0, None, "mcp_stock_mutation")
         return {"results": results, "status": "success"}
 
 if __name__ == "__main__":

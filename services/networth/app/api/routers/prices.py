@@ -6,7 +6,7 @@ from app.db.database import get_db
 from app.db.models import PriceHistory, Asset, User, Transaction
 from app.schemas.schemas import PriceHistoryCreate, PriceHistoryResponse, CustomPriceResponse
 from app.services.price_engine import update_prices_for_assets, cleanup_orphan_transaction_prices
-from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
+from app.services.networth_history_client import request_history_recalculation
 from app.services import cache_service
 from app.api.deps import get_current_user, get_user_id
 
@@ -95,8 +95,8 @@ async def add_manual_price(
     await db.refresh(ph)
     
     # Re-trigger snapshot calculation
-    await generate_daily_snapshot(db, price_in.price_date, user_id=u_id)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, price_in.price_date, "price_updated")
     return ph
 
 @router.delete("/{price_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -117,8 +117,8 @@ async def delete_price(
     await db.commit()
 
     # Re-trigger daily snapshot from that date
-    await generate_daily_snapshot(db, p_date, user_id=u_id)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, p_date, "price_deleted")
 
 @router.post("/refresh", status_code=status.HTTP_200_OK)
 async def trigger_price_refresh(
@@ -141,13 +141,6 @@ async def trigger_price_refresh(
 
     count = await update_prices_for_assets(db, asset_ids) if (asset_ids or u_id == 0) else 0
     
-    # Recalculate past snapshots from earliest transaction date to keep timeline consistent
-    min_tx_stmt = select(func.min(Transaction.transaction_date)).where(Transaction.user_id == u_id)
-    min_tx = (await db.execute(min_tx_stmt)).scalar_one_or_none()
-    if min_tx:
-        await recalculate_past_snapshots(db, start_date=min_tx, user_id=u_id)
-    else:
-        await generate_daily_snapshot(db, user_id=u_id)
-
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, None, "prices_refreshed")
     return {"message": f"Price update completed. {count} new price records added."}

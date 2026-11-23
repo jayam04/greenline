@@ -210,7 +210,17 @@ export ORACLE_DSN='(description=(address=(protocol=tcps)(host=...)(port=1521))(c
 
 `ORACLE_DSN` should be the TLS connect descriptor supplied by OCI. Keep credentials in a secret manager or environment, and URL encode special characters if credentials are embedded directly in `DATABASE_URL`. The driver uses Thin mode and does not require Oracle Client libraries.
 
-The Networth service creates and updates its schema through startup migrations. No separate seed SQL file is required.
+The existing Networth service manages its financial schema through startup migrations. The separate history schema is provisioned with the SQL script below.
+
+### Networth History Service
+
+The `networth-history` service owns daily snapshot calculation and history in the separate Oracle schema `GREENLINE_NW_HISTORY`. It reads financial source tables from `ADMIN` and writes only its own snapshot tables.
+
+1. Run `services/networth_history/scripts/setup_schema.sql` as the Oracle schema owner. Set a private schema password and configure `ORACLE_NETWORTH_HISTORY_PASSWORD` to match.
+2. Set `ORACLE_NETWORTH_HISTORY_PASSWORD` to the same password and set `NETWORTH_HISTORY_SERVICE_TOKEN` to a long random secret.
+3. Start the stack with `docker compose up --build`. The history service performs a per-user daily backfill and logs parity comparisons with existing weekly snapshots before its health check passes.
+
+The current API authenticates snapshot requests and proxies them to the private history service. Cashflow, trade, account, asset, and price mutations enqueue recalculations after commit; the history service also rebuilds every user's daily history nightly.
 
 ---
 
@@ -265,6 +275,7 @@ greenline/
 │   └── workflows/            # GitHub Actions CI/CD workflows
 ├── services/
 │   ├── networth/             # Networth FastAPI service, database migrations, and pytest suite
+│   ├── networth_history/      # Daily net-worth history API, worker, schema setup, and tests
 │   └── community/            # Community FastAPI service
 ├── docs/                     # Static showcase website & documentation (GitHub Pages)
 │   ├── assets/screenshots/   # High-resolution retina screenshots

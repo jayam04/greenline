@@ -20,7 +20,7 @@ from app.schemas.mcp_stock_schemas import (
 )
 from app.services.cashflow_engine import build_category_lineage_map
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import recalculate_past_snapshots, generate_daily_snapshot
+from app.services.networth_history_client import request_history_recalculation
 from app.services.dividend_engine import sync_dividends_for_asset
 from app.api.routers.transactions import _ensure_price_history_for_tx, cleanup_orphan_transaction_prices
 from app.services import cache_service
@@ -835,7 +835,7 @@ async def mutate_mcp_stocks(
 
     # Recalculate derived state
     await recalculate_all_lots(db)
-    await generate_daily_snapshot(db, datetime.date.today())
+    await request_history_recalculation(current_user.user_id, None, "mcp_stock_mutation")
     await cache_service.invalidate_user_snapshot_cache(current_user.user_id)
     await cache_service.invalidate_user_transaction_cache(current_user.user_id)
 

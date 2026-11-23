@@ -69,6 +69,8 @@ services:
       LOG_SQL_QUERIES: ${LOG_SQL_QUERIES:-false}
       SLOW_QUERY_THRESHOLD_MS: ${SLOW_QUERY_THRESHOLD_MS:-50.0}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      NETWORTH_HISTORY_URL: ${NETWORTH_HISTORY_URL:-http://networth-history:8003}
+      NETWORTH_HISTORY_SERVICE_TOKEN: ${NETWORTH_HISTORY_SERVICE_TOKEN:-local-networth-history-token-change-in-prod}
       PYTHONPATH: /app
     depends_on:
       oracle:
@@ -77,8 +79,54 @@ services:
       redis:
         condition: service_started
         required: false
+      networth-history:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  networth-history:
+    build:
+      context: .
+      dockerfile: services/networth_history/Dockerfile
+    command: uvicorn services.networth_history.app.main:app --host 0.0.0.0 --port 8003 --workers 1
+    expose:
+      - "8003"
+    volumes:
+      - ./services/networth/app:/opt/greenline/services/networth/app
+      - ./services/networth_history/app:/opt/greenline/services/networth_history/app
+    environment:
+      ENV: ${ENV:-dev}
+      DB_TARGET: ${DB_TARGET:-localdockerdb}
+      NETWORTH_HISTORY_MODE: "true"
+      NETWORTH_HISTORY_DAILY: "true"
+      NETWORTH_HISTORY_SCHEMA: GREENLINE_NW_HISTORY
+      NETWORTH_HISTORY_SERVICE_TOKEN: ${NETWORTH_HISTORY_SERVICE_TOKEN:-local-networth-history-token-change-in-prod}
+      DATABASE_URL: ""
+      DATABASE_URL_NETWORTH_HISTORY: ${DATABASE_URL_NETWORTH_HISTORY:-}
+      ORACLE_NETWORTH_HISTORY_USER: ${ORACLE_NETWORTH_HISTORY_USER:-GREENLINE_NW_HISTORY}
+      ORACLE_NETWORTH_HISTORY_PASSWORD: ${ORACLE_NETWORTH_HISTORY_PASSWORD:-LocalHistory2026#Db}
+      ORACLE_LOCAL_DSN: ${ORACLE_LOCAL_DSN:-oracle:1521/FREEPDB1}
+      ORACLE_CLOUD_DSN: ${ORACLE_CLOUD_DSN:-${ORACLE_DSN:-}}
+      ORACLE_SCHEMA: ADMIN
+      AUTH0_DOMAIN: ${AUTH0_DOMAIN:-jayam04.eu.auth0.com}
+      AUTH0_AUDIENCE: ${AUTH0_AUDIENCE:-http://localhost:8000}
+      AUTH0_ISSUER: ${AUTH0_ISSUER:-https://jayam04.eu.auth0.com/}
+      AUTH0_TEST_MODE: ${AUTH0_TEST_MODE:-false}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      PYTHONPATH: /opt/greenline/services/networth:/opt/greenline
+    depends_on:
+      oracle:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_started
+        required: false
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
     restart: unless-stopped
 
   community:

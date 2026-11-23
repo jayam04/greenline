@@ -1,4 +1,5 @@
 import datetime
+import os
 from sqlalchemy import (
     Column, Integer, Identity, String as SQLString, Float, Date, DateTime, ForeignKey,
     UniqueConstraint, Text, Index, Boolean
@@ -218,6 +219,10 @@ class CashFlow(Base):
 
 class NetworthSnapshot(Base):
     __tablename__ = "networth_snapshots"
+    __table_args__ = (
+        UniqueConstraint("user_id", "snapshot_date", name="uix_snapshot_user_date"),
+        {"schema": os.getenv("NETWORTH_HISTORY_SCHEMA") or None},
+    )
     
     snapshot_id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
@@ -231,17 +236,15 @@ class NetworthSnapshot(Base):
 
     asset_class_breakdowns = relationship("NetworthByAssetClass", back_populates="snapshot", cascade="all, delete-orphan")
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "snapshot_date", name="uix_snapshot_user_date"),
-    )
-
-
 class NetworthByAssetClass(Base):
     __tablename__ = "networth_by_asset_class"
+    _history_schema = os.getenv("NETWORTH_HISTORY_SCHEMA")
+    _snapshot_table = f"{_history_schema}.networth_snapshots.snapshot_id" if _history_schema else "networth_snapshots.snapshot_id"
+    __table_args__ = {"schema": _history_schema or None}
     
     id = Column(Integer, Identity(), primary_key=True)
     user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), default=0, server_default="0", nullable=False, index=True)
-    snapshot_id = Column(Integer, ForeignKey("networth_snapshots.snapshot_id"), nullable=False)
+    snapshot_id = Column(Integer, ForeignKey(_snapshot_table), nullable=False)
     asset_class = Column(String, nullable=False)  # stock, etf, mutual_fund, gold, crypto, fd, cash
     value = Column(Float, nullable=False)
 

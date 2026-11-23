@@ -39,7 +39,13 @@ jobs:
 
       - name: Lint with Ruff
         run: |
-          ruff check services/networth/app services/networth/tests
+          ruff check services/networth/app services/networth/tests services/networth_history/app services/networth_history/tests
+
+      - name: Run Networth History Service Contract Tests
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest services/networth_history/tests -v
 
       - name: Run Pytest Test Suite
         env:

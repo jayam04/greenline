@@ -9,7 +9,7 @@ from app.db.models import Account, User, Transaction, CashflowTransaction, Cashf
 from app.schemas.schemas import AccountCreate, AccountUpdate, AccountResponse
 from app.api.deps import get_current_user, get_user_id
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import generate_daily_snapshot
+from app.services.networth_history_client import request_history_recalculation
 from app.services.cashflow_engine import compute_transaction_cash_movement
 from app.services import cache_service
 
@@ -184,6 +184,7 @@ async def create_account(
     await db.commit()
     await db.refresh(account)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, account.created_at.date() if account.created_at else None, "account_created")
     resp = AccountResponse.model_validate(account)
     resp.current_balance = 0.0
     resp.cash_balance = 0.0
@@ -247,6 +248,7 @@ async def update_account(
     await db.commit()
     await db.refresh(account)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, None, "account_updated")
     details = await calculate_all_account_details(db, accounts=[account], user_id=u_id)
     d = details.get(account.account_id, {"cash_balance": 0.0, "securities_value": 0.0, "current_balance": 0.0})
     resp = AccountResponse.model_validate(account)
@@ -279,5 +281,5 @@ async def delete_account(
     await db.delete(account)
     await db.commit()
     await recalculate_all_lots(db, user_id=u_id)
-    await generate_daily_snapshot(db, user_id=u_id)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, None, "account_deleted")

@@ -2870,6 +2870,73 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 - **Verification**:
   - Validated JSON parsing of all changelog blocks.
 
+### [2026-11-23 18:20:31 UTC] feat(networth): add isolated daily history service
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T18:20:31Z",
+  "type": "feat",
+  "scope": "networth",
+  "summary": "add isolated daily net-worth history service",
+  "affected_files": [
+    ".env.example",
+    ".github/workflows/ci.yml",
+    ".agents/changelog.md",
+    "README.md",
+    "docker-compose.yml",
+    "services/networth/app/api/routers/accounts.py",
+    "services/networth/app/api/routers/assets.py",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/app/api/routers/mcp_router.py",
+    "services/networth/app/api/routers/networth_history_proxy.py",
+    "services/networth/app/api/routers/prices.py",
+    "services/networth/app/api/routers/snapshots.py",
+    "services/networth/app/api/routers/transactions.py",
+    "services/networth/app/config.py",
+    "services/networth/app/db/models.py",
+    "services/networth/app/main.py",
+    "services/networth/app/mcp/server.py",
+    "services/networth/app/scheduler.py",
+    "services/networth/app/services/backup_service.py",
+    "services/networth/app/services/networth_history_client.py",
+    "services/networth/app/services/snapshot_engine.py",
+    "services/networth/tests/test_compose_config.py",
+    "services/networth_history/Dockerfile",
+    "services/networth_history/__init__.py",
+    "services/networth_history/app/__init__.py",
+    "services/networth_history/app/history.py",
+    "services/networth_history/app/main.py",
+    "services/networth_history/app/routes/__init__.py",
+    "services/networth_history/app/routes/internal.py",
+    "services/networth_history/app/routes/snapshots.py",
+    "services/networth_history/app/scheduler.py",
+    "services/networth_history/app/worker.py",
+    "services/networth_history/scripts/setup_schema.sql",
+    "services/networth_history/tests/conftest.py",
+    "services/networth_history/tests/test_deployment_contract.py",
+    "services/networth_history/tests/test_internal_api.py",
+    "services/networth_history/tests/test_snapshot_schedule.py"
+  ],
+  "rationale": "Separate daily timeline storage and rebuild work from transactional API processes while keeping authenticated snapshot routes stable, repairing history nightly, and preserving existing weekly snapshot calculations for comparison.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=. backend/.venv/bin/pytest services/networth_history/tests -q; PYTHONPATH=services/networth backend/.venv/bin/pytest --noconftest services/networth/tests/test_compose_config.py -q; docker compose config --quiet; ruff check services/networth_history/app services/networth_history/tests services/networth/app/services/networth_history_client.py services/networth/app/api/routers/networth_history_proxy.py; git diff --check",
+    "result": "PASSED (7 history tests, 3 compose tests, compose config, lint, and whitespace checks)"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(networth)`
+- **Summary**: Added a separate `networth-history` service for daily snapshot history and repair.
+- **Rationale**: Isolate timeline storage and full rebuilds from transactional APIs while retaining the current public snapshot routes.
+- **Key Changes**:
+  - Added a private service with its own Oracle schema, authenticated recalculation queue, daily snapshot generation, cache invalidation, and nightly full rebuild.
+  - Routed snapshot reads through the current API and sent financial mutations to the history service after commit.
+  - Kept the existing weekly snapshot engine available for legacy comparison and documented the schema setup.
+- **Verification**:
+  - Seven history service tests and three compose configuration tests passed.
+  - Compose configuration, focused lint, and `git diff --check` passed.
+
 ### [2026-11-05 00:03:00 UTC] feat(ai): remove AI import pipeline and frontend section in favor of MCP tool
 
 <!-- changelog-entry-json

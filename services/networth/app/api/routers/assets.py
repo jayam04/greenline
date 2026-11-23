@@ -9,7 +9,7 @@ from app.db.models import Asset, User
 from app.schemas.schemas import AssetCreate, AssetUpdate, AssetResponse
 from app.api.deps import get_current_user, get_user_id
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import generate_daily_snapshot
+from app.services.networth_history_client import request_history_recalculation
 from app.services.price_engine import fetch_asset_price_history
 from app.services import cache_service
 
@@ -263,6 +263,7 @@ async def create_asset(
 
     u_id = get_user_id(current_user)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, None, "asset_created")
 
     background_tasks.add_task(_bg_fetch_asset_price_history, asset.asset_id, asset.symbol)
 
@@ -292,6 +293,7 @@ async def update_asset(
     await db.refresh(asset)
     u_id = get_user_id(current_user)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, None, "asset_updated")
     return asset
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -308,6 +310,6 @@ async def delete_asset(
     await db.delete(asset)
     await db.commit()
     await recalculate_all_lots(db)
-    await generate_daily_snapshot(db)
     u_id = get_user_id(current_user)
     await cache_service.invalidate_user_snapshot_cache(u_id)
+    await request_history_recalculation(u_id, None, "asset_deleted")

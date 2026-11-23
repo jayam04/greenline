@@ -19,6 +19,7 @@ from app.services.cashflow_engine import (
     convert_currency, resolve_transaction_kind
 )
 from app.services import cache_service
+from app.services.networth_history_client import request_history_recalculation
 from app.api.deps import get_current_user, get_user_id
 from app.core.timing import time_block
 
@@ -511,6 +512,7 @@ async def create_cashflow_transaction(
     await db.commit()
     await cache_service.invalidate_user_snapshot_cache(u_id)
     await cache_service.invalidate_user_cashflow_cache(u_id)
+    await request_history_recalculation(u_id, tx.transaction_date, "cashflow_created")
     return await get_cashflow_transaction(tx.cashflow_id, db=db, current_user=current_user)
 
 @router.put("/{cashflow_id}", response_model=CashflowTransactionResponse)
@@ -529,6 +531,7 @@ async def update_cashflow_transaction(
     tx = res.scalar_one_or_none()
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    previous_date = tx.transaction_date
 
     update_data = tx_in.model_dump(exclude_unset=True)
 
@@ -672,6 +675,7 @@ async def update_cashflow_transaction(
     await db.commit()
     await cache_service.invalidate_user_snapshot_cache(u_id)
     await cache_service.invalidate_user_cashflow_cache(u_id)
+    await request_history_recalculation(u_id, min(previous_date, tx.transaction_date), "cashflow_updated")
     return await get_cashflow_transaction(tx.cashflow_id, db=db, current_user=current_user)
 
 @router.delete("/{cashflow_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -690,7 +694,9 @@ async def delete_cashflow_transaction(
     if not tx:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
+    tx_date = tx.transaction_date
     await db.delete(tx)
     await db.commit()
     await cache_service.invalidate_user_snapshot_cache(u_id)
     await cache_service.invalidate_user_cashflow_cache(u_id)
+    await request_history_recalculation(u_id, tx_date, "cashflow_deleted")

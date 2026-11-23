@@ -4,25 +4,23 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from app.config import settings
 from app.db.database import AsyncSessionLocal
-from app.db.models import User, Transaction
+from app.db.models import User
 from app.services.auth_service import get_password_hash
 from app.services.fifo_engine import recalculate_all_lots
-from app.services.snapshot_engine import generate_daily_snapshot, recalculate_past_snapshots
 from app.services.cashflow_engine import seed_default_categories
-from app.services.background_worker import background_worker
 from app.db.migrations import run_db_migrations
 from app.scheduler import start_scheduler, stop_scheduler
 from app.core.timing import TimingMiddleware
 
 from app.api.routers import (
     auth, accounts, assets, transactions, portfolio,
-    snapshots, prices, benchmarks, backup,
+    prices, benchmarks, backup,
     categories, cashflow, settings as app_settings_router, discrepancies,
-    mcp_router, community_proxy
+    mcp_router, community_proxy, networth_history_proxy
 )
 
 logger = logging.getLogger(__name__)
@@ -32,14 +30,8 @@ async def _startup_backfill():
     async with AsyncSessionLocal() as session:
         try:
             await recalculate_all_lots(session)
-            min_tx = await session.execute(select(func.min(Transaction.transaction_date)))
-            earliest_date = min_tx.scalar_one_or_none()
-            if earliest_date:
-                await recalculate_past_snapshots(session, start_date=earliest_date)
-            else:
-                await generate_daily_snapshot(session)
         except Exception as e:
-            logger.error(f"[Startup Backfill] Error: {e}")
+            logger.error(f"[Startup FIFO Backfill] Error: {e}")
 
 
 @asynccontextmanager
@@ -75,16 +67,14 @@ async def lifespan(app: FastAPI):
         except Exception as ce:
             logger.error(f"[Init Categories Error] {ce}")
 
-    # 3. Start background worker
-    background_worker.start()
-
-    # 4. Enqueue startup backfill
+    # 3. Refresh derived FIFO lots at startup. Net-worth history is owned by
+    # networth-history and is reconciled there.
     try:
         asyncio.create_task(_startup_backfill())
     except Exception as be:
         logger.error(f"[Init Backfill Task Error] {be}")
 
-    # 5. Start scheduler
+    # 4. Start the financial-data scheduler.
     try:
         start_scheduler()
     except Exception as se:
@@ -93,7 +83,6 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    await background_worker.stop()
     stop_scheduler()
 
 
@@ -129,7 +118,7 @@ app.include_router(accounts.router, prefix=settings.API_V1_STR)
 app.include_router(assets.router, prefix=settings.API_V1_STR)
 app.include_router(transactions.router, prefix=settings.API_V1_STR)
 app.include_router(portfolio.router, prefix=settings.API_V1_STR)
-app.include_router(snapshots.router, prefix=settings.API_V1_STR)
+app.include_router(networth_history_proxy.router, prefix=settings.API_V1_STR)
 app.include_router(prices.router, prefix=settings.API_V1_STR)
 app.include_router(benchmarks.router, prefix=settings.API_V1_STR)
 app.include_router(backup.router, prefix=settings.API_V1_STR)

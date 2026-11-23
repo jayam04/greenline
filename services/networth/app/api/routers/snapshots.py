@@ -1,5 +1,6 @@
 import datetime
 import asyncio
+import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException, status
 from pydantic import TypeAdapter
@@ -13,7 +14,6 @@ try:
     from ...db.models import NetworthSnapshot, Account, User, Transaction
     from ...schemas.schemas import NetworthSnapshotResponse, TriggerRecalculateRequest
     from ...services.snapshot_engine import calculate_account_snapshots
-    from ...services.background_worker import background_worker
     from ...services import cache_service
     from ..deps import get_current_user, get_user_id
 except (ImportError, ValueError):
@@ -21,13 +21,13 @@ except (ImportError, ValueError):
     from app.db.models import NetworthSnapshot, Account, User, Transaction
     from app.schemas.schemas import NetworthSnapshotResponse, TriggerRecalculateRequest
     from app.services.snapshot_engine import calculate_account_snapshots
-    from app.services.background_worker import background_worker
     from app.services import cache_service
     from app.api.deps import get_current_user, get_user_id
 
 router = APIRouter(prefix="/snapshots", tags=["snapshots"])
 
 _snapshot_adapter = TypeAdapter(List[NetworthSnapshotResponse])
+DAILY_HISTORY = os.getenv("NETWORTH_HISTORY_DAILY", "false").lower() in {"1", "true", "yes"}
 
 # L1 in-memory TTL Cache (sub-millisecond query responses)
 # Key: (user_id: int, account_id: Optional[int], start_date: Optional[datetime.date])
@@ -85,9 +85,8 @@ async def list_snapshots(
         if start_date is not None:
             acc_snaps = [s for s in acc_snaps if s["snapshot_date"] >= start_date]
 
-        # Enforce Sunday invariant (weekday == 6)
-        sunday_snaps = [s for s in acc_snaps if s["snapshot_date"].weekday() == 6]
-        res = [NetworthSnapshotResponse(**s) for s in sunday_snaps]
+        selected_snaps = acc_snaps if DAILY_HISTORY else [s for s in acc_snaps if s["snapshot_date"].weekday() == 6]
+        res = [NetworthSnapshotResponse(**s) for s in selected_snaps]
         snapshots_cache[cache_key] = res
         try:
             serialized = _snapshot_adapter.dump_json(res).decode("utf-8")
@@ -120,12 +119,11 @@ async def list_snapshots(
     stmt = stmt.order_by(asc(NetworthSnapshot.snapshot_date))
     rows = list((await db.execute(stmt)).scalars().all())
 
-    # Guarantee strict Sunday aggregation invariant
-    sunday_rows = [r for r in rows if r.snapshot_date.weekday() == 6]
+    selected_rows = rows if DAILY_HISTORY else [r for r in rows if r.snapshot_date.weekday() == 6]
     if start_date is not None:
-        sunday_rows = [r for r in sunday_rows if r.snapshot_date >= start_date]
+        selected_rows = [r for r in selected_rows if r.snapshot_date >= start_date]
 
-    res = [NetworthSnapshotResponse.model_validate(r) for r in sunday_rows]
+    res = [NetworthSnapshotResponse.model_validate(r) for r in selected_rows]
     snapshots_cache[cache_key] = res
     try:
         serialized = _snapshot_adapter.dump_json(res).decode("utf-8")
@@ -153,10 +151,8 @@ async def trigger_recalculate(
         )
 
     # Invalidate cache for this user
-    await cache_service.invalidate_user_snapshot_cache(u_id)
-
-    # Enqueue recalculation in background worker
-    await background_worker.enqueue_recalculate(
+    from services.networth_history.app.worker import history_worker
+    await history_worker.enqueue_recalculate(
         user_id=u_id,
         start_date=payload.start_date,
         reason=payload.reason or "manual_trigger"

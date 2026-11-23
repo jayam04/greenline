@@ -2870,6 +2870,65 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 - **Verification**:
   - Validated JSON parsing of all changelog blocks.
 
+### [2026-11-23 20:17:54 UTC] fix(cashflow): prevent duplicate initial ledger fetches
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T20:17:54Z",
+  "type": "fix",
+  "scope": "cashflow",
+  "summary": "prevent duplicate initial ledger fetches",
+  "affected_files": [
+    ".agents/changelog.md",
+    "frontend/src/__tests__/test_e2e_infinite_scroll_cashflow.test.tsx",
+    "frontend/src/app/cashflow/transactions/page.tsx"
+  ],
+  "rationale": "React Strict Mode reruns mount effects in development. Concurrent initial fetches allowed an older request's finally block to clear loading while the current request was still pending, producing an empty-state flash and duplicate backend work.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/test_e2e_infinite_scroll_cashflow.test.tsx && npx tsc --noEmit",
+    "result": "PASSED (20 frontend tests and TypeScript check)"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(cashflow)`
+- **Summary**: Deduplicated the initial ledger fetch in Strict Mode and guarded loading cleanup by request generation.
+- **Rationale**: Prevent duplicate API requests and avoid hiding the loading indicator when an obsolete request finishes before the active request.
+- **Verification**:
+  - Twenty cashflow ledger frontend tests and TypeScript passed, including a Strict Mode regression test.
+
+### [2026-11-23 20:08:53 UTC] perf(cashflow): reduce paginated cashflow query work
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T20:08:53Z",
+  "type": "perf",
+  "scope": "cashflow",
+  "summary": "reduce paginated cashflow query work",
+  "affected_files": [
+    ".agents/changelog.md",
+    "frontend/src/__tests__/test_e2e_infinite_scroll_cashflow.test.tsx",
+    "frontend/src/components/TransactionLedger.tsx",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/tests/test_cashflow_balance_query.py"
+  ],
+  "rationale": "Make transaction amounts visible in the selector without horizontal scrolling, provide an explicit Load more control, and avoid loading every prior investment trade into Python to calculate page balance context. Reduce one database round trip by returning the filtered total count with paginated rows.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "cd frontend && npx vitest run src/__tests__/test_e2e_infinite_scroll_cashflow.test.tsx && npx tsc --noEmit; PYTHONPATH=services/networth backend/.venv/bin/pytest --noconftest services/networth/tests/test_cashflow_balance_query.py -q; ruff check services/networth/app/api/routers/cashflow.py services/networth/tests/test_cashflow_balance_query.py; docker compose config --quiet; git diff --check",
+    "result": "PASSED (19 frontend tests, TypeScript, 2 SQL query tests, lint, Compose config, and whitespace checks)"
+  }
+}
+-->
+
+- **Type / Scope**: `perf(cashflow)`
+- **Summary**: Widened the transaction selector and added a Load more button; aggregate preceding trades in Oracle and return paginated counts with page rows.
+- **Rationale**: Avoid clipped amounts and reduce expensive historical row loading and sequential database round trips on cashflow page requests.
+- **Verification**:
+  - Nineteen cashflow ledger frontend tests and TypeScript passed.
+  - Two query shape tests, focused lint, Compose config, and `git diff --check` passed.
+
 ### [2026-11-23 19:49:59 UTC] fix(networth): correct history snapshot handler invocation
 
 <!-- changelog-entry-json

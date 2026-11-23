@@ -56,6 +56,7 @@ export default function CashflowTransactionsPage() {
   const [editingTradeTx, setEditingTradeTx] = useState<TransactionItem | null>(null);
 
   const inFlightRef = useRef(false);
+  const initialFetchStartedRef = useRef(false);
   const queryVersionRef = useRef(0);
   const hasMoreRef = useRef(true);
   const cashflowHasMoreRef = useRef(true);
@@ -159,13 +160,18 @@ export default function CashflowTransactionsPage() {
       console.error("Failed to load cashflow transactions chunk:", err);
       setError(err.message || "Failed to load transactions");
     } finally {
-      inFlightRef.current = false;
-      setLoading(false);
-      setLoadingMore(false);
+      if (currentVersion === queryVersionRef.current) {
+        inFlightRef.current = false;
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   };
 
   useEffect(() => {
+    if (initialFetchStartedRef.current) return;
+    initialFetchStartedRef.current = true;
+
     document.title = "Cashflow Transactions · greenline";
 
     apiFetch<Account[]>("/accounts")

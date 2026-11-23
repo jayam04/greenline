@@ -4,7 +4,7 @@ import math
 from typing import List, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func, or_, and_
+from sqlalchemy import select, desc, func, or_, and_, case
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
@@ -24,6 +24,60 @@ from app.api.deps import get_current_user, get_user_id
 from app.core.timing import time_block
 
 router = APIRouter(prefix="/cashflow", tags=["cashflow"])
+
+
+def _build_paginated_cashflow_statement(filters, offset: int, page_size: int):
+    """Fetch a cashflow page and its total count with one database round trip."""
+    return (
+        select(CashflowTransaction, func.count().over().label("total_count"))
+        .options(
+            selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
+            selectinload(CashflowTransaction.items).selectinload(CashflowItem.category),
+        )
+        .where(*filters)
+        .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
+        .offset(offset)
+        .limit(page_size)
+    )
+
+
+def _build_preceding_trade_balance_statement(user_id: int, before_date: datetime.date):
+    """Aggregate historical trade cash movement in Oracle instead of loading every trade."""
+    transaction_kind = func.lower(Transaction.transaction_type)
+    has_trade_price = and_(
+        Transaction.quantity.is_not(None),
+        Transaction.quantity != 0,
+        Transaction.price_per_unit.is_not(None),
+        Transaction.price_per_unit != 0,
+    )
+    # Keep the same quantity × unit price calculation used by the ledger.
+    gross_amount = case(
+        (has_trade_price, Transaction.quantity * Transaction.price_per_unit),
+        else_=Transaction.total_amount,
+    )
+    fees = func.coalesce(Transaction.fees, 0)
+    taxes = func.coalesce(Transaction.taxes, 0)
+    cash_amount = case(
+        (transaction_kind == "buy", -(gross_amount + fees + taxes)),
+        (transaction_kind == "sell", func.greatest(0, gross_amount - fees - taxes)),
+        (transaction_kind == "dividend", func.greatest(0, gross_amount - taxes)),
+        (transaction_kind == "withdrawal", -gross_amount),
+        else_=gross_amount,
+    )
+    account_id = case(
+        (transaction_kind.in_(("buy", "sell")), func.coalesce(Transaction.funding_account_id, Transaction.account_id)),
+        (transaction_kind == "dividend", Transaction.funding_account_id),
+        else_=Transaction.account_id,
+    )
+    return (
+        select(account_id.label("account_id"), func.sum(cash_amount).label("cash_balance"))
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.transaction_date < before_date,
+            account_id.is_not(None),
+        )
+        .group_by(account_id)
+    )
 
 @router.get("/transactions", response_model=Union[PaginatedCashflowResponse, List[CashflowTransactionResponse]])
 @router.get("/transactions/", response_model=Union[PaginatedCashflowResponse, List[CashflowTransactionResponse]])
@@ -114,34 +168,48 @@ async def list_cashflow_transactions(
         ))
 
     count_stmt = select(func.count(CashflowTransaction.cashflow_id)).where(*filters)
-    total_count = (await db.execute(count_stmt)).scalar() or 0
+    if is_paginated:
+        calc_offset = (eff_page - 1) * eff_page_size
+        stmt = _build_paginated_cashflow_statement(filters, calc_offset, eff_page_size)
+    elif limit is not None:
+        calc_offset = offset if offset is not None else 0
+        stmt = (
+            select(CashflowTransaction)
+            .options(
+                selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
+                selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
+            )
+            .where(*filters)
+            .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
+            .offset(calc_offset)
+            .limit(limit)
+        )
+    else:
+        stmt = (
+            select(CashflowTransaction)
+            .options(
+                selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
+                selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
+            )
+            .where(*filters)
+            .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
+        )
+
+    res = await db.execute(stmt)
+    if is_paginated:
+        page_rows = res.all()
+        transactions = [row[0] for row in page_rows]
+        total_count = int(page_rows[0][1]) if page_rows else (await db.execute(count_stmt)).scalar() or 0
+    else:
+        transactions = res.scalars().all()
+        total_count = (await db.execute(count_stmt)).scalar() or 0
 
     if total_count == 0:
         total_pages = 0
         has_more = False
     else:
-        total_pages = math.ceil(total_count / eff_page_size) if eff_page_size > 0 else 0
-        has_more = (eff_page * eff_page_size) < total_count
-
-    stmt = (
-        select(CashflowTransaction)
-        .options(
-            selectinload(CashflowTransaction.payments).selectinload(CashflowPayment.account),
-            selectinload(CashflowTransaction.items).selectinload(CashflowItem.category)
-        )
-        .where(*filters)
-        .order_by(desc(CashflowTransaction.transaction_date), desc(CashflowTransaction.cashflow_id))
-    )
-
-    if is_paginated:
-        calc_offset = (eff_page - 1) * eff_page_size
-        stmt = stmt.offset(calc_offset).limit(eff_page_size)
-    elif limit is not None:
-        calc_offset = offset if offset is not None else 0
-        stmt = stmt.offset(calc_offset).limit(limit)
-
-    res = await db.execute(stmt)
-    transactions = res.scalars().all()
+        total_pages = math.ceil(total_count / eff_page_size) if is_paginated and eff_page_size > 0 else (1 if total_count else 0)
+        has_more = is_paginated and (eff_page * eff_page_size) < total_count
 
     balance_context = {}
     if is_paginated and transactions:
@@ -160,26 +228,11 @@ async def list_cashflow_transactions(
             .group_by(CashflowPayment.account_id)
         )
         balance_context = {int(account_id): float(amount or 0) for account_id, amount in (await db.execute(balance_stmt)).all()}
-        trade_balance_stmt = select(Transaction).where(
-            Transaction.user_id == u_id,
-            Transaction.transaction_date < oldest_row.transaction_date
-        )
-        for trade in (await db.execute(trade_balance_stmt)).scalars().all():
-            kind = (trade.transaction_type or "").lower()
-            gross = float(trade.quantity or 0) * float(trade.price_per_unit or 0) if trade.quantity and trade.price_per_unit else float(trade.total_amount or 0)
-            fees, taxes = float(trade.fees or 0), float(trade.taxes or 0)
-            if kind == "buy":
-                target, amount = trade.funding_account_id or trade.account_id, -(gross + fees + taxes)
-            elif kind == "sell":
-                target, amount = trade.funding_account_id or trade.account_id, max(0, gross - fees - taxes)
-            elif kind == "dividend":
-                target, amount = trade.funding_account_id, max(0, gross - taxes)
-            elif kind == "withdrawal":
-                target, amount = trade.account_id, -gross
-            else:
-                target, amount = trade.account_id, gross
-            if target is not None:
-                balance_context[target] = round(balance_context.get(target, 0.0) + amount, 2)
+        trade_balance_stmt = _build_preceding_trade_balance_statement(u_id, oldest_row.transaction_date)
+        for account_id, amount in (await db.execute(trade_balance_stmt)).all():
+            balance_context[int(account_id)] = round(
+                balance_context.get(int(account_id), 0.0) + float(amount or 0.0), 2
+            )
 
     results = []
     for tx in transactions:

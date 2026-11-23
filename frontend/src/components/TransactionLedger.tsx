@@ -193,7 +193,7 @@ export function TransactionLedger({
     <div className="flex flex-col md:flex-row border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 min-h-[500px]">
       
       {/* LEFT PANE: List (1/3 width) */}
-      <div ref={scrollContainerRef} className="w-full md:w-1/3 border-r border-border flex flex-col max-h-[700px] overflow-y-auto bg-surface-2/30">
+      <div ref={scrollContainerRef} data-testid="transaction-selector-pane" className="w-full min-w-0 md:w-2/5 border-r border-border flex flex-col max-h-[700px] overflow-y-auto bg-surface-2/30">
         <table role="table" className="w-full border-collapse">
           <tbody className="divide-y divide-border">
             {loading && transactions.length === 0 ? (
@@ -248,7 +248,7 @@ export function TransactionLedger({
                         </span>
                       </div>
                       
-                      <div className={`text-body font-semibold tabular-nums whitespace-nowrap ${amountColor}`}>
+                      <div className={`shrink-0 text-sm font-semibold tabular-nums whitespace-nowrap ${amountColor}`}>
                         {tx.isTransfer ? "" : tx.isIncome ? "+" : "-"}{formatCurrency(tx.totalAmount, tx.currency)}
                       </div>
 
@@ -290,6 +290,15 @@ export function TransactionLedger({
               <span>Loading more...</span>
             </div>
           )}
+          {hasMore && !loadingMore && !error && onLoadMore && (
+            <button
+              type="button"
+              onClick={onLoadMore}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-2"
+            >
+              Load more
+            </button>
+          )}
           {error && (
             <div className="flex flex-col items-center gap-1 py-2">
               <span className="text-xs text-loss">{error}</span>
@@ -306,7 +315,7 @@ export function TransactionLedger({
       </div>
 
       {/* RIGHT PANE: Detail (2/3 width) */}
-      <div className="w-full md:w-2/3 flex flex-col bg-card text-card-foreground border-l border-border max-h-[700px]">
+      <div className="w-full min-w-0 md:w-3/5 flex flex-col bg-card text-card-foreground border-l border-border max-h-[700px]">
         {selectedTx ? (
           <div className="flex flex-col h-full">
             <div className="flex items-start justify-between p-6 border-b border-border shrink-0">

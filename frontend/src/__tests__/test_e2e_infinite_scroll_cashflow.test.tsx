@@ -148,6 +148,61 @@ describe('R3: Cashflow Ledger Infinite Scroll & URL Sync (/cashflow/transactions
       expect(MockIntersectionObserver.activeInstances.length).toBeGreaterThanOrEqual(1);
       const observer = MockIntersectionObserver.activeInstances[0];
       expect(observer.elements.length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByRole('button', { name: /load more/i })).toBeInTheDocument();
+      expect(screen.getByTestId('transaction-selector-pane')).toHaveClass('md:w-2/5');
+    });
+
+    it('offers a Load more button that appends the next cashflow page', async () => {
+      (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
+        if (endpoint.startsWith('/accounts')) return mockAccounts;
+        if (endpoint.startsWith('/categories') || endpoint.startsWith('/settings')) return [];
+        const page = Number(endpoint.match(/page=(\d+)/)?.[1] || 1);
+        if (endpoint.startsWith('/cashflow')) return makePaginatedCashflowResponse(page, 20, 60);
+        if (endpoint.startsWith('/transactions')) return makePaginatedTradesResponse(page, 20, 60);
+        return null;
+      });
+
+      render(<CashflowTransactionsPage />);
+      await waitFor(() => expect(screen.getByText('Income Salary 3')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /load more/i }));
+
+      await waitFor(() => expect(screen.getByText('Income Salary 21')).toBeInTheDocument());
+    });
+
+    it('does not duplicate the initial requests or flash an empty state in Strict Mode', async () => {
+      const pending: Record<string, Array<(value: any) => void>> = {
+        cashflow: [],
+        transactions: [],
+      };
+      (api.apiFetch as any).mockImplementation((endpoint: string) => {
+        if (endpoint.startsWith('/accounts')) return Promise.resolve(mockAccounts);
+        if (endpoint.startsWith('/cashflow')) {
+          return new Promise((resolve) => pending.cashflow.push(resolve));
+        }
+        if (endpoint.startsWith('/transactions')) {
+          return new Promise((resolve) => pending.transactions.push(resolve));
+        }
+        return Promise.resolve(null);
+      });
+
+      render(
+        <React.StrictMode>
+          <CashflowTransactionsPage />
+        </React.StrictMode>
+      );
+
+      await waitFor(() => {
+        expect(pending.cashflow).toHaveLength(1);
+        expect(pending.transactions).toHaveLength(1);
+      });
+      expect(screen.getByText('Loading ledger...')).toBeInTheDocument();
+
+      pending.cashflow[0](makePaginatedCashflowResponse(1, 20, 20));
+      pending.transactions[0](makePaginatedTradesResponse(1, 20, 20));
+
+      await waitFor(() => expect(screen.getByText('Income Salary 3')).toBeInTheDocument());
+      expect(screen.queryByText('No transactions recorded for this period.')).not.toBeInTheDocument();
     });
 
     it('C1.2: triggers next chunk on internal container sentinel intersection and appends rows', async () => {
@@ -255,7 +310,7 @@ describe('R3: Cashflow Ledger Infinite Scroll & URL Sync (/cashflow/transactions
       });
     });
 
-    it('C1.4: displays zero manual pagination buttons or controls in ledger header or footer', async () => {
+    it('C1.4: offers a Load more action without numbered pagination controls', async () => {
       (api.apiFetch as any).mockImplementation(async (endpoint: string) => {
         if (endpoint.startsWith('/accounts')) return mockAccounts;
         if (endpoint.startsWith('/categories')) return [];
@@ -271,9 +326,9 @@ describe('R3: Cashflow Ledger Infinite Scroll & URL Sync (/cashflow/transactions
         expect(screen.getByText('Income Salary 3')).toBeInTheDocument();
       });
 
-      // Assert no manual page buttons or pagination elements exist
+      expect(screen.getByRole('button', { name: /load more/i })).toBeInTheDocument();
       expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /^(next|previous|prev|next page|previous page|prev page|load more)$/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^(next|previous|prev|next page|previous page|prev page)$/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /page\s*\d+/i })).not.toBeInTheDocument();
 
       const buttons = screen.queryAllByRole('button');

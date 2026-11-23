@@ -220,6 +220,14 @@ The `networth-history` service owns daily snapshot calculation and history in th
 2. Set `ORACLE_NETWORTH_HISTORY_PASSWORD` to the same password and set `NETWORTH_HISTORY_SERVICE_TOKEN` to a long random secret.
 3. Start the stack with `docker compose up --build`. The history service performs a per-user daily backfill and logs parity comparisons with existing weekly snapshots before its health check passes.
 
+If Oracle reports `ORA-01017` and `GREENLINE_NW_HISTORY` already exists (for example, from an earlier run or a persisted database volume), reset its password as the Oracle schema owner and use that exact value in `.env`:
+
+```sql
+ALTER USER GREENLINE_NW_HISTORY IDENTIFIED BY "your-private-password";
+```
+
+Then recreate the history container with `docker compose up -d --force-recreate networth-history`.
+
 The current API authenticates snapshot requests and proxies them to the private history service. Cashflow, trade, account, asset, and price mutations enqueue recalculations after commit; the history service also rebuilds every user's daily history nightly.
 
 ---

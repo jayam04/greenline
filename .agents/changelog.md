@@ -2870,6 +2870,93 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 - **Verification**:
   - Validated JSON parsing of all changelog blocks.
 
+### [2026-11-23 19:49:59 UTC] fix(networth): correct history snapshot handler invocation
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T19:49:59Z",
+  "type": "fix",
+  "scope": "networth",
+  "summary": "correct history snapshot handler invocation",
+  "affected_files": [
+    ".agents/changelog.md",
+    "services/networth_history/app/routes/snapshots.py",
+    "services/networth_history/tests/test_internal_api.py"
+  ],
+  "rationale": "The history snapshot route passed a Response object positionally into list_snapshots, whose first argument is account_id, while also passing account_id by keyword; this raised a duplicate-argument TypeError and returned HTTP 500 for reads.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=. backend/.venv/bin/pytest services/networth_history/tests -q; docker compose config --quiet; ruff check services/networth_history/app/routes/snapshots.py services/networth_history/tests/test_internal_api.py; git diff --check",
+    "result": "PASSED (8 history tests, Compose config, lint, and whitespace checks)"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(networth)`
+- **Summary**: Corrected the history snapshot route's call to the legacy snapshot handler and added a regression assertion for its arguments.
+- **Rationale**: Remove the argument collision that caused snapshot reads to return Internal Server Error.
+- **Verification**:
+  - Eight history service tests passed, including the new proxy invocation regression test.
+  - Compose config, focused lint, and `git diff --check` passed.
+
+### [2026-11-23 18:30:00 UTC] fix(networth): document history schema credential recovery
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T18:30:00Z",
+  "type": "fix",
+  "scope": "networth",
+  "summary": "document history schema credential recovery",
+  "affected_files": [
+    ".agents/changelog.md",
+    "README.md",
+    "services/networth_history/tests/test_deployment_contract.py"
+  ],
+  "rationale": "ORA-01017 occurs when the existing Oracle history user password differs from the Compose credential; document the direct recovery step and guard the fresh-install SQL and Compose defaults against drifting apart.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=. backend/.venv/bin/pytest services/networth_history/tests -q; PYTHONPATH=services/networth backend/.venv/bin/pytest --noconftest services/networth/tests/test_compose_config.py -q; docker compose config --quiet; git diff --check",
+    "result": "PASSED (8 history tests, 3 compose tests, compose config, and whitespace checks)"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(networth)`
+- **Summary**: Documented how to reset an existing history schema user's password after `ORA-01017` and tested Compose/schema password default alignment.
+- **Rationale**: Existing database volumes retain Oracle users and credentials, which can diverge from current Compose defaults.
+- **Verification**:
+  - Eight history tests and three compose configuration tests passed.
+  - Compose configuration and `git diff --check` passed.
+
+### [2026-11-23 18:25:16 UTC] fix(networth): remove missing Docker build source
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T18:25:16Z",
+  "type": "fix",
+  "scope": "networth",
+  "summary": "remove missing Docker build source",
+  "affected_files": [
+    ".agents/changelog.md",
+    "services/networth_history/Dockerfile",
+    "services/networth_history/tests/test_deployment_contract.py"
+  ],
+  "rationale": "The history image build referenced a services package initializer that does not exist in the repository; namespace packages work without copying that file, and a regression test now checks all Dockerfile COPY sources against the build context.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=. backend/.venv/bin/pytest services/networth_history/tests -q; docker compose config --quiet; docker compose build networth-history",
+    "result": "8 history tests passed and Compose configuration passed. Image build could not run because the sandbox cannot access /var/run/docker.sock."
+  }
+}
+-->
+
+- **Type / Scope**: `fix(networth)`
+- **Summary**: Removed the Dockerfile copy of nonexistent `services/__init__.py` and added a build-context source regression test.
+- **Rationale**: The missing source caused Docker BuildKit to fail while calculating the build context checksum.
+- **Verification**:
+  - Eight history tests and Compose configuration passed.
+  - Image build was blocked by Docker daemon socket permissions in this environment.
+
 ### [2026-11-23 18:20:31 UTC] feat(networth): add isolated daily history service
 
 <!-- changelog-entry-json

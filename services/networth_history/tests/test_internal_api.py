@@ -58,11 +58,13 @@ async def test_snapshot_read_requires_service_token_and_uses_gateway_user_contex
     calls = []
 
     async def record_list(*args, **kwargs):
-        calls.append(kwargs)
+        calls.append((args, kwargs))
         return []
 
+    db_session = object()
+
     async def override_db():
-        yield object()
+        yield db_session
 
     monkeypatch.setattr(snapshots_routes, "SERVICE_TOKEN", "test-service-token")
     monkeypatch.setattr(snapshots_routes, "list_snapshots", record_list)
@@ -82,4 +84,9 @@ async def test_snapshot_read_requires_service_token_and_uses_gateway_user_contex
     assert denied.status_code == 401
     assert accepted.status_code == 200
     assert accepted.json() == []
-    assert calls[0]["current_user"] == 17
+    assert calls == [((), {
+        "account_id": None,
+        "start_date": None,
+        "db": db_session,
+        "current_user": 17,
+    })]

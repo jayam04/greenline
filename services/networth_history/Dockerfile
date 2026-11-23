@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY services/networth/requirements.txt /tmp/networth-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/networth-requirements.txt
 
-COPY services/__init__.py /opt/greenline/services/__init__.py
 COPY services/networth/__init__.py /opt/greenline/services/networth/__init__.py
 COPY services/networth/app /opt/greenline/services/networth/app
 COPY services/networth_history/__init__.py /opt/greenline/services/networth_history/__init__.py

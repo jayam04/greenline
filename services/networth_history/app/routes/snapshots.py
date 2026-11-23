@@ -4,7 +4,6 @@ from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
@@ -37,7 +36,7 @@ async def get_snapshots(
 ):
     user_id = _authorize(x_service_token, x_greenline_user_id)
     return await list_snapshots(
-        Response(), account_id=account_id, start_date=start_date,
+        account_id=account_id, start_date=start_date,
         db=db, current_user=user_id,
     )
 

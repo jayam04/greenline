@@ -8,7 +8,7 @@ from sqlalchemy import select, desc, func, or_, and_
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.db.models import CashflowTransaction, CashflowPayment, CashflowItem, Account, Category, User
+from app.db.models import CashflowTransaction, CashflowPayment, CashflowItem, Account, Category, User, Transaction
 from app.schemas.schemas import (
     CashflowTransactionCreate, CashflowTransactionUpdate, CashflowTransactionResponse,
     CashflowPaymentResponse, CashflowItemResponse, CashflowSummaryResponse, SankeyDataResponse,
@@ -35,6 +35,7 @@ async def list_cashflow_transactions(
     account_id: Optional[int] = Query(None),
     category_id: Optional[int] = Query(None),
     label: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
     page: Optional[int] = Query(None, ge=1, description="Page number (1-indexed)"),
     page_size: Optional[int] = Query(None, ge=1, description="Items per page"),
     limit: Optional[int] = Query(None, ge=1),
@@ -58,6 +59,7 @@ async def list_cashflow_transactions(
             account_id=account_id,
             category_id=category_id,
             label=label,
+            search=search,
         )
         try:
             cached_val = await cache_service.get_cache(cache_key)
@@ -101,6 +103,14 @@ async def list_cashflow_transactions(
         else:
             label_condition = func.upper(CashflowItem.label) == label_upper
         filters.append(CashflowTransaction.items.any(label_condition))
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        filters.append(or_(
+            func.lower(CashflowTransaction.title).like(term),
+            func.lower(CashflowTransaction.notes).like(term),
+            CashflowTransaction.payments.any(CashflowPayment.account.has(func.lower(Account.account_name).like(term))),
+            CashflowTransaction.items.any(or_(func.lower(CashflowItem.label).like(term), func.lower(CashflowItem.description).like(term), CashflowItem.category.has(func.lower(Category.name).like(term))))
+        ))
 
     count_stmt = select(func.count(CashflowTransaction.cashflow_id)).where(*filters)
     total_count = (await db.execute(count_stmt)).scalar() or 0
@@ -131,6 +141,44 @@ async def list_cashflow_transactions(
 
     res = await db.execute(stmt)
     transactions = res.scalars().all()
+
+    balance_context = {}
+    if is_paginated and transactions:
+        oldest_row = min(transactions, key=lambda tx: (tx.transaction_date, tx.cashflow_id))
+        balance_stmt = (
+            select(CashflowPayment.account_id, func.sum(CashflowPayment.amount))
+            .join(CashflowTransaction, CashflowTransaction.cashflow_id == CashflowPayment.cashflow_id)
+            .where(
+                CashflowTransaction.user_id == u_id,
+                or_(
+                    CashflowTransaction.transaction_date < oldest_row.transaction_date,
+                    and_(CashflowTransaction.transaction_date == oldest_row.transaction_date,
+                         CashflowTransaction.cashflow_id < oldest_row.cashflow_id)
+                )
+            )
+            .group_by(CashflowPayment.account_id)
+        )
+        balance_context = {int(account_id): float(amount or 0) for account_id, amount in (await db.execute(balance_stmt)).all()}
+        trade_balance_stmt = select(Transaction).where(
+            Transaction.user_id == u_id,
+            Transaction.transaction_date < oldest_row.transaction_date
+        )
+        for trade in (await db.execute(trade_balance_stmt)).scalars().all():
+            kind = (trade.transaction_type or "").lower()
+            gross = float(trade.quantity or 0) * float(trade.price_per_unit or 0) if trade.quantity and trade.price_per_unit else float(trade.total_amount or 0)
+            fees, taxes = float(trade.fees or 0), float(trade.taxes or 0)
+            if kind == "buy":
+                target, amount = trade.funding_account_id or trade.account_id, -(gross + fees + taxes)
+            elif kind == "sell":
+                target, amount = trade.funding_account_id or trade.account_id, max(0, gross - fees - taxes)
+            elif kind == "dividend":
+                target, amount = trade.funding_account_id, max(0, gross - taxes)
+            elif kind == "withdrawal":
+                target, amount = trade.account_id, -gross
+            else:
+                target, amount = trade.account_id, gross
+            if target is not None:
+                balance_context[target] = round(balance_context.get(target, 0.0) + amount, 2)
 
     results = []
     for tx in transactions:
@@ -197,7 +245,8 @@ async def list_cashflow_transactions(
         page=eff_page,
         page_size=eff_page_size,
         total_pages=total_pages,
-        has_more=has_more
+        has_more=has_more,
+        balance_context=balance_context
     )
 
     if cache_key is not None:

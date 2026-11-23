@@ -32,6 +32,44 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-23 14:48:29 UTC] feat(cashflow): paginate and filter ledger feeds server-side
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-23T14:48:29Z",
+  "type": "feat",
+  "scope": "cashflow",
+  "summary": "paginate and filter ledger feeds server-side",
+  "affected_files": [
+    ".agents/changelog.md",
+    "frontend/src/app/cashflow/transactions/page.tsx",
+    "frontend/src/app/investments/transactions/page.tsx",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/app/api/routers/transactions.py",
+    "services/networth/app/schemas/schemas.py",
+    "services/networth/app/services/cache_service.py",
+    "services/networth/tests/test_transactions_pagination_caching.py"
+  ],
+  "rationale": "Bound both ledger feeds from their initial request, push search and filter operations before database paging, isolate cached query results, and preserve running balances when older pages are loaded.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "frontend vitest pagination suites; npx tsc --noEmit; npm run lint; python -m pytest services/networth/tests/test_transactions_pagination_caching.py::test_stock_transactions_search_and_type_filter -q; git diff --check",
+    "result": "Frontend tests passed (35); TypeScript passed; lint passed with existing warnings; diff check passed. Oracle-backed pytest could not initialize because sandbox networking returned Operation not permitted."
+  }
+}
+-->
+
+- **Type / Scope**: `feat(cashflow)`
+- **Summary**: Paginated cashflow and trade feeds from the initial request and moved ledger search and filters into server queries.
+- **Rationale**: Keep ledger requests bounded while allowing searches to find records outside currently loaded pages and retain continuous running balances.
+- **Key Changes**:
+  - `services/networth/app/api/routers/transactions.py`: Added transaction type and search filtering before count and paging.
+  - `services/networth/app/api/routers/cashflow.py`: Added cashflow search and prior activity balance context.
+  - `frontend/src/app/cashflow/transactions/page.tsx`: Paginated both initial feeds, reset on filter changes, and continue until both feeds are exhausted.
+- **Verification**:
+  - Command: `npx vitest run src/__tests__/test_e2e_infinite_scroll_cashflow.test.tsx src/__tests__/test_e2e_infinite_scroll_trades.test.tsx && npx tsc --noEmit && npm run lint`
+  - Output: 35 frontend tests passed; TypeScript passed; lint completed with 12 existing hook/font/navigation warnings. Oracle-backed pytest could not connect because sandbox networking returned `Operation not permitted`.
+
 ### [2026-11-23 12:52:41 UTC] refactor(networth): complete migration to the service-owned backend
 
 <!-- changelog-entry-json

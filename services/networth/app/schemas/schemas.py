@@ -473,6 +473,7 @@ class PaginatedCashflowResponse(BaseModel):
     page_size: int
     total_pages: int
     has_more: bool
+    balance_context: Dict[int, float] = Field(default_factory=dict)
     has_next: Optional[bool] = None
     has_prev: Optional[bool] = None
     total_count: Optional[int] = None

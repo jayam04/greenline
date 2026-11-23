@@ -5,7 +5,7 @@ import json
 import math
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, or_
 from sqlalchemy.orm import aliased
 from app.db.database import get_db
 from app.db.models import Transaction, Account, Asset, User, PriceHistory
@@ -118,6 +118,8 @@ async def list_transactions(
     response: Response,
     account_id: Optional[int] = None,
     asset_id: Optional[int] = None,
+    search: Optional[str] = Query(None),
+    type: Optional[str] = Query(None),
     page: Optional[int] = Query(None, ge=1, description="Page number (1-indexed)"),
     page_size: Optional[int] = Query(None, ge=1, description="Items per page"),
     limit: int = 100,
@@ -138,6 +140,8 @@ async def list_transactions(
             page_size=eff_page_size,
             account_id=account_id,
             asset_id=asset_id,
+            search=search,
+            transaction_type=type,
         )
         try:
             cached_val = await cache_service.get_cache(cache_key)
@@ -157,6 +161,11 @@ async def list_transactions(
         count_stmt = count_stmt.where(Transaction.account_id == account_id)
     if asset_id is not None:
         count_stmt = count_stmt.where(Transaction.asset_id == asset_id)
+    if type:
+        count_stmt = count_stmt.where(func.lower(Transaction.transaction_type) == type.lower())
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        count_stmt = count_stmt.join(Account, Transaction.account_id == Account.account_id, isouter=True).join(Asset, Transaction.asset_id == Asset.asset_id, isouter=True).where(or_(func.lower(Asset.symbol).like(term), func.lower(Asset.name).like(term), func.lower(Account.account_name).like(term), func.lower(Transaction.notes).like(term)))
     total = (await db.execute(count_stmt)).scalar() or 0
 
     if total == 0:
@@ -184,6 +193,11 @@ async def list_transactions(
         stmt = stmt.where(Transaction.account_id == account_id)
     if asset_id is not None:
         stmt = stmt.where(Transaction.asset_id == asset_id)
+    if type:
+        stmt = stmt.where(func.lower(Transaction.transaction_type) == type.lower())
+    if search and search.strip():
+        term = f"%{search.strip().lower()}%"
+        stmt = stmt.where(or_(func.lower(Asset.symbol).like(term), func.lower(Asset.name).like(term), func.lower(Account.account_name).like(term), func.lower(Transaction.notes).like(term)))
 
     stmt = stmt.order_by(desc(Transaction.transaction_date), desc(Transaction.transaction_id))
 

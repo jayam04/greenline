@@ -54,7 +54,7 @@ export default function TransactionsPage() {
   const currentPageRef = useRef(1);
   const filterTypeRef = useRef("all");
 
-  const fetchChunk = async (targetPage: number, isInitial = false, currentFilter = filterTypeRef.current) => {
+  const fetchChunk = async (targetPage: number, isInitial = false, currentFilter = filterTypeRef.current, currentSearch = searchQuery) => {
     if (inFlightRef.current && !isInitial) return;
     inFlightRef.current = true;
     const currentVersion = ++queryVersionRef.current;
@@ -72,6 +72,7 @@ export default function TransactionsPage() {
       if (currentFilter && currentFilter !== "all") {
         endpoint += `&type=${encodeURIComponent(currentFilter)}`;
       }
+      if (currentSearch.trim()) endpoint += `&search=${encodeURIComponent(currentSearch.trim())}`;
 
       const res = await apiFetch<any>(endpoint);
       if (currentVersion !== queryVersionRef.current) return;
@@ -142,7 +143,7 @@ export default function TransactionsPage() {
     currentPageRef.current = 1;
     setCurrentPage(1);
     syncUrlPage(1);
-    fetchChunk(1, true, filterTypeRef.current);
+    fetchChunk(1, true, filterTypeRef.current, q);
   };
 
   const handleEdit = (tx: Transaction) => {
@@ -164,9 +165,6 @@ export default function TransactionsPage() {
 
   // Filter transactions
   const filtered = transactions.filter((t) => {
-    if (filterType !== "all" && t.transaction_type.toLowerCase() !== filterType) {
-      return false;
-    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const sym = (t.asset_symbol || "").toLowerCase();

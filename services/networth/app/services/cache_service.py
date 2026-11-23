@@ -86,13 +86,15 @@ def get_transaction_page_key(
     page_size: Optional[int] = 50,
     account_id: Optional[int] = None,
     asset_id: Optional[int] = None,
+    search: Optional[str] = None,
+    transaction_type: Optional[str] = None,
 ) -> str:
     """Key format: gl:tx:{user_id}:p={page}:s={page_size}:acc={account_id or 'all'}:asset={asset_id or 'all'}"""
     p = page if page is not None else 1
     s = page_size if page_size is not None else 50
     acc = str(account_id) if account_id is not None else "all"
     ast = str(asset_id) if asset_id is not None else "all"
-    return f"gl:tx:{user_id}:p={p}:s={s}:acc={acc}:asset={ast}"
+    return f"gl:tx:{user_id}:p={p}:s={s}:acc={acc}:asset={ast}:q={(search or '').lower()}:type={(transaction_type or '').lower()}"
 
 
 def get_cashflow_page_key(
@@ -104,6 +106,7 @@ def get_cashflow_page_key(
     account_id: Optional[int] = None,
     category_id: Optional[int] = None,
     label: Optional[str] = None,
+    search: Optional[str] = None,
 ) -> str:
     """Key format: gl:cf:{user_id}:p={page}:s={page_size}:start={start_date or 'none'}:end={end_date or 'none'}:acc={account_id or 'all'}:cat={category_id or 'all'}:label={label or 'all'}"""
     p = page if page is not None else 1
@@ -113,7 +116,7 @@ def get_cashflow_page_key(
     acc = str(account_id) if account_id is not None else "all"
     cat = str(category_id) if category_id is not None else "all"
     lbl = str(label).lower() if label is not None else "all"
-    return f"gl:cf:{user_id}:p={p}:s={s}:start={start}:end={end}:acc={acc}:cat={cat}:label={lbl}"
+    return f"gl:cf:{user_id}:p={p}:s={s}:start={start}:end={end}:acc={acc}:cat={cat}:label={lbl}:q={(search or '').lower()}"
 
 
 

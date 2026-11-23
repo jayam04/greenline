@@ -33,6 +33,7 @@ interface Account {
 export default function CashflowTransactionsPage() {
   const [cashflowTxs, setCashflowTxs] = useState<CashflowTransactionItem[]>([]);
   const [tradeTxs, setTradeTxs] = useState<TransactionItem[]>([]);
+  const [balanceContext, setBalanceContext] = useState<Record<number, number>>({});
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -57,13 +58,17 @@ export default function CashflowTransactionsPage() {
   const inFlightRef = useRef(false);
   const queryVersionRef = useRef(0);
   const hasMoreRef = useRef(true);
+  const cashflowHasMoreRef = useRef(true);
+  const tradesHasMoreRef = useRef(true);
   const currentPageRef = useRef(1);
   const selectedAccountIdRef = useRef<string>("ALL");
 
   const fetchChunk = async (
     targetPage: number,
     isReset = false,
-    accountIdFilter = selectedAccountIdRef.current
+    accountIdFilter = selectedAccountIdRef.current,
+    searchFilter = searchQuery,
+    labelFilter = selectedLabelFilter
   ) => {
     if (inFlightRef.current && !isReset) return;
     inFlightRef.current = true;
@@ -82,15 +87,13 @@ export default function CashflowTransactionsPage() {
       let trUrl = "/transactions";
       const queryParts: string[] = [];
 
-      if (targetPage > 1) {
-        queryParts.push(`page=${targetPage}`, "page_size=20");
-      } else if (accountIdFilter && accountIdFilter !== "ALL") {
-        queryParts.push("page=1", "page_size=20");
-      }
+      queryParts.push(`page=${targetPage}`, "page_size=20");
 
       if (accountIdFilter && accountIdFilter !== "ALL") {
         queryParts.push(`account_id=${encodeURIComponent(accountIdFilter)}`);
       }
+      if (searchFilter.trim()) queryParts.push(`search=${encodeURIComponent(searchFilter.trim())}`);
+      if (labelFilter !== "ALL") queryParts.push(`label=${encodeURIComponent(labelFilter)}`);
 
       if (queryParts.length > 0) {
         const q = queryParts.join("&");
@@ -98,9 +101,11 @@ export default function CashflowTransactionsPage() {
         trUrl += `?${q}`;
       }
 
+      const fetchCashflow = isReset || cashflowHasMoreRef.current;
+      const fetchTrades = isReset || tradesHasMoreRef.current;
       let [cfRes, trRes] = await Promise.all([
-        apiFetch<any>(cfUrl),
-        apiFetch<any>(trUrl),
+        fetchCashflow ? apiFetch<any>(cfUrl) : Promise.resolve({ items: [], has_more: false }),
+        fetchTrades ? apiFetch<any>(trUrl) : Promise.resolve({ items: [], has_more: false }),
       ]);
 
       const isEmptyEnvelope = (res: any) => {
@@ -124,12 +129,15 @@ export default function CashflowTransactionsPage() {
 
       const cfParsed = parsePaginatedResponse<CashflowTransactionItem>(cfRes, targetPage, 20);
       const trParsed = parsePaginatedResponse<TransactionItem>(trRes, targetPage, 20);
+      if (fetchCashflow) setBalanceContext((cfRes as any)?.balance_context || {});
 
-      const nextHasMore = cfParsed.hasMore;
+      const nextHasMore = cfParsed.hasMore || trParsed.hasMore;
       currentPageRef.current = targetPage;
       setCurrentPage(targetPage);
       hasMoreRef.current = nextHasMore;
       setHasMore(nextHasMore);
+      cashflowHasMoreRef.current = cfParsed.hasMore;
+      tradesHasMoreRef.current = trParsed.hasMore;
 
       setCashflowTxs((prev) => {
         if (isReset) return cfParsed.items;
@@ -413,7 +421,7 @@ export default function CashflowTransactionsPage() {
     // Sort strictly chronological (oldest to newest) to compute cumulative running statement balances
     rawRows.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
-    const currentRunningBalances: Record<number, number> = {};
+    const currentRunningBalances: Record<number, number> = { ...balanceContext };
     const processedRows: UnifiedRowItem[] = [];
 
     rawRows.forEach((r) => {
@@ -463,7 +471,7 @@ export default function CashflowTransactionsPage() {
 
     // Return in reverse chronological order (newest first) for standard ledger display
     return processedRows.reverse();
-  }, [cashflowTxs, tradeTxs]);
+  }, [cashflowTxs, tradeTxs, balanceContext]);
 
   // Filter rows
   const filteredRows = useMemo(() => {
@@ -585,7 +593,12 @@ export default function CashflowTransactionsPage() {
                 type="text"
                 placeholder="Search merchant, account..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  currentPageRef.current = 1;
+                  syncUrlPage(1);
+                  fetchChunk(1, true, selectedAccountIdRef.current, e.target.value, selectedLabelFilter);
+                }}
                 className="h-9 w-52 rounded-control border border-border bg-surface pl-8 pr-3 text-label font-medium text-foreground placeholder:text-muted focus:border-border-strong focus:outline-none transition-colors"
               />
             </div>
@@ -622,7 +635,12 @@ export default function CashflowTransactionsPage() {
             <select
               aria-label="label-filter"
               value={selectedLabelFilter}
-              onChange={(e) => setSelectedLabelFilter(e.target.value)}
+              onChange={(e) => {
+                setSelectedLabelFilter(e.target.value);
+                currentPageRef.current = 1;
+                syncUrlPage(1);
+                fetchChunk(1, true, selectedAccountIdRef.current, searchQuery, e.target.value);
+              }}
               className="h-9 rounded-control border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:border-border-strong focus:outline-none cursor-pointer"
             >
               {["ALL", "ESSENTIAL", "DISCRETIONARY", "LUXURY", "INVESTMENT"].map((lbl) => (

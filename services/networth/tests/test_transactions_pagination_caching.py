@@ -213,6 +213,30 @@ async def test_stock_transactions_pagination_and_filtering(auth0_client_user_a):
 
 
 @pytest.mark.anyio
+async def test_stock_transactions_search_and_type_filter(auth0_client_user_a):
+    acc = (await auth0_client_user_a.post("/api/v1/accounts", json={
+        "account_name": "Search Trade Account", "broker_name": "Broker", "account_type": "demat", "currency": "EUR"
+    })).json()["account_id"]
+    asset = (await auth0_client_user_a.post("/api/v1/assets", json={
+        "symbol": "SEARCHME", "name": "Searchable Equity", "asset_type": "stock", "currency": "EUR"
+    })).json()["asset_id"]
+    for kind, note in (("buy", "ordinary"), ("sell", "needle note")):
+        res = await auth0_client_user_a.post("/api/v1/transactions", json={
+            "account_id": acc, "asset_id": asset, "transaction_type": kind,
+            "transaction_date": "2025-07-01", "quantity": 1, "price_per_unit": 10,
+            "total_amount": 10, "notes": note
+        })
+        assert res.status_code in (200, 201)
+
+    res = await auth0_client_user_a.get("/api/v1/transactions?page=1&page_size=20&search=needle&type=sell")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 1
+    assert data["items"][0]["transaction_type"] == "sell"
+    assert data["items"][0]["notes"] == "needle note"
+
+
+@pytest.mark.anyio
 async def test_stock_transactions_caching_and_invalidation(auth0_client_user_a, mock_redis_cache):
     """
     Verify stock transactions are cached in Redis and invalidated on POST, PUT, DELETE.

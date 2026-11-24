@@ -5,9 +5,11 @@ from fastapi.middleware.gzip import GZipMiddleware
 try:
     from .config import settings
     from .api.routers import posts_router, comments_router, pseudonyms_router
+    from .core.timing import TimingMiddleware
 except (ImportError, ValueError):
     from app.config import settings
     from app.api.routers import posts_router, comments_router, pseudonyms_router
+    from app.core.timing import TimingMiddleware
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -23,6 +25,7 @@ app.include_router(pseudonyms_router, prefix=settings.API_V1_STR)
 
 # GZip middleware for compressing responses > 1000 bytes
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(TimingMiddleware)
 
 # CORS middleware
 app.add_middleware(

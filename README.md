@@ -159,16 +159,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ---
 
 ### 3. Build & Start in Production Mode (Optimized Standalone)
-Compiles an optimized standalone production bundle:
+Compiles an optimized standalone production bundle with production multi-worker services:
 ```bash
-docker compose -f docker-compose.prod.yml up --build -d
+# Production with Local Database container:
+ENV=prod FRONTEND_TARGET=runner docker compose up --build -d
+
+# Production with Oracle Cloud Database:
+ENV=prod FRONTEND_TARGET=runner DB_TARGET=cloud docker compose up --build -d
 ```
 
 ### 4. Stopping Containers
 ```bash
 docker compose down
-# or for production:
-docker compose -f docker-compose.prod.yml down
 ```
 
 ---
@@ -220,10 +222,10 @@ Greenline adheres to a strict Test-Driven Development (TDD) protocol across all 
 Backend automated tests run against a local Oracle Free (`FREEPDB1`) container:
 ```bash
 # Start local Oracle Free test container
-docker compose -f docker-compose.test.yml up -d
+docker compose --profile localdockerdb up oracle -d
 
 # Execute backend test suite
-PYTHONPATH=backend pytest backend/tests
+PYTHONPATH=services/networth pytest services/networth/tests
 ```
 
 ### Frontend Unit & Component Tests (Vitest)
@@ -286,9 +288,7 @@ greenline/
 │   └── vitest.config.mts
 ├── scripts/                  # Automated maintenance & screenshot capture utilities
 ├── data/                     # Persistent file storage and JSON backups
-├── docker-compose.yml        # Development Docker Compose (npm run dev + hot-reload)
-├── docker-compose.prod.yml   # Production Docker Compose (npm start + optimized build)
-├── docker-compose.demo.yml   # Isolated Demo Stack for showcase captures
+├── docker-compose.yml        # Unified Docker Compose (dev/prod, localdockerdb/cloud)
 ├── pyproject.toml            # Python tool configurations (Ruff, Pytest)
 ├── .gitignore
 └── README.md

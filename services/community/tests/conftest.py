@@ -22,8 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 COMMUNITY_ROOT = Path(__file__).resolve().parents[1]
-if str(COMMUNITY_ROOT) not in sys.path:
-    sys.path.insert(0, str(COMMUNITY_ROOT))
+if str(COMMUNITY_ROOT) in sys.path:
+    sys.path.remove(str(COMMUNITY_ROOT))
+sys.path.insert(0, str(COMMUNITY_ROOT))
+
+# Evict foreign app modules from sys.modules
+to_evict = [m for m in list(sys.modules.keys()) if m == "app" or m.startswith("app.")]
+for m in to_evict:
+    mod = sys.modules.get(m)
+    if mod and hasattr(mod, "__file__") and mod.__file__ and str(COMMUNITY_ROOT) not in mod.__file__:
+        del sys.modules[m]
 
 # ==============================================================================
 # 1. OFFLINE MOCK RSA KEYPAIR & JWKS GENERATOR (100% Offline Mandate)

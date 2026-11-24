@@ -32,6 +32,197 @@ External scripts, cron jobs, time-triggered workflows, and crawlers can extract 
 
 ## Log of Changes
 
+### [2026-11-21 23:34:00 UTC] feat(observability): add end-to-end performance diagnostic logging and query profiler
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T23:34:00Z",
+  "type": "feat",
+  "scope": "observability",
+  "summary": "add end-to-end performance diagnostic logging and query profiler",
+  "affected_files": [
+    "services/networth/app/core/timing.py",
+    "services/networth/app/main.py",
+    "services/networth/app/db/database.py",
+    "services/networth/app/api/deps.py",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/tests/test_timing.py",
+    "services/networth/tests/test_community_proxy.py",
+    "services/networth/app/api/routers/community_proxy.py",
+    "services/community/app/core/timing.py",
+    "services/community/app/main.py",
+    "services/community/app/db/database.py",
+    "services/community/tests/test_timing.py",
+    "frontend/src/lib/api.ts",
+    "docker-compose.yml",
+    ".env.example"
+  ],
+  "rationale": "Users observed slow API response times; added granular diagnostic instrumentation across HTTP request lifecycles, database query execution, connection pool checkouts, Auth0 verification, and client transit to expose latency bottlenecks.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "backend/.venv/bin/pytest services/networth/tests/test_timing.py && cd services/community && pytest tests/test_timing.py && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `feat(observability)`
+- **Summary**: Implemented end-to-end diagnostic performance profiling and timing logs across backend microservices (`networth`, `community`), database query execution via SQLAlchemy event listeners, authentication resolution, and frontend DevTools client logging.
+- **Rationale**:
+  - API responses were perceived as slow. Without structured timing logs, it was unclear whether delays originated in network transit, Auth0 RS256 token verification, connection pool checkout, or remote Oracle database roundtrips.
+  - Adding correlation IDs (`X-Request-ID`) and server duration headers (`X-Process-Time-Ms`) alongside SQL execution listeners highlights slow queries (>50ms) and provides immediate visibility into bottlenecks.
+- **Key Changes**:
+  - `services/networth/app/core/timing.py` & `services/community/app/core/timing.py`: Created reusable `RequestTimingContext`, `TimingMiddleware`, `time_block`, and `record_db_query` helpers.
+  - `services/networth/app/main.py` & `services/community/app/main.py`: Registered `TimingMiddleware` to inject timing headers and output structured end-of-request summaries.
+  - `services/networth/app/db/database.py` & `services/community/app/db/database.py`: Attached `before_cursor_execute` and `after_cursor_execute` listeners to measure query durations and flag queries taking >50ms with `[SLOW QUERY]`.
+  - `services/networth/app/api/deps.py`: Profiled `get_current_user` resolution duration across API keys, cached Auth0 tokens, and local JWTs.
+  - `services/networth/app/api/routers/cashflow.py`: Replaced raw `print` statements with structured `time_block`.
+  - `frontend/src/lib/api.ts`: Added browser console timing output (`[API] ... | Client: ...ms (Server: ...ms, Transit: ...ms)`) for developer inspection.
+  - `docker-compose.yml` & `.env.example`: Added configurable `ENABLE_TIMING_LOGS`, `LOG_SQL_QUERIES`, and `SLOW_QUERY_THRESHOLD_MS`.
+- **Verification**:
+  - Automated tests in `services/networth/tests/test_timing.py` and `services/community/tests/test_timing.py` passed.
+  - Frontend TypeScript check (`npx tsc --noEmit`), ESLint, and all 36 Vitest test suites (189 tests) passed.
+  - Live inspection confirmed `[SLOW QUERY]` logs identifying individual remote Oracle queries taking 100ms-400ms.
+
+### [2026-11-21 20:56:00 UTC] fix(docker): unify compose files and support dev/prod and cloud/localdockerdb env passing
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T20:56:00Z",
+  "type": "fix",
+  "scope": "docker",
+  "summary": "unify compose files and support dev/prod and cloud/localdockerdb env passing",
+  "affected_files": [
+    "docker-compose.yml",
+    "docker-compose.demo.yml",
+    "docker-compose.prod.yml",
+    "docker-compose.test.yml",
+    ".env.example",
+    "AGENTS.md",
+    "README.md",
+    "docs/prompts/generate_tests_and_ci.md",
+    "frontend/Dockerfile",
+    "pyproject.toml",
+    "services/networth/app/config.py",
+    "services/networth/tests/test_compose_config.py",
+    "services/networth/tests/e2e/test_tier1_feature_coverage.py",
+    "services/networth/tests/e2e/test_tier4_real_world.py",
+    "services/community/app/config.py",
+    "services/community/tests/test_compose_config.py"
+  ],
+  "rationale": "Fix Docker Compose container startup failure (rebuild image with bcrypt), eliminate duplicate compose files, and parameterize dev/prod and cloud/localdockerdb environments via Compose profiles and dynamic shell switching.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "docker compose config && DB_TARGET=cloud docker compose config --services && docker compose up -d && curl -s http://localhost:8000/health && curl -s http://localhost:8002/health && cd services/community && pytest tests && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `fix(docker)`
+- **Summary**: Merged all Docker Compose files into a single, unified `docker-compose.yml`, eliminated redundant files, resolved container startup failures, and enabled environment-driven selection for development vs production and local vs cloud databases.
+- **Rationale**:
+  - The previous compose setup failed on `networth` container startup due to outdated cached images missing `bcrypt`.
+  - Multiple compose files (`docker-compose.prod.yml`, `docker-compose.demo.yml`, `docker-compose.test.yml`) caused configuration drift and maintenance overhead.
+  - Adding `profiles: ["localdockerdb"]` to the local Oracle container allows developers and CI to easily omit the local Oracle container when connecting to Oracle Autonomous Cloud DB (`DB_TARGET=cloud`) or run only the test DB (`docker compose --profile localdockerdb up oracle -d`).
+- **Key Changes**:
+  - `docker-compose.yml`: Consolidated into a single source of truth. Configured `oracle` with `profiles: ["localdockerdb"]` and `required: false` on dependents. Added dynamic runtime command branches for `ENV=prod` vs `ENV=dev`.
+  - `docker-compose.demo.yml`, `docker-compose.prod.yml`, `docker-compose.test.yml`: Deleted redundant compose files.
+  - `frontend/Dockerfile`: Added `ARG NEXT_PUBLIC_AUTH0_*` arguments to the `builder` stage for production Next.js builds.
+  - `services/networth/app/config.py` & `services/community/app/config.py`: Added automatic credential and DSN resolution for `DB_TARGET="localdockerdb"` vs `DB_TARGET="cloud"`.
+  - `services/networth/tests/test_compose_config.py` & `services/community/tests/test_compose_config.py`: Added automated unit test coverage asserting proper config resolution.
+  - `.env.example`, `AGENTS.md`, `README.md`: Documented new environment passing variables and updated test DB startup command.
+- **Verification**:
+  - `docker compose config` and `DB_TARGET=cloud docker compose config --services` validated across matrix.
+  - `docker compose build` and `docker compose up -d` started all containers (`oracle`, `networth`, `community`, `frontend`) cleanly with 200 OK responses on `/health` endpoints.
+  - 36 community service pytest tests passed.
+  - Frontend TypeScript check (`npx tsc --noEmit`), ESLint, and 36 Vitest test suites (189 tests) passed.
+
+### [2026-11-21 19:45:00 UTC] refactor(backend): consolidate backend into networth-service for two-service architecture
+
+<!-- changelog-entry-json
+{
+  "timestamp": "2026-11-21T19:45:00Z",
+  "type": "refactor",
+  "scope": "backend",
+  "summary": "consolidate backend into networth-service for two-service architecture",
+  "affected_files": [
+    "services/networth/app/config.py",
+    "services/networth/app/main.py",
+    "services/networth/app/scheduler.py",
+    "services/networth/app/api/deps.py",
+    "services/networth/app/api/routers/accounts.py",
+    "services/networth/app/api/routers/assets.py",
+    "services/networth/app/api/routers/auth.py",
+    "services/networth/app/api/routers/backup.py",
+    "services/networth/app/api/routers/benchmarks.py",
+    "services/networth/app/api/routers/cashflow.py",
+    "services/networth/app/api/routers/categories.py",
+    "services/networth/app/api/routers/discrepancies.py",
+    "services/networth/app/api/routers/mcp_router.py",
+    "services/networth/app/api/routers/portfolio.py",
+    "services/networth/app/api/routers/prices.py",
+    "services/networth/app/api/routers/settings.py",
+    "services/networth/app/api/routers/snapshots.py",
+    "services/networth/app/api/routers/transactions.py",
+    "services/networth/app/db/migrations.py",
+    "services/networth/app/db/models.py",
+    "services/networth/app/mcp/server.py",
+    "services/networth/app/schemas/schemas.py",
+    "services/networth/app/schemas/mcp_schemas.py",
+    "services/networth/app/schemas/mcp_stock_schemas.py",
+    "services/networth/app/services/auth_service.py",
+    "services/networth/app/services/backup_service.py",
+    "services/networth/app/services/cashflow_engine.py",
+    "services/networth/app/services/dividend_engine.py",
+    "services/networth/app/services/fifo_engine.py",
+    "services/networth/app/services/mcp_openapi_service.py",
+    "services/networth/app/services/price_engine.py",
+    "services/networth/app/services/snapshot_engine.py",
+    "services/networth/app/services/xirr_service.py",
+    "services/networth/Dockerfile",
+    "services/networth/requirements.txt",
+    "services/networth/tests/conftest.py",
+    "services/networth/tests/test_e2e_networth_microservice.py",
+    "services/networth/tests/test_service_init.py",
+    "services/networth/tests/test_snapshots.py",
+    "services/community/pytest.ini",
+    "services/community/tests/conftest.py",
+    "backend/app",
+    "backend/tests",
+    "docker-compose.yml",
+    "docker-compose.demo.yml",
+    "docker-compose.prod.yml",
+    "frontend/next.config.ts",
+    "pyproject.toml",
+    "AGENTS.md",
+    "GEMINI.md",
+    ".agents/rules/test_first_development.md"
+  ],
+  "rationale": "Refactored the core backend monolith into services/networth (networth-service) as planned, transitioning the application to an explicit two-service architecture consisting of networth-service (port 8000) and community-service (port 8002). Eliminated cross-service HTTP client hops (networth_client.py) and external container dependencies for snapshots and portfolio calculations by running them in-process. Removed empty directories services/cashflow and services/investments. Preserved complete backward compatibility via directory symlinks in backend/ and updated compose configurations and Next.js rewrites.",
+  "breaking_changes": false,
+  "verification": {
+    "command": "PYTHONPATH=services/networth pytest services/networth/tests && cd services/community && pytest tests && cd frontend && npx tsc --noEmit && npm run lint && npx vitest run",
+    "result": "PASSED"
+  }
+}
+-->
+
+- **Type / Scope**: `refactor(backend)`
+- **Summary**: Consolidate backend into networth-service for two-service architecture.
+- **Rationale**: Cleanly organize the application into exactly two services (`services/networth` on port 8000 and `services/community` on port 8002) while eliminating unnecessary HTTP round-trips for core financial computations.
+- **Key Changes**:
+  - `services/networth/`: Complete backend application unified under `networth-service` including all routers, models, migrations, engines, MCP server, scheduler, and background workers.
+  - `backend/`: Replaced `backend/app` and `backend/tests` with symlinks pointing to `services/networth/app` and `services/networth/tests` for backwards compatibility.
+  - `docker-compose.yml`, `docker-compose.demo.yml`, `docker-compose.prod.yml`: Configured two application containers (`networth` on port 8000, `community` on port 8002).
+  - `frontend/next.config.ts`: Streamlined gateway rewrites to point to `COMMUNITY_URL` and `NETWORTH_URL`.
+  - Removed unused empty directories `services/cashflow` and `services/investments`.
+- **Verification**:
+  - `services/networth/tests`: 35/35 E2E networth tests, 20/20 Auth0 RLS tests, 11/11 service init tests, and engine tests passed.
+  - `services/community/tests`: 34/34 community tests passed.
+  - `frontend`: `npx tsc --noEmit` (0 errors), `npm run lint` (0 errors), `npx vitest run` (36/36 files passed, 189/189 tests passed).
+
 ### [2026-11-21 12:57:00 UTC] fix(layout): fix excessive main body left padding and desktop content displacement
 
 <!-- changelog-entry-json

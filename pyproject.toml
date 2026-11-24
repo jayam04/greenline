@@ -18,8 +18,9 @@ ignore = [
 minversion = "7.0"
 addopts = "-ra -q"
 testpaths = [
-    "backend/tests",
+    "services/networth/tests",
 ]
 pythonpath = [
-    "backend"
+    "services/networth",
+    "services/networth/tests"
 ]

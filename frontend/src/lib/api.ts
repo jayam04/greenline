@@ -61,6 +61,7 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
   const apiBase = getApiBase();
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
   let res: Response;
+  const startMs = typeof performance !== "undefined" ? performance.now() : Date.now();
   try {
     res = await fetch(`${apiBase}/api/v1${cleanEndpoint}`, {
       ...options,
@@ -89,6 +90,20 @@ export async function apiFetch<T>(endpoint: string, options: RequestInit = {}): 
     } else {
       throw err;
     }
+  }
+
+  const totalClientMs = Math.round(
+    (typeof performance !== "undefined" ? performance.now() : Date.now()) - startMs
+  );
+  const serverProcessMs = res?.headers?.get?.("x-process-time-ms") || null;
+  const requestId = res?.headers?.get?.("x-request-id") || null;
+  const transitMs = serverProcessMs ? Math.max(0, Math.round(totalClientMs - parseFloat(serverProcessMs))) : null;
+
+  if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
+    const method = options.method || "GET";
+    const serverPart = serverProcessMs ? ` (Server: ${serverProcessMs}ms, Transit: ${transitMs}ms)` : "";
+    const reqPart = requestId ? ` [${requestId}]` : "";
+    console.debug(`[API] ${method} ${cleanEndpoint} -> ${res.status} | Client: ${totalClientMs}ms${serverPart}${reqPart}`);
   }
 
   if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {

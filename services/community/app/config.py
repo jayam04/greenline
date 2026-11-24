@@ -11,26 +11,70 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1/community"
     PORT: int = int(os.getenv("PORT", "8002"))
 
+    # Deployment environment & database target mode
+    ENV: str = os.getenv("ENV", "dev").lower()
+    DB_TARGET: str = os.getenv("DB_TARGET", "localdockerdb").lower()
+
     # Database connection URL
-    DATABASE_URL: str = (
-        os.getenv("DATABASE_URL_COMMUNITY")
-        or os.getenv("DATABASE_URL")
-        or "oracle+oracledb://@"
-    )
+    DATABASE_URL: str = ""
 
     # Dedicated Community Database user credentials
-    ORACLE_COMMUNITY_USER: Optional[str] = (
-        os.getenv("ORACLE_COMMUNITY_USER")
-        or os.getenv("ORACLE_USER")
-        or "GREENLINE_COMMUNITY"
-    )
-    COMMUNITY_DB_PASSWORD: Optional[str] = (
-        os.getenv("COMMUNITY_DB_PASSWORD")
-        or os.getenv("ORACLE_PASSWORD")
-        or "SecureCommunity2026#DbPass"
-    )
-    ORACLE_DSN: Optional[str] = os.getenv("ORACLE_DSN", "localhost:1521/FREEPDB1")
-    ORACLE_SCHEMA: Optional[str] = os.getenv("ORACLE_SCHEMA", "ADMIN")
+    ORACLE_COMMUNITY_USER: Optional[str] = None
+    COMMUNITY_DB_PASSWORD: Optional[str] = None
+    ORACLE_DSN: Optional[str] = None
+    ORACLE_SCHEMA: Optional[str] = None
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        target = self.DB_TARGET.lower()
+        if target == "cloud":
+            self.ORACLE_COMMUNITY_USER = (
+                os.getenv("ORACLE_COMMUNITY_USER")
+                or os.getenv("ORACLE_USER")
+                or "GREENLINE_COMMUNITY"
+            )
+            self.COMMUNITY_DB_PASSWORD = (
+                os.getenv("COMMUNITY_DB_PASSWORD")
+                or os.getenv("ORACLE_PASSWORD")
+                or "SecureCommunity2026#DbPass"
+            )
+            self.ORACLE_DSN = os.getenv("ORACLE_CLOUD_DSN") or os.getenv("ORACLE_DSN")
+            self.ORACLE_SCHEMA = os.getenv("ORACLE_SCHEMA", "ADMIN")
+            self.DATABASE_URL = (
+                os.getenv("DATABASE_URL_COMMUNITY")
+                or os.getenv("DATABASE_URL_CLOUD")
+                or os.getenv("DATABASE_URL")
+                or "oracle+oracledb://@"
+            )
+        else:
+            # localdockerdb mode
+            default_host = "oracle" if os.getenv("IS_DOCKER") else "localhost"
+            self.ORACLE_COMMUNITY_USER = (
+                os.getenv("ORACLE_LOCAL_COMMUNITY_USER")
+                or os.getenv("ORACLE_LOCAL_USER")
+                or os.getenv("ORACLE_COMMUNITY_USER")
+                or os.getenv("ORACLE_USER")
+                or "GREENLINE_COMMUNITY"
+            )
+            self.COMMUNITY_DB_PASSWORD = (
+                os.getenv("COMMUNITY_LOCAL_DB_PASSWORD")
+                or os.getenv("ORACLE_LOCAL_PASSWORD")
+                or os.getenv("COMMUNITY_DB_PASSWORD")
+                or os.getenv("ORACLE_PASSWORD")
+                or "SecureCommunity2026#DbPass"
+            )
+            self.ORACLE_DSN = (
+                os.getenv("ORACLE_LOCAL_DSN")
+                or os.getenv("ORACLE_DSN")
+                or f"{default_host}:1521/FREEPDB1"
+            )
+            self.ORACLE_SCHEMA = os.getenv("ORACLE_SCHEMA", "ADMIN")
+            self.DATABASE_URL = (
+                os.getenv("DATABASE_URL_COMMUNITY")
+                or os.getenv("DATABASE_URL_LOCAL")
+                or os.getenv("DATABASE_URL")
+                or "oracle+oracledb://@"
+            )
 
     # Auth0 Configuration
     AUTH0_DOMAIN: Optional[str] = os.getenv("AUTH0_DOMAIN", "jayam04.eu.auth0.com")

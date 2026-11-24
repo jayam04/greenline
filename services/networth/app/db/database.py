@@ -2,10 +2,14 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncSessio
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import event, text
 from sqlalchemy.schema import sort_tables_and_constraints
+import time
+
 try:
     from ..config import settings
+    from ..core.timing import record_db_query, record_pool_checkout
 except (ImportError, ValueError):
     from app.config import settings
+    from app.core.timing import record_db_query, record_pool_checkout
 
 db_url = settings.DATABASE_URL
 
@@ -54,6 +58,17 @@ def create_database_engine(database_url: str, connect_args=None, **kwargs) -> As
 
 
 engine = create_database_engine(db_url)
+
+@event.listens_for(engine.sync_engine, "before_cursor_execute")
+def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    context._query_start_time = time.perf_counter()
+
+@event.listens_for(engine.sync_engine, "after_cursor_execute")
+def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    start = getattr(context, "_query_start_time", None)
+    if start is not None:
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        record_db_query(statement, duration_ms)
 
 if db_url.startswith("oracle+oracledb://") and getattr(settings, "ORACLE_SCHEMA", None):
     target_schema = _clean_credential(settings.ORACLE_SCHEMA)
@@ -104,7 +119,9 @@ async def sync_oracle_identity_values(session: AsyncSession) -> None:
 
 async def get_db():
     """Async session dependency."""
+    t0 = time.perf_counter()
     async with AsyncSessionLocal() as session:
+        record_pool_checkout((time.perf_counter() - t0) * 1000.0)
         try:
             yield session
         finally:
